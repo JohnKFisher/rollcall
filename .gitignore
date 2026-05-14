@@ -2,3 +2,6 @@
 .DerivedData*/
 xcuserdata/
 *.xcuserstate
+
+# Local generated artifacts
+tmp/
