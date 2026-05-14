@@ -1,7 +1,4 @@
 .DS_Store
-.DerivedData/
-.DerivedDataSim/
-.DerivedDataVerify/
-.DerivedDataVerifySim/
+.DerivedData*/
 xcuserdata/
 *.xcuserstate

@@ -1,6 +1,7 @@
 import Foundation
 import PhotosUI
 import SwiftUI
+import UIKit
 import UniformTypeIdentifiers
 
 private enum RootTab: Hashable {
@@ -20,34 +21,16 @@ struct RootView: View {
     @State private var packageImportPresented = false
     @State private var csvImportPresented = false
     @State private var selectedTab: RootTab = .players
-    @State private var requestedTabAfterConfirmation: RootTab?
-    @State private var showProtectedModeExitAlert = false
     @State private var showLineupEditor = false
     @State private var showRenameTeamAlert = false
     @State private var renameTeamName = ""
-
-    private var tabSelection: Binding<RootTab> {
-        Binding(
-            get: { selectedTab },
-            set: { newValue in
-                guard appModel.state.settings.protectedModeEnabled,
-                      selectedTab == .gameDay,
-                      newValue != .gameDay else {
-                    selectedTab = newValue
-                    return
-                }
-                requestedTabAfterConfirmation = newValue
-                showProtectedModeExitAlert = true
-            }
-        )
-    }
 
     private var errorBinding: Binding<Bool> {
         Binding(get: { appModel.lastError != nil }, set: { newValue in if !newValue { appModel.lastError = nil } })
     }
 
     var body: some View {
-        TabView(selection: tabSelection) {
+        TabView(selection: $selectedTab) {
             playersTab
                 .tag(RootTab.players)
                 .tabItem { Label("Players", systemImage: "person.3.fill") }
@@ -90,19 +73,6 @@ struct RootView: View {
             Button("Cancel", role: .cancel) {}
         } message: {
             Text("This feature is off by default. It attempts to turn Apple Music preview media into a regular local file. It may fail, and it is intentionally separate from the normal Apple Music path.")
-        }
-        .alert("Leave Protected Game Day?", isPresented: $showProtectedModeExitAlert) {
-            Button("Stay", role: .cancel) {
-                requestedTabAfterConfirmation = nil
-            }
-            Button("Leave") {
-                if let requestedTabAfterConfirmation {
-                    selectedTab = requestedTabAfterConfirmation
-                }
-                self.requestedTabAfterConfirmation = nil
-            }
-        } message: {
-            Text("Protected mode is active. Confirm before leaving Game Day.")
         }
         .alert("Roll Call", isPresented: errorBinding) {
             Button("OK") { appModel.lastError = nil }
@@ -205,6 +175,8 @@ struct RootView: View {
                 }
             }
             .navigationTitle(playersTabTitle)
+            .scrollDismissesKeyboard(.interactively)
+            .dismissesKeyboardOnTap()
             .sheet(item: $selectedPlayer) { player in
                 PlayerEditorSheet(appModel: appModel, player: player)
             }
@@ -247,9 +219,9 @@ struct RootView: View {
         NavigationStack {
             List {
                 if appModel.selectedTeamBuiltInClips.isEmpty {
-                    ContentUnavailableView("No Clips Ready", systemImage: "speaker.wave.2", description: Text("Select a team to use built-in safety sounds."))
+                    ContentUnavailableView("No Clips Ready", systemImage: "speaker.wave.2", description: Text("Select a team to use the built-in crowd clip library."))
                 } else {
-                    Section("Built-In Safety Sounds") {
+                    Section("Built-In Crowd Clips") {
                         ForEach(appModel.selectedTeamBuiltInClips) { clip in
                             Button {
                                 Task { await appModel.play(builtInClip: clip) }
@@ -258,7 +230,7 @@ struct RootView: View {
                                     VStack(alignment: .leading, spacing: 4) {
                                         Text(clip.title)
                                             .font(.headline)
-                                        Text("Uses the same cue engine as player walk-up audio.")
+                                        Text("Built-in hype audio for quick game-day reactions.")
                                             .font(.caption)
                                             .foregroundStyle(.secondary)
                                     }
@@ -282,30 +254,13 @@ struct RootView: View {
                     .ignoresSafeArea()
                 VStack(spacing: 16) {
                     if let team = appModel.selectedTeam {
-                        HStack {
-                            VStack(alignment: .leading, spacing: 6) {
-                                Text(team.name)
-                                    .font(.title.bold())
-                                Text(appModel.state.settings.protectedModeEnabled ? "Protected Game Day is on" : "Portrait-first game board")
-                            }
-                            Spacer()
-                            Button(appModel.state.settings.protectedModeEnabled ? "Unlock" : "Protect") {
-                                appModel.toggleProtectedMode()
-                            }
-                            .buttonStyle(.bordered)
-                            Button("Panic Stop") { appModel.stopPlayback() }
-                                .buttonStyle(.borderedProminent)
-                                .tint(.red)
-                        }
-                        .foregroundStyle(.primary)
+                        GameDayHeader(appModel: appModel, teamName: team.name)
 
-                        if appModel.state.settings.protectedModeEnabled {
-                            Label("Protected mode reduces accidental exits and edits during game play.", systemImage: "lock.shield.fill")
-                                .font(.footnote)
-                                .padding(.horizontal, 12)
-                                .padding(.vertical, 10)
-                                .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-                        }
+                        Label("Before first pitch, enable an iPhone Focus to reduce calls, texts, and notification interruptions.", systemImage: "moon.zzz.fill")
+                            .font(.footnote)
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 10)
+                            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
 
                         Picker("Announcer Mode", selection: Binding(
                             get: { team.session.gameDayAnnouncerMode },
@@ -316,35 +271,7 @@ struct RootView: View {
                         }
                         .pickerStyle(.segmented)
 
-                        ScrollView {
-                            LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 14) {
-                                ForEach(appModel.selectedTeamPresentPlayers) { player in
-                                    Button {
-                                        Task { await appModel.play(player: player) }
-                                    } label: {
-                                        VStack(spacing: 10) {
-                                            PlayerPhotoThumbnail(relativePath: player.photoRelativePath, size: 64, cornerRadius: 18)
-                                            Text(player.uniformNumber.isEmpty ? "--" : "#\(player.uniformNumber)")
-                                                .font(.caption.weight(.bold))
-                                                .foregroundStyle(.secondary)
-                                            Text(player.displayName)
-                                                .font(.title3.weight(.bold))
-                                                .multilineTextAlignment(.center)
-                                            Text(player.cue?.label ?? "No Cue Yet")
-                                                .font(.footnote)
-                                                .foregroundStyle(.secondary)
-                                        }
-                                        .frame(maxWidth: .infinity, minHeight: 140)
-                                        .padding()
-                                        .background(
-                                            RoundedRectangle(cornerRadius: 24, style: .continuous)
-                                                .fill(appModel.playbackEngine.activeCueID == player.cue?.id ? Color.green.opacity(0.25) : Color.orange.opacity(0.10))
-                                        )
-                                    }
-                                    .buttonStyle(.plain)
-                                }
-                            }
-                        }
+                        GameDayPlayerGrid(appModel: appModel)
 
                         HStack {
                             Button("Advance Next Batter") { appModel.advanceNextBatter() }
@@ -366,7 +293,7 @@ struct RootView: View {
             .navigationTitle("Game Day")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                if !appModel.state.settings.protectedModeEnabled {
+                if appModel.selectedTeam != nil {
                     ToolbarItem(placement: .topBarTrailing) {
                         Button("Lineup") { showLineupEditor = true }
                     }
@@ -446,13 +373,14 @@ struct RootView: View {
                                 showRenameTeamAlert = true
                             }
                             Button("Duplicate Selected Team") { appModel.duplicateTeam() }
-                            Button("Create Safety Snapshot") { appModel.snapshot(reason: "Manual snapshot") }
                             Button("Import Roster CSV") { csvImportPresented = true }
                         }
                     }
                 }
             }
             .navigationTitle("Teams")
+            .scrollDismissesKeyboard(.interactively)
+            .dismissesKeyboardOnTap()
         }
     }
 
@@ -473,17 +401,9 @@ struct RootView: View {
                 }
 
                 Section("Game Day") {
-                    Toggle("Protected Game Day Mode", isOn: Binding(
-                        get: { appModel.state.settings.protectedModeEnabled },
-                        set: { _ in appModel.toggleProtectedMode() }
-                    ))
                     Toggle("Game Day Haptics", isOn: Binding(
                         get: { appModel.state.settings.hapticsEnabled },
                         set: { appModel.setHapticsEnabled($0) }
-                    ))
-                    Toggle("Reuse Prior Lineup on New Day", isOn: Binding(
-                        get: { appModel.state.settings.reusePreviousLineupOnNewDay },
-                        set: { appModel.setReusePreviousLineupOnNewDay($0) }
                     ))
                 }
 
@@ -492,7 +412,7 @@ struct RootView: View {
                 }
 
                 Section("Recovery") {
-                    NavigationLink("Recovery Center") {
+                    NavigationLink("Recovery & Backups") {
                         RecoveryCenterView(appModel: appModel)
                     }
                 }
@@ -544,26 +464,118 @@ private struct GameDayBackground: View {
     }
 }
 
+private struct GameDayPlayerGrid: View {
+    @ObservedObject var appModel: AppModel
+    @ObservedObject private var playbackEngine: CuePlaybackEngine
+
+    init(appModel: AppModel) {
+        self.appModel = appModel
+        _playbackEngine = ObservedObject(initialValue: appModel.playbackEngine)
+    }
+
+    var body: some View {
+        ScrollView {
+            LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 14) {
+                ForEach(appModel.selectedTeamPresentPlayers) { player in
+                    let isActive = playbackEngine.activeCueID == player.cue?.id
+                    Button {
+                        Task { await appModel.play(player: player) }
+                    } label: {
+                        VStack(spacing: 10) {
+                            PlayerPhotoThumbnail(relativePath: player.photoRelativePath, size: 64, cornerRadius: 18)
+                            Text(player.uniformNumber.isEmpty ? "--" : "#\(player.uniformNumber)")
+                                .font(.caption.weight(.bold))
+                                .foregroundStyle(.secondary)
+                            Text(player.displayName)
+                                .font(.title3.weight(.bold))
+                                .multilineTextAlignment(.center)
+                            Text(player.cue?.label ?? "No Cue Yet")
+                                .font(.footnote)
+                                .foregroundStyle(.secondary)
+                            if isActive {
+                                Label("Now Playing", systemImage: "speaker.wave.2.fill")
+                                    .font(.caption.weight(.semibold))
+                                    .foregroundStyle(.green)
+                            }
+                        }
+                        .frame(maxWidth: .infinity, minHeight: 152)
+                        .padding()
+                        .background(
+                            RoundedRectangle(cornerRadius: 24, style: .continuous)
+                                .fill(isActive ? Color.green.opacity(0.22) : Color.orange.opacity(0.10))
+                        )
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 24, style: .continuous)
+                                .stroke(isActive ? Color.green.opacity(0.9) : Color.white.opacity(0.08), lineWidth: isActive ? 3 : 1)
+                        )
+                        .shadow(color: isActive ? Color.green.opacity(0.18) : .clear, radius: 16, y: 8)
+                        .scaleEffect(isActive ? 1.01 : 1.0)
+                    }
+                    .buttonStyle(.plain)
+                    .animation(.easeInOut(duration: 0.18), value: isActive)
+                }
+            }
+        }
+    }
+}
+
+private struct GameDayHeader: View {
+    @ObservedObject var appModel: AppModel
+    @ObservedObject private var playbackEngine: CuePlaybackEngine
+    let teamName: String
+
+    init(appModel: AppModel, teamName: String) {
+        self.appModel = appModel
+        self.teamName = teamName
+        _playbackEngine = ObservedObject(initialValue: appModel.playbackEngine)
+    }
+
+    var body: some View {
+        HStack {
+            VStack(alignment: .leading, spacing: 6) {
+                Text(teamName)
+                    .font(.title.bold())
+                Text("Portrait-first game board")
+            }
+            Spacer()
+            if playbackEngine.activeCueID != nil {
+                Button("Stop Audio") {
+                    appModel.stopPlayback()
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(.red)
+            }
+        }
+        .foregroundStyle(.primary)
+    }
+}
+
 private struct LineupEditorSheet: View {
     @Environment(\.dismiss) private var dismiss
     @ObservedObject var appModel: AppModel
-    @State private var draggedPlayerID: UUID?
+    @State private var editMode: EditMode = .active
 
     var body: some View {
         NavigationStack {
             List {
                 if let team = appModel.selectedTeam {
-                    Section("Present Players") {
+                    Section("Lineup") {
+                        HStack(spacing: 12) {
+                            Button("Sort A-Z") {
+                                appModel.sortBattingOrderAlphabetically()
+                            }
+                            .buttonStyle(.bordered)
+
+                            Button("Sort by Number") {
+                                appModel.sortBattingOrderByNumber()
+                            }
+                            .buttonStyle(.bordered)
+                        }
+                        .padding(.vertical, 4)
+
                         ForEach(team.battingOrderPlayers) { player in
                             HStack {
-                                Image(systemName: "line.3.horizontal")
-                                    .font(.body.weight(.semibold))
-                                    .foregroundStyle(.secondary)
-                                    .padding(.trailing, 4)
-                                    .onDrag {
-                                        draggedPlayerID = player.id
-                                        return NSItemProvider(object: player.id.uuidString as NSString)
-                                    }
+                                PlayerPhotoThumbnail(relativePath: player.photoRelativePath, size: 40, cornerRadius: 12)
                                 VStack(alignment: .leading, spacing: 4) {
                                     Text(player.displayName)
                                     if !player.uniformNumber.isEmpty {
@@ -579,25 +591,19 @@ private struct LineupEditorSheet: View {
                                 ))
                                 .labelsHidden()
                             }
-                            .opacity(draggedPlayerID == player.id ? 0.65 : 1)
-                            .onDrop(
-                                of: [UTType.text],
-                                delegate: BattingOrderDropDelegate(
-                                    targetPlayerID: player.id,
-                                    draggedPlayerID: $draggedPlayerID,
-                                    appModel: appModel
-                                )
-                            )
                         }
+                        .onMove(perform: appModel.moveBattingOrder)
                     }
 
-                    Section("Session") {
-                        Button("Reset Today’s Lineup") { appModel.resetLineupForToday() }
-                        Button("Start Fresh Session") { appModel.startFreshSession() }
+                    Section("Status") {
+                        Text("Manual order is preserved across launches until you sort or move the lineup again.")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
                     }
                 }
             }
             .navigationTitle("Today’s Lineup")
+            .environment(\.editMode, $editMode)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
                     Button("Close") { dismiss() }
@@ -607,44 +613,24 @@ private struct LineupEditorSheet: View {
     }
 }
 
-private struct BattingOrderDropDelegate: DropDelegate {
-    let targetPlayerID: UUID
-    @Binding var draggedPlayerID: UUID?
-    let appModel: AppModel
-
-    func dropEntered(info: DropInfo) {
-        guard let draggedPlayerID, draggedPlayerID != targetPlayerID else { return }
-        withAnimation {
-            appModel.moveBattingOrderPlayer(draggedPlayerID, onto: targetPlayerID)
-        }
-    }
-
-    func dropUpdated(info: DropInfo) -> DropProposal? {
-        DropProposal(operation: .move)
-    }
-
-    func performDrop(info: DropInfo) -> Bool {
-        draggedPlayerID = nil
-        return true
-    }
-
-    func dropExited(info: DropInfo) {}
-}
-
 private struct RecoveryCenterView: View {
     @ObservedObject var appModel: AppModel
 
     var body: some View {
         List {
-            Section("Recovery Actions") {
-                Button("Create Safety Snapshot") {
-                    appModel.snapshot(reason: "Manual snapshot from Recovery Center")
+            Section("Backups") {
+                Text("Create a manual backup before risky edits. Automatic backups are also created before package imports, and only the newest 10 are kept.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+
+                Button("Create Backup") {
+                    appModel.createBackup(reason: "Manual backup")
                 }
             }
 
-            Section("Snapshots") {
+            Section("Available Backups") {
                 if appModel.state.snapshots.isEmpty {
-                    Text("No snapshots yet.")
+                    Text("No backups yet.")
                         .foregroundStyle(.secondary)
                 } else {
                     ForEach(appModel.state.snapshots) { snapshot in
@@ -654,8 +640,8 @@ private struct RecoveryCenterView: View {
                             Text(snapshot.createdAt.formatted(date: .abbreviated, time: .shortened))
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
-                            Button("Restore Snapshot") {
-                                Task { await appModel.restoreSnapshot(snapshot) }
+                            Button("Restore Backup") {
+                                Task { await appModel.restoreBackup(snapshot) }
                             }
                             .buttonStyle(.bordered)
                         }
@@ -664,7 +650,7 @@ private struct RecoveryCenterView: View {
                 }
             }
         }
-        .navigationTitle("Recovery Center")
+        .navigationTitle("Recovery & Backups")
     }
 }
 
@@ -806,18 +792,31 @@ private struct TeamAnnouncerSettingsSection: View {
 }
 
 private struct PlayerQuickAddView: View {
+    private enum Field: Hashable {
+        case name
+        case number
+    }
+
     @ObservedObject var appModel: AppModel
     @State private var name = ""
     @State private var number = ""
+    @FocusState private var focusedField: Field?
 
     var body: some View {
         TextField("Player name", text: $name)
+            .focused($focusedField, equals: .name)
+            .submitLabel(.next)
+            .onSubmit {
+                focusedField = .number
+            }
         TextField("Number", text: $number)
+            .focused($focusedField, equals: .number)
             .keyboardType(.numberPad)
         Button("Add Player") {
             appModel.addPlayer(name: name, number: number)
             name = ""
             number = ""
+            focusedField = nil
         }
         .buttonStyle(.borderedProminent)
         .disabled(name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
@@ -825,6 +824,12 @@ private struct PlayerQuickAddView: View {
 }
 
 private struct PlayerEditorSheet: View {
+    private enum Field: Hashable {
+        case displayName
+        case uniformNumber
+        case pronunciation
+    }
+
     @Environment(\.dismiss) private var dismiss
     @ObservedObject var appModel: AppModel
     @State var player: Player
@@ -835,6 +840,7 @@ private struct PlayerEditorSheet: View {
     @State private var showAdvancedTrim = false
     @State private var liveScrubTask: Task<Void, Never>?
     @State private var pendingClearAction: PendingClearAction?
+    @FocusState private var focusedField: Field?
 
     private let lengthOptions: [Double] = [6, 8, 10, 12, 15]
 
@@ -842,19 +848,31 @@ private struct PlayerEditorSheet: View {
         NavigationStack {
             Form {
                 Section("Player") {
-                    HStack {
-                        Spacer()
-                        PlayerPhotoThumbnail(relativePath: player.photoRelativePath, size: 110, cornerRadius: 28)
-                        Spacer()
+                    PhotosPicker(selection: $photoItem, matching: .images) {
+                        VStack(spacing: 10) {
+                            PlayerPhotoThumbnail(relativePath: player.photoRelativePath, size: 110, cornerRadius: 28)
+                            Text(player.photoRelativePath == nil ? "Tap to Choose Photo" : "Tap to Replace Photo")
+                                .font(.footnote.weight(.semibold))
+                                .foregroundStyle(.orange)
+                        }
+                        .frame(maxWidth: .infinity)
                     }
                     .listRowBackground(Color.clear)
                     TextField("Display Name", text: $player.displayName)
+                        .focused($focusedField, equals: .displayName)
+                        .submitLabel(.next)
+                        .onSubmit {
+                            focusedField = .uniformNumber
+                        }
                     TextField("Uniform Number", text: $player.uniformNumber)
+                        .focused($focusedField, equals: .uniformNumber)
+                        .submitLabel(.next)
+                        .onSubmit {
+                            focusedField = .pronunciation
+                        }
                     TextField("Pronunciation Override", text: $player.pronunciationOverride)
+                        .focused($focusedField, equals: .pronunciation)
                     Toggle("Present Today", isOn: $player.isPresent)
-                    PhotosPicker(selection: $photoItem, matching: .images) {
-                        Label(player.photoRelativePath == nil ? "Choose Photo" : "Replace Photo", systemImage: "photo")
-                    }
                 }
 
                 Section("Cue Source") {
@@ -949,6 +967,8 @@ private struct PlayerEditorSheet: View {
                 }
             }
             .navigationTitle(player.displayName.isEmpty ? "Player" : player.displayName)
+            .scrollDismissesKeyboard(.interactively)
+            .dismissesKeyboardOnTap()
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) { Button("Close") { dismiss() } }
                 ToolbarItem(placement: .topBarTrailing) {
@@ -963,6 +983,12 @@ private struct PlayerEditorSheet: View {
             }
             .onAppear {
                 normalizeTrimModeForCurrentCue()
+            }
+            .task {
+                await appModel.refreshAppleMusicPlaybackCapability()
+                if await appModel.refreshAppleMusicCueMetadata(for: player.id) {
+                    await MainActor.run { refreshPlayerFromModel() }
+                }
             }
             .onDisappear {
                 if appModel.isRecordingCustomAnnouncer(for: player) {
@@ -1002,11 +1028,17 @@ private struct PlayerEditorSheet: View {
             }
             .sheet(isPresented: $showAppleMusicPicker) {
                 AppleMusicPickerSheet(appModel: appModel) { result in
-                    appModel.assignAppleMusic(result, to: player)
-                    refreshPlayerFromModel()
-                    trimMode = .suggestedHook
-                    applyTrimSuggestion(mode: .suggestedHook)
-                    showAppleMusicPicker = false
+                    let currentPlayer = player
+                    Task {
+                        let didAssign = await appModel.assignAppleMusic(result, to: currentPlayer)
+                        guard didAssign else { return }
+                        await MainActor.run {
+                            refreshPlayerFromModel()
+                            trimMode = .suggestedHook
+                            applyTrimSuggestion(mode: .suggestedHook)
+                            showAppleMusicPicker = false
+                        }
+                    }
                 }
             }
             .sheet(isPresented: $showAdvancedTrim) {
@@ -1253,6 +1285,7 @@ private struct AppleMusicPickerSheet: View {
     @State private var isLoading = false
     @State private var hasSearched = false
     @State private var searchTask: Task<Void, Never>?
+    @State private var searchError: String?
 
     private var showsRecents: Bool {
         searchTerm.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
@@ -1272,6 +1305,7 @@ private struct AppleMusicPickerSheet: View {
                                 AppleMusicRow(
                                     title: recent.title,
                                     artistName: recent.artistName,
+                                    badge: recent.isCatalogBacked == false ? "Preview" : "Full Song",
                                     onSelect: {
                                         onSelect(recent.asSearchResult)
                                     },
@@ -1291,13 +1325,14 @@ private struct AppleMusicPickerSheet: View {
                                     .foregroundStyle(.secondary)
                             }
                         } else if results.isEmpty, hasSearched {
-                            Text("No songs found. Try a different search.")
+                            Text(searchError ?? "No songs found. Try a different search.")
                                 .foregroundStyle(.secondary)
                         } else {
                             ForEach(results) { result in
                                 AppleMusicRow(
                                     title: result.title,
                                     artistName: result.artistName,
+                                    badge: result.isCatalogBacked ? "Full Song" : "Preview",
                                     onSelect: {
                                         onSelect(result)
                                     },
@@ -1352,21 +1387,24 @@ private struct AppleMusicPickerSheet: View {
             results = []
             isLoading = false
             hasSearched = false
+            searchError = nil
             return
         }
 
         isLoading = true
         hasSearched = false
+        searchError = nil
         searchTask = Task {
             try? await Task.sleep(for: .milliseconds(300))
             guard !Task.isCancelled else { return }
             do {
-                let fetched = try await appModel.musicCatalogService.search(term: trimmed)
+                let fetched = try await appModel.searchAppleMusic(term: trimmed)
                 guard !Task.isCancelled else { return }
                 await MainActor.run {
                     results = fetched
                     isLoading = false
                     hasSearched = true
+                    searchError = nil
                 }
             } catch {
                 guard !Task.isCancelled else { return }
@@ -1374,6 +1412,7 @@ private struct AppleMusicPickerSheet: View {
                     results = []
                     isLoading = false
                     hasSearched = true
+                    searchError = error.localizedDescription
                     appModel.lastError = error.localizedDescription
                 }
             }
@@ -1384,6 +1423,7 @@ private struct AppleMusicPickerSheet: View {
 private struct AppleMusicRow: View {
     let title: String
     let artistName: String
+    let badge: String
     let onSelect: () -> Void
     let onPreview: () -> Void
 
@@ -1396,6 +1436,9 @@ private struct AppleMusicRow: View {
                     Text(artistName)
                         .font(.caption)
                         .foregroundStyle(.secondary)
+                    Text(badge)
+                        .font(.caption2.weight(.semibold))
+                        .foregroundStyle(badge == "Full Song" ? .green : .orange)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .contentShape(Rectangle())
@@ -1531,7 +1574,7 @@ private struct AdvancedTrimSheet: View {
 
 private extension RecentAppleMusicSelection {
     var asSearchResult: MusicSearchResult {
-        MusicSearchResult(songID: songID, title: title, artistName: artistName, duration: duration, previewURL: previewURL)
+        MusicSearchResult(songID: songID, title: title, artistName: artistName, duration: duration, previewURL: previewURL, isCatalogBacked: isCatalogBacked ?? true)
     }
 }
 
@@ -1567,6 +1610,16 @@ private struct PlayerPhotoThumbnail: View {
     private func loadImage() -> UIImage? {
         guard let relativePath else { return nil }
         return PlayerPhotoCache.shared.image(for: relativePath)
+    }
+}
+
+private extension View {
+    func dismissesKeyboardOnTap() -> some View {
+        simultaneousGesture(
+            TapGesture().onEnded {
+                UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+            }
+        )
     }
 }
 

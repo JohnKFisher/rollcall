@@ -16,10 +16,11 @@ enum AppError: LocalizedError {
     case appleMusicSongUnavailable
     case invalidCSV
     case noAudioTrack
-    case protectedModeExitRequired
     case microphonePermissionDenied
     case recordingUnavailable
     case invalidAnnouncerText
+    case missingBuiltInClip
+    case appleMusicFullSongCatalogUnavailable
 
     var errorDescription: String? {
         switch self {
@@ -43,16 +44,22 @@ enum AppError: LocalizedError {
             return "That CSV could not be parsed. Use a header row with name and number, or simple two-column rows."
         case .noAudioTrack:
             return "That video does not contain an audio track that Roll Call can import."
-        case .protectedModeExitRequired:
-            return "Turn off protected mode before leaving Game Day."
         case .microphonePermissionDenied:
             return "Microphone access is required to record a custom announcer intro."
         case .recordingUnavailable:
             return "Custom announcer recording is not available right now."
         case .invalidAnnouncerText:
             return "Enter announcer text before generating or previewing built-in voice audio."
+        case .missingBuiltInClip:
+            return "A built-in General Clip could not be loaded from the app bundle."
+        case .appleMusicFullSongCatalogUnavailable:
+            return "Roll Call could not load a full-song Apple Music catalog result. Check Apple Music account access and the MusicKit app service, then try again."
         }
     }
+}
+
+private func builtInClipRelativePath(for source: BuiltInClipSource) -> String {
+    "\(source.id).mp3"
 }
 
 struct AudioAssetService: Sendable {
@@ -116,21 +123,13 @@ struct AudioAssetService: Sendable {
     func ensureBuiltInAssets() throws {
         for builtIn in BuiltInClip.defaults {
             guard case .builtInClip(let source) = builtIn.cue.source else { continue }
-            let url = try AppPaths.assetsDirectory().appendingPathComponent("\(source.id).caf")
+            let relativePath = builtInClipRelativePath(for: source)
+            let url = try AppPaths.assetsDirectory().appendingPathComponent(relativePath)
             guard !FileManager.default.fileExists(atPath: url.path()) else { continue }
-            let format = AVAudioFormat(standardFormatWithSampleRate: 44_100, channels: 1)!
-            let frames = AVAudioFrameCount(44_100 * 4)
-            let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: frames)!
-            buffer.frameLength = frames
-            let channel = buffer.floatChannelData![0]
-            let freq = Float(240 + abs(source.id.hashValue % 160))
-            for index in 0..<Int(frames) {
-                let t = Float(index) / 44_100
-                let env = min(1, t * 4) * max(0.12, 1 - ((t - 3.1) / 0.9))
-                channel[index] = (sin(2 * .pi * freq * t) * 0.22 + sin(2 * .pi * freq * 1.6 * t) * 0.12) * env
+            guard let bundledURL = Bundle.main.url(forResource: source.id, withExtension: "mp3", subdirectory: "BuiltInAudio") else {
+                throw AppError.missingBuiltInClip
             }
-            let file = try AVAudioFile(forWriting: url, settings: format.settings)
-            try file.write(from: buffer)
+            try FileManager.default.copyItem(at: bundledURL, to: url)
         }
     }
 
@@ -194,6 +193,7 @@ struct MusicSearchResult: Identifiable {
     var artistName: String
     var duration: TimeInterval?
     var previewURL: URL?
+    var isCatalogBacked: Bool = true
 }
 
 enum AppleMusicPlaybackCapability: Equatable {
@@ -202,16 +202,30 @@ enum AppleMusicPlaybackCapability: Equatable {
     case fullSong
 }
 
+enum AppleMusicSearchMode: Equatable {
+    case catalogOnly
+    case previewFallback
+}
+
 struct MusicCatalogService: Sendable {
-    func search(term: String) async throws -> [MusicSearchResult] {
+    func search(term: String, mode: AppleMusicSearchMode) async throws -> [MusicSearchResult] {
         let trimmed = term.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { throw AppError.invalidSearchTerm }
 
-        do {
-            let status = try await authorizedStatus()
-            guard status == .authorized else { throw AppError.musicAuthorizationRequired }
+        if mode == .catalogOnly {
+            do {
+                let catalogResults = try await catalogSearch(term: trimmed)
+                guard !catalogResults.isEmpty else { throw AppError.musicSearchUnavailable }
+                return catalogResults
+            } catch let error as AppError {
+                throw error
+            } catch {
+                throw AppError.appleMusicFullSongCatalogUnavailable
+            }
+        }
 
-            let musicKitResults = try await searchWithMusicKit(term: trimmed)
+        do {
+            let musicKitResults = try await catalogSearch(term: trimmed)
             if !musicKitResults.isEmpty {
                 return musicKitResults
             }
@@ -223,6 +237,22 @@ struct MusicCatalogService: Sendable {
         let previewResults = try await searchWithITunesPreview(term: trimmed)
         guard !previewResults.isEmpty else { throw AppError.musicSearchUnavailable }
         return previewResults
+    }
+
+    func catalogBackedResult(for result: MusicSearchResult) async throws -> MusicSearchResult {
+        let song = try await song(for: result.songID)
+        var resolvedDuration = song.duration ?? result.duration
+        if resolvedDuration == nil {
+            resolvedDuration = try? await durationFromITunesLookup(songID: song.id.rawValue)
+        }
+        return MusicSearchResult(
+            songID: song.id.rawValue,
+            title: song.title,
+            artistName: song.artistName,
+            duration: resolvedDuration,
+            previewURL: song.previewAssets?.first?.url ?? result.previewURL,
+            isCatalogBacked: true
+        )
     }
 
     func playbackCapability() async -> AppleMusicPlaybackCapability {
@@ -250,6 +280,12 @@ struct MusicCatalogService: Sendable {
         return song
     }
 
+    private func catalogSearch(term: String) async throws -> [MusicSearchResult] {
+        let status = try await authorizedStatus()
+        guard status == .authorized else { throw AppError.musicAuthorizationRequired }
+        return try await searchWithMusicKit(term: term)
+    }
+
     private func searchWithMusicKit(term: String) async throws -> [MusicSearchResult] {
         var request = MusicCatalogSearchRequest(term: term, types: [Song.self])
         request.limit = 20
@@ -260,7 +296,8 @@ struct MusicCatalogService: Sendable {
                 title: $0.title,
                 artistName: $0.artistName,
                 duration: $0.duration,
-                previewURL: $0.previewAssets?.first?.url
+                previewURL: $0.previewAssets?.first?.url,
+                isCatalogBacked: true
             )
         }
     }
@@ -287,10 +324,25 @@ struct MusicCatalogService: Sendable {
                 songID: String(item.trackID),
                 title: item.trackName,
                 artistName: item.artistName,
-                duration: nil,
-                previewURL: previewURL
+                duration: item.trackTimeMillis.map { TimeInterval($0) / 1000 },
+                previewURL: previewURL,
+                isCatalogBacked: false
             )
         }
+    }
+
+    private func durationFromITunesLookup(songID: String) async throws -> TimeInterval? {
+        var components = URLComponents(string: "https://itunes.apple.com/lookup")
+        components?.queryItems = [URLQueryItem(name: "id", value: songID)]
+        guard let url = components?.url else { return nil }
+
+        let (data, response) = try await URLSession.shared.data(from: url)
+        guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
+            return nil
+        }
+
+        let decoded = try JSONDecoder().decode(ITunesSearchResponse.self, from: data)
+        return decoded.results.first?.trackTimeMillis.map { TimeInterval($0) / 1000 }
     }
 
     private func authorizedStatus() async throws -> MusicAuthorization.Status {
@@ -312,12 +364,14 @@ private struct ITunesTrack: Decodable {
     let trackName: String
     let artistName: String
     let previewURL: URL?
+    let trackTimeMillis: Int?
 
     enum CodingKeys: String, CodingKey {
         case trackID = "trackId"
         case trackName
         case artistName
         case previewURL = "previewUrl"
+        case trackTimeMillis
     }
 }
 
@@ -409,7 +463,7 @@ final class CuePlaybackEngine: NSObject, ObservableObject {
             prewarmedCueID = cue.id
             prewarmedLocalPlayer = player
         case .builtInClip(let source):
-            let url = try audioAssetService.assetURL(relativePath: "\(source.id).caf")
+            let url = try audioAssetService.assetURL(relativePath: builtInClipRelativePath(for: source))
             let player = try AVAudioPlayer(contentsOf: url)
             player.currentTime = cue.startTime
             player.prepareToPlay()
@@ -513,7 +567,7 @@ final class CuePlaybackEngine: NSObject, ObservableObject {
         switch cue.source {
         case .appleMusic(let source):
             let clipDuration = min(duration, appleMusicClipDurationLimit)
-            if source.duration != nil, await musicCatalogService.playbackCapability() == .fullSong {
+            if source.isCatalogBacked != false, await musicCatalogService.playbackCapability() == .fullSong {
                 do {
                     let song = try await resolveSong(for: source)
                     let entry = MusicPlayer.Queue.Entry(
@@ -530,7 +584,7 @@ final class CuePlaybackEngine: NSObject, ObservableObject {
                     }
                     return
                 } catch {
-                    guard source.previewURL != nil else { throw error }
+                    throw AppError.appleMusicFullSongCatalogUnavailable
                 }
             }
 
@@ -550,7 +604,7 @@ final class CuePlaybackEngine: NSObject, ObservableObject {
             let url = try audioAssetService.assetURL(relativePath: source.relativePath)
             try playLocal(url: url, start: cue.startTime, duration: duration, fadeOut: cue.fadeOutDuration, reusePrewarm: prewarmedCueID == cue.id)
         case .builtInClip(let source):
-            let url = try audioAssetService.assetURL(relativePath: "\(source.id).caf")
+            let url = try audioAssetService.assetURL(relativePath: builtInClipRelativePath(for: source))
             try playLocal(url: url, start: cue.startTime, duration: duration, fadeOut: cue.fadeOutDuration, reusePrewarm: prewarmedCueID == cue.id)
         }
     }
@@ -669,7 +723,7 @@ final class ReadinessService {
                 return ReadinessCheck(id: "player-\(player.id)", title: player.displayName, detail: "Local cue file is missing from app storage.", state: .failed)
             }
         case .builtInClip(let source):
-            if !audioAssetService.assetExists(relativePath: "\(source.id).caf") {
+            if !audioAssetService.assetExists(relativePath: builtInClipRelativePath(for: source)) {
                 return ReadinessCheck(id: "player-\(player.id)", title: player.displayName, detail: "Built-in clip asset is missing.", state: .failed)
             }
         }
@@ -699,6 +753,7 @@ final class ReadinessService {
 
     private func customAnnouncerChecks(for team: Team?) -> [ReadinessCheck] {
         guard let team else { return [] }
+        guard team.session.gameDayAnnouncerMode == .announcer else { return [] }
         let presentPlayers = team.presentPlayersInBattingOrder
         guard !presentPlayers.isEmpty else { return [] }
 
@@ -727,6 +782,7 @@ final class ReadinessService {
 
     private func announcerVoiceChecks(for team: Team?) -> [ReadinessCheck] {
         guard let team else { return [] }
+        guard team.session.gameDayAnnouncerMode == .announcer else { return [] }
         guard let requested = team.announcerProfile.requestedVoiceIdentifier,
               let resolved = team.announcerProfile.resolvedVoiceIdentifier,
               requested != resolved else {

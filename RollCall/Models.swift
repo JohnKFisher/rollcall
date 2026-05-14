@@ -1,7 +1,7 @@
 import Foundation
 
 enum AppMetadata {
-    static let appVersion = "0.3.5"
+    static let appVersion = "0.3.7"
 }
 
 enum CueSource: Codable, Equatable {
@@ -52,6 +52,7 @@ struct AppleMusicSource: Codable, Equatable, Identifiable {
     var artistName: String
     var duration: TimeInterval?
     var previewURL: URL?
+    var isCatalogBacked: Bool? = nil
 }
 
 struct RecentAppleMusicSelection: Codable, Equatable, Identifiable {
@@ -61,6 +62,7 @@ struct RecentAppleMusicSelection: Codable, Equatable, Identifiable {
     var artistName: String
     var duration: TimeInterval?
     var previewURL: URL?
+    var isCatalogBacked: Bool? = nil
     var selectedAt: Date
 }
 
@@ -81,6 +83,32 @@ struct LocalAudioSource: Codable, Equatable, Identifiable {
 struct BuiltInClipSource: Codable, Equatable, Identifiable {
     var id: String
     var displayName: String
+}
+
+func normalizedPlayerNameParts(_ name: String) -> (first: String, remainder: String) {
+    let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard let splitIndex = trimmedName.firstIndex(where: \.isWhitespace) else {
+        return (trimmedName, "")
+    }
+
+    let firstName = String(trimmedName[..<splitIndex])
+    let remainder = trimmedName[splitIndex...].trimmingCharacters(in: .whitespacesAndNewlines)
+    return (firstName, remainder)
+}
+
+func alphabeticalPlayerIDs(for players: [Player]) -> [UUID] {
+    players.sorted { lhs, rhs in
+        let lhsName = normalizedPlayerNameParts(lhs.displayName)
+        let rhsName = normalizedPlayerNameParts(rhs.displayName)
+        if lhsName.first != rhsName.first {
+            return lhsName.first.localizedCaseInsensitiveCompare(rhsName.first) == .orderedAscending
+        }
+        if lhsName.remainder != rhsName.remainder {
+            return lhsName.remainder.localizedCaseInsensitiveCompare(rhsName.remainder) == .orderedAscending
+        }
+        return lhs.displayName.localizedCaseInsensitiveCompare(rhs.displayName) == .orderedAscending
+    }
+    .map(\.id)
 }
 
 enum GameDayAnnouncerMode: String, Codable, CaseIterable, Identifiable {
@@ -263,17 +291,20 @@ struct TeamSessionState: Codable, Equatable {
     var battingOrder: [UUID]
     var nextBatterIndex: Int
     var gameDayAnnouncerMode: GameDayAnnouncerMode
+    var battingOrderIsCustomized: Bool
 
     init(
         activeSessionDate: Date?,
         battingOrder: [UUID],
         nextBatterIndex: Int,
-        gameDayAnnouncerMode: GameDayAnnouncerMode
+        gameDayAnnouncerMode: GameDayAnnouncerMode,
+        battingOrderIsCustomized: Bool
     ) {
         self.activeSessionDate = activeSessionDate
         self.battingOrder = battingOrder
         self.nextBatterIndex = nextBatterIndex
         self.gameDayAnnouncerMode = gameDayAnnouncerMode
+        self.battingOrderIsCustomized = battingOrderIsCustomized
     }
 
     enum CodingKeys: String, CodingKey {
@@ -281,6 +312,7 @@ struct TeamSessionState: Codable, Equatable {
         case battingOrder
         case nextBatterIndex
         case gameDayAnnouncerMode
+        case battingOrderIsCustomized
     }
 
     init(from decoder: Decoder) throws {
@@ -289,18 +321,15 @@ struct TeamSessionState: Codable, Equatable {
         battingOrder = try container.decodeIfPresent([UUID].self, forKey: .battingOrder) ?? []
         nextBatterIndex = try container.decodeIfPresent(Int.self, forKey: .nextBatterIndex) ?? 0
         gameDayAnnouncerMode = try container.decodeIfPresent(GameDayAnnouncerMode.self, forKey: .gameDayAnnouncerMode) ?? .noAnnouncer
+        battingOrderIsCustomized = try container.decodeIfPresent(Bool.self, forKey: .battingOrderIsCustomized) ?? false
     }
 }
 
 struct AppSettings: Codable, Equatable {
-    var protectedModeEnabled: Bool
     var hapticsEnabled: Bool
-    var reusePreviousLineupOnNewDay: Bool
 
     static let `default` = AppSettings(
-        protectedModeEnabled: false,
-        hapticsEnabled: true,
-        reusePreviousLineupOnNewDay: true
+        hapticsEnabled: true
     )
 }
 
@@ -353,7 +382,7 @@ struct Team: Codable, Equatable, Identifiable {
         modifiedAt = try container.decodeIfPresent(Date.self, forKey: .modifiedAt) ?? createdAt
         players = try container.decodeIfPresent([Player].self, forKey: .players) ?? []
         builtInClips = try container.decodeIfPresent([BuiltInClip].self, forKey: .builtInClips) ?? BuiltInClip.defaults
-        session = try container.decodeIfPresent(TeamSessionState.self, forKey: .session) ?? TeamSessionState(activeSessionDate: nil, battingOrder: players.map(\.id), nextBatterIndex: 0, gameDayAnnouncerMode: .noAnnouncer)
+        session = try container.decodeIfPresent(TeamSessionState.self, forKey: .session) ?? TeamSessionState(activeSessionDate: nil, battingOrder: alphabeticalPlayerIDs(for: players), nextBatterIndex: 0, gameDayAnnouncerMode: .noAnnouncer, battingOrderIsCustomized: false)
         let legacyPlayers = (try? container.decodeIfPresent([LegacyPlayerDecoder.LegacyPlayerPayload].self, forKey: .players)) ?? []
 
         if let decodedProfile = try container.decodeIfPresent(TeamAnnouncerProfile.self, forKey: .announcerProfile) {
@@ -365,6 +394,23 @@ struct Team: Codable, Equatable, Identifiable {
         if try container.decodeIfPresent(TeamAnnouncerProfile.self, forKey: .announcerProfile) == nil,
            LegacyPlayerDecoder.legacyAnnouncerEnabled(in: legacyPlayers) {
             session.gameDayAnnouncerMode = .announcer
+        }
+
+        let alphabeticalIDs = alphabeticalPlayerIDs(for: players)
+        if !session.battingOrderIsCustomized, !session.battingOrder.isEmpty, session.battingOrder != alphabeticalIDs {
+            session.battingOrderIsCustomized = true
+        }
+
+        let builtInSourceIDs = Set(
+            builtInClips.compactMap { clip in
+                if case .builtInClip(let source) = clip.cue.source {
+                    return source.id
+                }
+                return nil
+            }
+        )
+        if builtInSourceIDs == ["charge-up", "crowd-lift"] {
+            builtInClips = BuiltInClip.defaults
         }
     }
 }
@@ -479,7 +525,7 @@ struct AppState: Codable, Equatable {
     }
 
     static let empty = AppState(
-        schemaVersion: 4,
+        schemaVersion: 5,
         appVersion: AppMetadata.appVersion,
         deviceIdentity: DeviceIdentity(label: "This iPhone"),
         selectedTeamID: nil,
@@ -554,8 +600,12 @@ extension Cue {
 
 extension BuiltInClip {
     static let defaults: [BuiltInClip] = [
-        BuiltInClip(id: UUID(), title: "Charge Up", cue: Cue(id: UUID(), label: "Charge Up", source: .builtInClip(BuiltInClipSource(id: "charge-up", displayName: "Charge Up")), startTime: 0, duration: 6, fadeOutDuration: 0.35, pauseAfterAnnouncer: 0.2)),
-        BuiltInClip(id: UUID(), title: "Crowd Lift", cue: Cue(id: UUID(), label: "Crowd Lift", source: .builtInClip(BuiltInClipSource(id: "crowd-lift", displayName: "Crowd Lift")), startTime: 0, duration: 5, fadeOutDuration: 0.35, pauseAfterAnnouncer: 0.2)),
+        BuiltInClip(id: UUID(), title: "Small Cheer", cue: Cue(id: UUID(), label: "Small Cheer", source: .builtInClip(BuiltInClipSource(id: "small-cheer", displayName: "Small Cheer")), startTime: 0, duration: 5.5, fadeOutDuration: 0.35, pauseAfterAnnouncer: 0.2)),
+        BuiltInClip(id: UUID(), title: "Victory Roar", cue: Cue(id: UUID(), label: "Victory Roar", source: .builtInClip(BuiltInClipSource(id: "victory-roar", displayName: "Victory Roar")), startTime: 0, duration: 6.0, fadeOutDuration: 0.35, pauseAfterAnnouncer: 0.2)),
+        BuiltInClip(id: UUID(), title: "Stadium Burst", cue: Cue(id: UUID(), label: "Stadium Burst", source: .builtInClip(BuiltInClipSource(id: "stadium-burst", displayName: "Stadium Burst")), startTime: 0, duration: 5.0, fadeOutDuration: 0.35, pauseAfterAnnouncer: 0.2)),
+        BuiltInClip(id: UUID(), title: "Rhythmic Clap", cue: Cue(id: UUID(), label: "Rhythmic Clap", source: .builtInClip(BuiltInClipSource(id: "rhythmic-clap", displayName: "Rhythmic Clap")), startTime: 0, duration: 6.0, fadeOutDuration: 0.35, pauseAfterAnnouncer: 0.2)),
+        BuiltInClip(id: UUID(), title: "Whistle Pop", cue: Cue(id: UUID(), label: "Whistle Pop", source: .builtInClip(BuiltInClipSource(id: "whistle-pop", displayName: "Whistle Pop")), startTime: 0, duration: 4.0, fadeOutDuration: 0.3, pauseAfterAnnouncer: 0.2)),
+        BuiltInClip(id: UUID(), title: "Crowd Laugh", cue: Cue(id: UUID(), label: "Crowd Laugh", source: .builtInClip(BuiltInClipSource(id: "crowd-laugh", displayName: "Crowd Laugh")), startTime: 0, duration: 4.5, fadeOutDuration: 0.35, pauseAfterAnnouncer: 0.2)),
     ]
 }
 
@@ -596,7 +646,7 @@ extension Team {
             modifiedAt: .now,
             players: players,
             builtInClips: BuiltInClip.defaults,
-            session: TeamSessionState(activeSessionDate: nil, battingOrder: players.map(\.id), nextBatterIndex: 0, gameDayAnnouncerMode: .noAnnouncer),
+            session: TeamSessionState(activeSessionDate: nil, battingOrder: alphabeticalPlayerIDs(for: players), nextBatterIndex: 0, gameDayAnnouncerMode: .noAnnouncer, battingOrderIsCustomized: false),
             announcerProfile: .default
         )
     }

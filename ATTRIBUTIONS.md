@@ -1,0 +1,21 @@
+# Roll Call Attributions
+
+This file tracks bundled third-party audio assets that ship with Roll Call.
+
+## License Summary
+
+- Provider: Mixkit
+- License page: https://mixkit.co/license/
+- Sound effects catalog: https://mixkit.co/free-sound-effects/
+- Source pages reviewed for this update state that Mixkit sound effects are royalty-free, ready to use, and can be used without attribution.
+
+## Bundled General Clips
+
+| App Label | Bundled File | Source Title | Source Page | Preview URL | License | Attribution Requirement |
+| --- | --- | --- | --- | --- | --- | --- |
+| Small Cheer | `RollCall/BuiltInAudio/small-cheer.mp3` | Small group cheer and applause | https://mixkit.co/free-sound-effects/human/ | https://assets.mixkit.co/active_storage/sfx/518/518-preview.mp3 | Mixkit Sound Effects Free License | No attribution required on the reviewed Mixkit sound-effects pages |
+| Victory Roar | `RollCall/BuiltInAudio/victory-roar.mp3` | Huge crowd cheering victory | https://mixkit.co/free-sound-effects/crowd/ | https://assets.mixkit.co/active_storage/sfx/462/462-preview.mp3 | Mixkit Sound Effects Free License | No attribution required on the reviewed Mixkit sound-effects pages |
+| Stadium Burst | `RollCall/BuiltInAudio/stadium-burst.mp3` | Stadium joy shouting crowd | https://mixkit.co/free-sound-effects/crowd/ | https://assets.mixkit.co/active_storage/sfx/3022/3022-preview.mp3 | Mixkit Sound Effects Free License | No attribution required on the reviewed Mixkit sound-effects pages |
+| Rhythmic Clap | `RollCall/BuiltInAudio/rhythmic-clap.mp3` | Rhythmic applause and cheering | https://mixkit.co/free-sound-effects/crowd/ | https://assets.mixkit.co/active_storage/sfx/504/504-preview.mp3 | Mixkit Sound Effects Free License | No attribution required on the reviewed Mixkit sound-effects pages |
+| Whistle Pop | `RollCall/BuiltInAudio/whistle-pop.mp3` | Male crowd cheering short | https://mixkit.co/free-sound-effects/crowd/ | https://assets.mixkit.co/active_storage/sfx/459/459-preview.mp3 | Mixkit Sound Effects Free License | No attribution required on the reviewed Mixkit sound-effects pages |
+| Crowd Laugh | `RollCall/BuiltInAudio/crowd-laugh.mp3` | Crowd laugh | https://mixkit.co/free-sound-effects/crowd/ | https://assets.mixkit.co/active_storage/sfx/424/424-preview.mp3 | Mixkit Sound Effects Free License | No attribution required on the reviewed Mixkit sound-effects pages |

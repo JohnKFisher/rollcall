@@ -161,7 +161,7 @@ final class AppModel: ObservableObject {
         self.state.appVersion = AppMetadata.appVersion
         self.state.schemaVersion = max(self.state.schemaVersion, AppState.empty.schemaVersion)
         normalizeSelectedTeamIfNeeded()
-        normalizeAllTeamsForToday()
+        normalizeAllTeams()
         persist()
     }
 
@@ -200,7 +200,6 @@ final class AppModel: ObservableObject {
 
     func selectTeam(_ team: Team) {
         state.selectedTeamID = team.id
-        prepareSessionForToday()
         prewarmNextBatterCue()
         scheduleReadinessRefresh()
         persist()
@@ -216,33 +215,49 @@ final class AppModel: ObservableObject {
             modifiedAt: .now,
             players: [],
             builtInClips: BuiltInClip.defaults,
-            session: TeamSessionState(activeSessionDate: nil, battingOrder: [], nextBatterIndex: 0, gameDayAnnouncerMode: .noAnnouncer),
+            session: TeamSessionState(activeSessionDate: nil, battingOrder: [], nextBatterIndex: 0, gameDayAnnouncerMode: .noAnnouncer, battingOrderIsCustomized: false),
             announcerProfile: .default
         )
         state.teams.append(team)
         state.selectedTeamID = team.id
-        prepareSessionForToday()
         persist()
     }
 
     func duplicateTeam() {
         guard var team = selectedTeam else { return }
+        let originalPlayers = team.players
+        let originalBattingOrder = team.session.battingOrder
+        let originalNextBatter = team.nextBatter?.id
         team.id = UUID()
         team.name += " Copy"
-        team.players = team.players.map { player in
+        var playerIDMap: [UUID: UUID] = [:]
+        team.players = originalPlayers.map { player in
             var player = player
+            let oldID = player.id
             player.id = UUID()
+            playerIDMap[oldID] = player.id
             if var cue = player.cue {
                 cue.id = UUID()
                 player.cue = cue
             }
             return player
         }
-        team.session = TeamSessionState(activeSessionDate: nil, battingOrder: team.players.map(\.id), nextBatterIndex: 0, gameDayAnnouncerMode: team.session.gameDayAnnouncerMode)
+        let duplicatedOrder = originalBattingOrder.compactMap { playerIDMap[$0] }
+        let nextBatterID = originalNextBatter.flatMap { playerIDMap[$0] }
+        let duplicatedPresentPlayers = team.orderedPlayers(by: duplicatedOrder).filter(\.isPresent)
+        let duplicatedNextBatterIndex = nextBatterID.flatMap { nextID in
+            duplicatedPresentPlayers.firstIndex(where: { $0.id == nextID })
+        } ?? 0
+        team.session = TeamSessionState(
+            activeSessionDate: nil,
+            battingOrder: duplicatedOrder,
+            nextBatterIndex: duplicatedNextBatterIndex,
+            gameDayAnnouncerMode: team.session.gameDayAnnouncerMode,
+            battingOrderIsCustomized: team.session.battingOrderIsCustomized
+        )
         state.teams.append(team)
         state.selectedTeamID = team.id
-        prepareSessionForToday()
-        snapshot(reason: "Duplicate team")
+        normalizeLineup(for: state.teams.count - 1)
         persist()
     }
 
@@ -257,7 +272,9 @@ final class AppModel: ObservableObject {
 
     func addPlayer(name: String, number: String) {
         guard let teamIndex = teamIndex else { return }
-        let player = Player(id: UUID(), displayName: name, uniformNumber: number, pronunciationOverride: "", photoRelativePath: nil, cue: nil, isPresent: true)
+        let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedName.isEmpty else { return }
+        let player = Player(id: UUID(), displayName: trimmedName, uniformNumber: number.trimmingCharacters(in: .whitespacesAndNewlines), pronunciationOverride: "", photoRelativePath: nil, cue: nil, isPresent: true)
         state.teams[teamIndex].players.append(player)
         state.teams[teamIndex].session.battingOrder.append(player.id)
         state.teams[teamIndex].modifiedAt = .now
@@ -291,9 +308,8 @@ final class AppModel: ObservableObject {
     func movePlayers(from offsets: IndexSet, to offset: Int) {
         guard let teamIndex else { return }
         state.teams[teamIndex].players.move(fromOffsets: offsets, toOffset: offset)
-        if !state.teams[teamIndex].session.battingOrder.elementsEqual(state.teams[teamIndex].players.map(\.id)) {
-            state.teams[teamIndex].session.battingOrder = state.teams[teamIndex].players.map(\.id)
-        }
+        state.teams[teamIndex].session.battingOrder = state.teams[teamIndex].players.map(\.id)
+        state.teams[teamIndex].session.battingOrderIsCustomized = true
         normalizeLineup(for: teamIndex)
         prewarmNextBatterCue()
         persist()
@@ -302,39 +318,44 @@ final class AppModel: ObservableObject {
     func moveBattingOrder(from offsets: IndexSet, to offset: Int) {
         guard let teamIndex else { return }
         state.teams[teamIndex].session.battingOrder.move(fromOffsets: offsets, toOffset: offset)
+        state.teams[teamIndex].session.battingOrderIsCustomized = true
         normalizeLineup(for: teamIndex)
         prewarmNextBatterCue()
         persist()
     }
 
-    func moveBattingOrderPlayer(_ playerID: UUID, onto targetPlayerID: UUID) {
+    func sortBattingOrderAlphabetically() {
         guard let teamIndex else { return }
-
-        var battingOrder = state.teams[teamIndex].session.battingOrder
-        guard
-            let sourceIndex = battingOrder.firstIndex(of: playerID),
-            let targetIndex = battingOrder.firstIndex(of: targetPlayerID),
-            sourceIndex != targetIndex
-        else {
-            return
-        }
-
-        let movedPlayerID = battingOrder.remove(at: sourceIndex)
-        guard let updatedTargetIndex = battingOrder.firstIndex(of: targetPlayerID) else { return }
-        let destinationIndex = sourceIndex < targetIndex ? updatedTargetIndex + 1 : updatedTargetIndex
-        battingOrder.insert(movedPlayerID, at: destinationIndex)
-
-        state.teams[teamIndex].session.battingOrder = battingOrder
+        state.teams[teamIndex].session.battingOrder = alphabeticalBattingOrder(for: state.teams[teamIndex].players)
+        state.teams[teamIndex].session.battingOrderIsCustomized = true
         normalizeLineup(for: teamIndex)
         prewarmNextBatterCue()
         persist()
     }
 
-    func assignAppleMusic(_ result: MusicSearchResult, to player: Player) {
-        var updated = player
-        updated.cue = makeDefaultAppleMusicCue(for: result)
-        rememberAppleMusicSelection(result)
-        updatePlayer(updated)
+    func sortBattingOrderByNumber() {
+        guard let teamIndex else { return }
+        state.teams[teamIndex].session.battingOrder = uniformNumberBattingOrder(for: state.teams[teamIndex].players)
+        state.teams[teamIndex].session.battingOrderIsCustomized = true
+        normalizeLineup(for: teamIndex)
+        prewarmNextBatterCue()
+        persist()
+    }
+
+    @discardableResult
+    func assignAppleMusic(_ result: MusicSearchResult, to player: Player) async -> Bool {
+        do {
+            await refreshAppleMusicPlaybackCapability()
+            let resolvedResult = try await enrichedAppleMusicSelection(result)
+            var updated = player
+            updated.cue = makeDefaultAppleMusicCue(for: resolvedResult)
+            rememberAppleMusicSelection(resolvedResult)
+            updatePlayer(updated)
+            return true
+        } catch {
+            lastError = error.localizedDescription
+            return false
+        }
     }
 
     func importMedia(from url: URL, for player: Player) async {
@@ -445,13 +466,62 @@ final class AppModel: ObservableObject {
     }
 
     func previewAppleMusicSearchResult(_ result: MusicSearchResult) async {
-        let cue = makeDefaultAppleMusicCue(for: result)
-        await previewCue(cue)
+        do {
+            await refreshAppleMusicPlaybackCapability()
+            let cue = makeDefaultAppleMusicCue(for: try await enrichedAppleMusicSelection(result))
+            await previewCue(cue)
+        } catch {
+            lastError = error.localizedDescription
+        }
     }
 
     func refreshAppleMusicPlaybackCapability() async {
         let capability = await musicCatalogService.playbackCapability()
         appleMusicPlaybackCapability = capability
+    }
+
+    func searchAppleMusic(term: String) async throws -> [MusicSearchResult] {
+        await refreshAppleMusicPlaybackCapability()
+        let mode: AppleMusicSearchMode = appleMusicPlaybackCapability == .fullSong ? .catalogOnly : .previewFallback
+        return try await musicCatalogService.search(term: term, mode: mode)
+    }
+
+    @discardableResult
+    func refreshAppleMusicCueMetadata(for playerID: UUID) async -> Bool {
+        await refreshAppleMusicPlaybackCapability()
+        guard appleMusicPlaybackCapability == .fullSong,
+              let teamIndex,
+              let playerIndex = state.teams[teamIndex].players.firstIndex(where: { $0.id == playerID }),
+              var cue = state.teams[teamIndex].players[playerIndex].cue,
+              case .appleMusic(var source) = cue.source,
+              source.isCatalogBacked != false,
+              source.duration == nil else {
+            return false
+        }
+
+        do {
+            let resolved = try await musicCatalogService.catalogBackedResult(for: MusicSearchResult(
+                songID: source.songID,
+                title: source.title,
+                artistName: source.artistName,
+                duration: source.duration,
+                previewURL: source.previewURL,
+                isCatalogBacked: true
+            ))
+            source.songID = resolved.songID
+            source.title = resolved.title
+            source.artistName = resolved.artistName
+            source.duration = resolved.duration
+            source.previewURL = resolved.previewURL
+            source.isCatalogBacked = true
+            cue.source = .appleMusic(source)
+            state.teams[teamIndex].players[playerIndex].cue = cue
+            persist()
+            return true
+        } catch {
+            lastError = error.localizedDescription
+            return false
+        }
     }
 
     func previewBuiltInAnnouncer(profile: TeamAnnouncerProfile? = nil) async {
@@ -467,7 +537,6 @@ final class AppModel: ObservableObject {
 
     func advanceNextBatter() {
         guard let teamIndex else { return }
-        prepareSessionForToday()
         let present = state.teams[teamIndex].presentPlayersInBattingOrder
         guard !present.isEmpty else {
             haptics.warning(isEnabled: state.settings.hapticsEnabled)
@@ -480,44 +549,8 @@ final class AppModel: ObservableObject {
         persist()
     }
 
-    func resetLineupForToday() {
-        guard let teamIndex else { return }
-        state.teams[teamIndex].session.activeSessionDate = .now
-        state.teams[teamIndex].session.battingOrder = state.teams[teamIndex].players.map(\.id)
-        normalizeLineup(for: teamIndex)
-        prewarmNextBatterCue()
-        persist()
-    }
-
-    func startFreshSession() {
-        guard let teamIndex else { return }
-        state.teams[teamIndex].session.activeSessionDate = .now
-        state.teams[teamIndex].session.nextBatterIndex = 0
-        if !state.settings.reusePreviousLineupOnNewDay {
-            state.teams[teamIndex].players = state.teams[teamIndex].players.map { player in
-                var player = player
-                player.isPresent = true
-                return player
-            }
-            state.teams[teamIndex].session.battingOrder = state.teams[teamIndex].players.map(\.id)
-        }
-        normalizeLineup(for: teamIndex)
-        prewarmNextBatterCue()
-        persist()
-    }
-
-    func toggleProtectedMode() {
-        state.settings.protectedModeEnabled.toggle()
-        persist()
-    }
-
     func setHapticsEnabled(_ isEnabled: Bool) {
         state.settings.hapticsEnabled = isEnabled
-        persist()
-    }
-
-    func setReusePreviousLineupOnNewDay(_ isEnabled: Bool) {
-        state.settings.reusePreviousLineupOnNewDay = isEnabled
         persist()
     }
 
@@ -556,13 +589,14 @@ final class AppModel: ObservableObject {
             defer {
                 if scoped { url.stopAccessingSecurityScopedResource() }
             }
-            self.snapshot(reason: "Before package import")
+            self.createBackup(reason: "Automatic backup before package import")
             let manifest = try self.packageService.import(packageURL: url, audioAssetService: self.audioAssetService)
             var imported = manifest.team
             imported.id = UUID()
             imported.name += " Imported"
             self.state.teams.append(imported)
             self.state.selectedTeamID = imported.id
+            self.normalizeLineup(for: self.state.teams.count - 1)
             self.persist()
             self.triggerAnnouncerRegeneration(for: imported.id, phase: "Regenerating imported built-in announcers")
         }
@@ -605,11 +639,10 @@ final class AppModel: ObservableObject {
     }
 
     func refreshReadiness() {
-        prepareSessionForToday()
         state.lastReadiness = readinessService.snapshot(for: selectedTeam)
     }
 
-    func snapshot(reason: String) {
+    func createBackup(reason: String) {
         let snapshotState = state
         Task(priority: .utility) { [weak self] in
             let result = await Task.detached(priority: .utility) { () -> Result<SnapshotRecord, Error> in
@@ -640,6 +673,17 @@ final class AppModel: ObservableObject {
             switch result {
             case .success(let snapshotRecord):
                 self.state.snapshots.insert(snapshotRecord, at: 0)
+                let overflow = Array(self.state.snapshots.dropFirst(10))
+                self.state.snapshots = Array(self.state.snapshots.prefix(10))
+                if !overflow.isEmpty {
+                    Task.detached(priority: .utility) {
+                        guard let snapshotsDirectory = try? AppPaths.snapshotsDirectory() else { return }
+                        for snapshot in overflow {
+                            let url = snapshotsDirectory.appendingPathComponent(snapshot.relativeManifestPath)
+                            try? FileManager.default.removeItem(at: url)
+                        }
+                    }
+                }
                 self.persist()
             case .failure(let error):
                 self.lastError = error.localizedDescription
@@ -647,7 +691,7 @@ final class AppModel: ObservableObject {
         }
     }
 
-    func restoreSnapshot(_ snapshot: SnapshotRecord) async {
+    func restoreBackup(_ snapshot: SnapshotRecord) async {
         await busy {
             guard let snapshotsDirectory = try? AppPaths.snapshotsDirectory() else {
                 throw AppError.invalidImport
@@ -671,7 +715,7 @@ final class AppModel: ObservableObject {
 
             self.state = restoredState
             self.normalizeSelectedTeamIfNeeded()
-            self.normalizeAllTeamsForToday()
+            self.normalizeAllTeams()
             self.scheduleReadinessRefresh()
         }
     }
@@ -707,42 +751,54 @@ final class AppModel: ObservableObject {
         state.selectedTeamID = state.teams.first?.id
     }
 
-    private func normalizeAllTeamsForToday() {
+    private func normalizeAllTeams() {
         for index in state.teams.indices {
             normalizeLineup(for: index)
-            if state.teams[index].session.activeSessionDate == nil {
-                state.teams[index].session.activeSessionDate = .now
-            }
         }
-    }
-
-    private func prepareSessionForToday() {
-        guard let teamIndex else { return }
-        normalizeLineup(for: teamIndex)
-        guard !Calendar.current.isDateInToday(state.teams[teamIndex].session.activeSessionDate ?? .distantPast) else {
-            return
-        }
-        state.teams[teamIndex].session.activeSessionDate = .now
-        state.teams[teamIndex].session.nextBatterIndex = 0
-        if !state.settings.reusePreviousLineupOnNewDay {
-            state.teams[teamIndex].session.battingOrder = state.teams[teamIndex].players.map(\.id)
-            state.teams[teamIndex].players = state.teams[teamIndex].players.map { player in
-                var player = player
-                player.isPresent = true
-                return player
-            }
-        }
-        normalizeLineup(for: teamIndex)
     }
 
     private func normalizeLineup(for teamIndex: Int) {
         let players = state.teams[teamIndex].players
         let ids = Set(players.map(\.id))
         let existingOrder = state.teams[teamIndex].session.battingOrder.filter { ids.contains($0) }
-        let missingOrder = players.map(\.id).filter { !existingOrder.contains($0) }
-        state.teams[teamIndex].session.battingOrder = existingOrder + missingOrder
+        if state.teams[teamIndex].session.battingOrderIsCustomized {
+            let missingOrder = players.map(\.id).filter { !existingOrder.contains($0) }
+            state.teams[teamIndex].session.battingOrder = existingOrder + missingOrder
+        } else {
+            state.teams[teamIndex].session.battingOrder = alphabeticalBattingOrder(for: players)
+        }
         let presentCount = state.teams[teamIndex].presentPlayersInBattingOrder.count
         state.teams[teamIndex].session.nextBatterIndex = presentCount == 0 ? 0 : min(max(state.teams[teamIndex].session.nextBatterIndex, 0), presentCount - 1)
+    }
+
+    private func alphabeticalBattingOrder(for players: [Player]) -> [UUID] {
+        alphabeticalPlayerIDs(for: players)
+    }
+
+    private func uniformNumberBattingOrder(for players: [Player]) -> [UUID] {
+        players.sorted { lhs, rhs in
+            let lhsNumber = Int(lhs.uniformNumber.trimmingCharacters(in: .whitespacesAndNewlines))
+            let rhsNumber = Int(rhs.uniformNumber.trimmingCharacters(in: .whitespacesAndNewlines))
+            switch (lhsNumber, rhsNumber) {
+            case let (lhs?, rhs?) where lhs != rhs:
+                return lhs < rhs
+            case (_?, nil):
+                return true
+            case (nil, _?):
+                return false
+            default:
+                let lhsName = normalizedPlayerNameParts(lhs.displayName)
+                let rhsName = normalizedPlayerNameParts(rhs.displayName)
+                if lhsName.first != rhsName.first {
+                    return lhsName.first.localizedCaseInsensitiveCompare(rhsName.first) == .orderedAscending
+                }
+                if lhsName.remainder != rhsName.remainder {
+                    return lhsName.remainder.localizedCaseInsensitiveCompare(rhsName.remainder) == .orderedAscending
+                }
+                return lhs.displayName.localizedCaseInsensitiveCompare(rhs.displayName) == .orderedAscending
+            }
+        }
+        .map(\.id)
     }
 
     private func prewarmNextBatterCue() {
@@ -871,9 +927,14 @@ final class AppModel: ObservableObject {
     }
 
     private func makeDefaultAppleMusicCue(for result: MusicSearchResult) -> Cue {
-        var cue = Cue.appleDefault(source: AppleMusicSource(songID: result.songID, title: result.title, artistName: result.artistName, duration: result.duration, previewURL: result.previewURL))
+        var cue = Cue.appleDefault(source: AppleMusicSource(songID: result.songID, title: result.title, artistName: result.artistName, duration: result.duration, previewURL: result.previewURL, isCatalogBacked: result.isCatalogBacked))
         cue.duration = min(max(state.trimDefaults.preferredLength, 6), cueDurationLimit(for: cue))
         return cue
+    }
+
+    private func enrichedAppleMusicSelection(_ result: MusicSearchResult) async throws -> MusicSearchResult {
+        guard appleMusicPlaybackCapability == .fullSong else { return result }
+        return try await musicCatalogService.catalogBackedResult(for: result)
     }
 
     private func rememberAppleMusicSelection(_ result: MusicSearchResult) {
@@ -883,6 +944,7 @@ final class AppModel: ObservableObject {
             artistName: result.artistName,
             duration: result.duration,
             previewURL: result.previewURL,
+            isCatalogBacked: result.isCatalogBacked,
             selectedAt: .now
         )
         state.recentAppleMusicSelections.removeAll { $0.songID == selection.songID }
@@ -896,6 +958,9 @@ final class AppModel: ObservableObject {
     func cueTimelineLength(for cue: Cue) -> Double {
         switch cue.source {
         case .appleMusic(let source):
+            if source.isCatalogBacked == false {
+                return 20
+            }
             switch appleMusicPlaybackCapability {
             case .fullSong:
                 return max(source.duration ?? 30, cue.startTime + cue.duration)
@@ -1000,7 +1065,6 @@ final class AppModel: ObservableObject {
             persist()
             return asset.relativePath
         } catch {
-            lastError = error.localizedDescription
             return nil
         }
     }
@@ -1034,12 +1098,17 @@ final class AppModel: ObservableObject {
                 announcerRegenerationStatus = AnnouncerRegenerationStatus(teamID: teamID, phase: phase, completed: index + 1, total: players.count)
                 persist()
             } catch {
-                lastError = error.localizedDescription
-                break
+                guard let liveTeamIndex = state.teams.firstIndex(where: { $0.id == teamID }),
+                      let playerIndex = state.teams[liveTeamIndex].players.firstIndex(where: { $0.id == player.id }) else {
+                    continue
+                }
+                state.teams[liveTeamIndex].players[playerIndex].generatedBuiltInAnnouncerRelativePath = nil
+                announcerRegenerationStatus = AnnouncerRegenerationStatus(teamID: teamID, phase: phase, completed: index + 1, total: players.count)
             }
         }
         scheduleReadinessRefresh()
         announcerRegenerationStatus = nil
+        persist()
     }
 
     private func renderBuiltInAnnouncer(for player: Player, teamName: String, profile: TeamAnnouncerProfile) async throws -> RenderedAnnouncerAudio {
