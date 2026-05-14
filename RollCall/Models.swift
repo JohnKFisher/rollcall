@@ -1,7 +1,7 @@
 import Foundation
 
 enum AppMetadata {
-    static let appVersion = "0.2.0"
+    static let appVersion = "0.3.5"
 }
 
 enum CueSource: Codable, Equatable {
@@ -50,6 +50,7 @@ struct AppleMusicSource: Codable, Equatable, Identifiable {
     var songID: String
     var title: String
     var artistName: String
+    var duration: TimeInterval?
     var previewURL: URL?
 }
 
@@ -58,6 +59,7 @@ struct RecentAppleMusicSelection: Codable, Equatable, Identifiable {
     var songID: String
     var title: String
     var artistName: String
+    var duration: TimeInterval?
     var previewURL: URL?
     var selectedAt: Date
 }

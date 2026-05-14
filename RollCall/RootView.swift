@@ -834,6 +834,7 @@ private struct PlayerEditorSheet: View {
     @State private var trimMode: TrimSuggestionMode = .suggestedHook
     @State private var showAdvancedTrim = false
     @State private var liveScrubTask: Task<Void, Never>?
+    @State private var pendingClearAction: PendingClearAction?
 
     private let lengthOptions: [Double] = [6, 8, 10, 12, 15]
 
@@ -937,16 +938,14 @@ private struct PlayerEditorSheet: View {
 
                 Section("Clear Audio") {
                     Button("Clear Song") {
-                        appModel.clearSong(for: player)
-                        refreshPlayerFromModel()
+                        pendingClearAction = .song
                     }
                     .disabled(player.cue == nil)
 
-                    Button("Clear Announcer") {
-                        appModel.clearAnnouncer(for: player)
-                        refreshPlayerFromModel()
+                    Button("Clear Custom Announcer") {
+                        pendingClearAction = .customAnnouncer
                     }
-                    .disabled(player.customAnnouncerRelativePath == nil && player.generatedBuiltInAnnouncerRelativePath == nil)
+                    .disabled(player.customAnnouncerRelativePath == nil)
                 }
             }
             .navigationTitle(player.displayName.isEmpty ? "Player" : player.displayName)
@@ -979,6 +978,19 @@ private struct PlayerEditorSheet: View {
             .onChange(of: player.pronunciationOverride) { _, _ in
                 invalidateAnnouncerAsset()
             }
+            .alert("Are you sure?", isPresented: Binding(
+                get: { pendingClearAction != nil },
+                set: { if !$0 { pendingClearAction = nil } }
+            ), presenting: pendingClearAction) { action in
+                Button("Cancel", role: .cancel) {
+                    pendingClearAction = nil
+                }
+                Button(action.confirmButtonTitle, role: .destructive) {
+                    performClearAction(action)
+                }
+            } message: { action in
+                Text(action.confirmationMessage)
+            }
             .fileImporter(isPresented: $importPresented, allowedContentTypes: [.audio, .movie], allowsMultipleSelection: false) { result in
                 if case .success(let urls) = result, let url = urls.first {
                     let currentPlayer = player
@@ -1004,7 +1016,8 @@ private struct PlayerEditorSheet: View {
                             get: { player.cue! },
                             set: { player.cue = $0 }
                         ),
-                        cueTimeLimit: cueTimeLimit
+                        cueTimeLimit: cueTimeLimit,
+                        cueDurationLimit: cueDurationLimit
                     )
                     .presentationDetents([.medium])
                 }
@@ -1014,14 +1027,12 @@ private struct PlayerEditorSheet: View {
 
     private var cueTimeLimit: Double {
         guard let cue = player.cue else { return 30 }
-        switch cue.source {
-        case .appleMusic:
-            return 20
-        case .builtInClip:
-            return max(12, cueEndTime)
-        case .localAudio(let source):
-            return max(source.duration ?? 30, cueEndTime)
-        }
+        return appModel.cueTimelineLength(for: cue)
+    }
+
+    private var cueDurationLimit: Double {
+        guard let cue = player.cue else { return 30 }
+        return appModel.cueDurationLimit(for: cue)
     }
 
     private func importPhoto() async {
@@ -1050,19 +1061,26 @@ private struct PlayerEditorSheet: View {
         normalizeTrimModeForCurrentCue()
     }
 
-    private func secondsText(_ value: Double) -> String {
-        String(format: "%.2fs", value)
+    private func performClearAction(_ action: PendingClearAction) {
+        switch action {
+        case .song:
+            appModel.clearSong(for: player)
+        case .customAnnouncer:
+            appModel.clearCustomAnnouncer(for: player)
+        }
+        pendingClearAction = nil
+        refreshPlayerFromModel()
     }
 
-    private var cueEndTime: Double {
-        (player.cue?.startTime ?? 0) + (player.cue?.duration ?? 0)
+    private func secondsText(_ value: Double) -> String {
+        String(format: "%.2fs", value)
     }
 
     @ViewBuilder
     private func cueTrimSection(for cue: Cue) -> some View {
         VStack(alignment: .leading, spacing: 14) {
-            if case .appleMusic = cue.source {
-                Text("Apple Music cues are capped at 20 seconds for reliability.")
+            if let trimHelpText = appModel.appleMusicTrimHelpText(for: cue) {
+                Text(trimHelpText)
                     .font(.footnote)
                     .foregroundStyle(.secondary)
                 HStack(spacing: 10) {
@@ -1158,7 +1176,8 @@ private struct PlayerEditorSheet: View {
 
     private func updateCueDuration(_ duration: Double) {
         guard var cue = player.cue else { return }
-        cue.duration = min(duration, cueTimeLimit - cue.startTime)
+        cue.duration = min(duration, cueDurationLimit)
+        cue.duration = min(cue.duration, cueTimeLimit - cue.startTime)
         cue.duration = max(0.5, cue.duration)
         player.cue = cue
     }
@@ -1170,6 +1189,40 @@ private struct PlayerEditorSheet: View {
             try? await Task.sleep(for: .milliseconds(120))
             guard !Task.isCancelled else { return }
             await appModel.previewCue(cue)
+        }
+    }
+}
+
+private extension PlayerEditorSheet {
+    enum PendingClearAction: Identifiable {
+        case song
+        case customAnnouncer
+
+        var id: String {
+            switch self {
+            case .song:
+                return "song"
+            case .customAnnouncer:
+                return "customAnnouncer"
+            }
+        }
+
+        var confirmButtonTitle: String {
+            switch self {
+            case .song:
+                return "Clear Song"
+            case .customAnnouncer:
+                return "Clear Custom Announcer"
+            }
+        }
+
+        var confirmationMessage: String {
+            switch self {
+            case .song:
+                return "This will remove the current cue for this player."
+            case .customAnnouncer:
+                return "This will remove only the custom announcer recording for this player. Built-in Voice can still be used."
+            }
         }
     }
 }
@@ -1208,6 +1261,7 @@ private struct AppleMusicPickerSheet: View {
     var body: some View {
         NavigationStack {
             List {
+                capabilityBanner
                 if showsRecents {
                     Section("Recent Songs") {
                         if appModel.recentAppleMusicSelections.isEmpty {
@@ -1218,15 +1272,11 @@ private struct AppleMusicPickerSheet: View {
                                 AppleMusicRow(
                                     title: recent.title,
                                     artistName: recent.artistName,
-                                    previewAvailable: recent.previewURL != nil,
-                                    unavailableReason: "Preview unavailable",
                                     onSelect: {
-                                        guard let result = recent.asSearchResult else { return }
-                                        onSelect(result)
+                                        onSelect(recent.asSearchResult)
                                     },
                                     onPreview: {
-                                        guard let result = recent.asSearchResult else { return }
-                                        Task { await appModel.previewAppleMusicSearchResult(result) }
+                                        Task { await appModel.previewAppleMusicSearchResult(recent.asSearchResult) }
                                     }
                                 )
                             }
@@ -1248,8 +1298,6 @@ private struct AppleMusicPickerSheet: View {
                                 AppleMusicRow(
                                     title: result.title,
                                     artistName: result.artistName,
-                                    previewAvailable: result.previewURL != nil,
-                                    unavailableReason: "Preview unavailable",
                                     onSelect: {
                                         onSelect(result)
                                     },
@@ -1269,11 +1317,30 @@ private struct AppleMusicPickerSheet: View {
                     Button("Close") { dismiss() }
                 }
             }
+            .task {
+                await appModel.refreshAppleMusicPlaybackCapability()
+            }
             .onChange(of: searchTerm) { _, newValue in
                 queueSearch(for: newValue)
             }
             .onDisappear {
                 searchTask?.cancel()
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var capabilityBanner: some View {
+        Section {
+            switch appModel.appleMusicPlaybackCapability {
+            case .fullSong:
+                Text("Apple Music subscription detected. You can choose up to 20 seconds from anywhere in the full song.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            case .previewOnly, .unknown:
+                Text("No Apple Music playback subscription detected. You can still choose a song, but trimming is limited to the available preview clip.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
             }
         }
     }
@@ -1317,8 +1384,6 @@ private struct AppleMusicPickerSheet: View {
 private struct AppleMusicRow: View {
     let title: String
     let artistName: String
-    let previewAvailable: Bool
-    let unavailableReason: String
     let onSelect: () -> Void
     let onPreview: () -> Void
 
@@ -1327,28 +1392,21 @@ private struct AppleMusicRow: View {
             Button(action: onSelect) {
                 VStack(alignment: .leading, spacing: 3) {
                     Text(title)
-                        .foregroundStyle(previewAvailable ? .primary : .secondary)
+                        .foregroundStyle(.primary)
                     Text(artistName)
                         .font(.caption)
                         .foregroundStyle(.secondary)
-                    if !previewAvailable {
-                        Text(unavailableReason)
-                            .font(.caption2)
-                            .foregroundStyle(.secondary)
-                    }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .disabled(!previewAvailable)
 
             Button(action: onPreview) {
                 Image(systemName: "play.circle.fill")
                     .font(.title3)
             }
             .buttonStyle(.plain)
-            .disabled(!previewAvailable)
         }
         .padding(.vertical, 4)
     }
@@ -1424,6 +1482,7 @@ private struct AdvancedTrimSheet: View {
     @Environment(\.dismiss) private var dismiss
     @Binding var cue: Cue
     let cueTimeLimit: Double
+    let cueDurationLimit: Double
 
     var body: some View {
         NavigationStack {
@@ -1434,7 +1493,8 @@ private struct AdvancedTrimSheet: View {
                         cue.startTime = min(max(0, cue.startTime + delta), maxStart)
                     }
                     nudgeRow(title: "Length", value: cue.duration) { delta in
-                        cue.duration = min(max(0.5, cue.duration + delta), cueTimeLimit - cue.startTime)
+                        cue.duration = min(max(0.5, cue.duration + delta), cueDurationLimit)
+                        cue.duration = min(cue.duration, cueTimeLimit - cue.startTime)
                     }
                 }
 
@@ -1470,9 +1530,8 @@ private struct AdvancedTrimSheet: View {
 }
 
 private extension RecentAppleMusicSelection {
-    var asSearchResult: MusicSearchResult? {
-        guard let previewURL else { return nil }
-        return MusicSearchResult(songID: songID, title: title, artistName: artistName, previewURL: previewURL)
+    var asSearchResult: MusicSearchResult {
+        MusicSearchResult(songID: songID, title: title, artistName: artistName, duration: duration, previewURL: previewURL)
     }
 }
 

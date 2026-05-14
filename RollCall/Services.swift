@@ -1,7 +1,7 @@
 import AVFAudio
 import AVFoundation
 import Foundation
-import MusicKit
+@preconcurrency import MusicKit
 import Network
 import UniformTypeIdentifiers
 
@@ -11,6 +11,9 @@ enum AppError: LocalizedError {
     case invalidImport
     case invalidSearchTerm
     case musicSearchUnavailable
+    case musicAuthorizationRequired
+    case musicSubscriptionRequired
+    case appleMusicSongUnavailable
     case invalidCSV
     case noAudioTrack
     case protectedModeExitRequired
@@ -30,6 +33,12 @@ enum AppError: LocalizedError {
             return "Enter a song title, artist, or both before searching."
         case .musicSearchUnavailable:
             return "Song search is temporarily unavailable."
+        case .musicAuthorizationRequired:
+            return "Allow Apple Music access to search and use Apple Music songs."
+        case .musicSubscriptionRequired:
+            return "No Apple Music playback subscription is active. You can only choose from the available preview clip."
+        case .appleMusicSongUnavailable:
+            return "That Apple Music song is unavailable for full-song playback right now."
         case .invalidCSV:
             return "That CSV could not be parsed. Use a header row with name and number, or simple two-column rows."
         case .noAudioTrack:
@@ -183,7 +192,14 @@ struct MusicSearchResult: Identifiable {
     var songID: String
     var title: String
     var artistName: String
+    var duration: TimeInterval?
     var previewURL: URL?
+}
+
+enum AppleMusicPlaybackCapability: Equatable {
+    case unknown
+    case previewOnly
+    case fullSong
 }
 
 struct MusicCatalogService: Sendable {
@@ -192,13 +208,16 @@ struct MusicCatalogService: Sendable {
         guard !trimmed.isEmpty else { throw AppError.invalidSearchTerm }
 
         do {
+            let status = try await authorizedStatus()
+            guard status == .authorized else { throw AppError.musicAuthorizationRequired }
+
             let musicKitResults = try await searchWithMusicKit(term: trimmed)
             if !musicKitResults.isEmpty {
                 return musicKitResults
             }
         } catch {
-            // Fall through to iTunes preview search when MusicKit is unavailable,
-            // including developer-token failures on local development builds.
+            // Fall back to preview-only search when catalog access fails, including
+            // local development builds that cannot fetch a MusicKit developer token.
         }
 
         let previewResults = try await searchWithITunesPreview(term: trimmed)
@@ -206,20 +225,43 @@ struct MusicCatalogService: Sendable {
         return previewResults
     }
 
-    private func searchWithMusicKit(term: String) async throws -> [MusicSearchResult] {
-        let status = switch MusicAuthorization.currentStatus {
-        case .notDetermined:
-            await MusicAuthorization.request()
-        default:
-            MusicAuthorization.currentStatus
+    func playbackCapability() async -> AppleMusicPlaybackCapability {
+        do {
+            let status = try await authorizedStatus()
+            guard status == .authorized else { return .previewOnly }
+            let subscription = try await MusicSubscription.current
+            return subscription.canPlayCatalogContent ? .fullSong : .previewOnly
+        } catch {
+            return .previewOnly
         }
-        guard status == .authorized else { return [] }
+    }
 
+    func song(for songID: String) async throws -> Song {
+        let status = try await authorizedStatus()
+        guard status == .authorized else { throw AppError.musicAuthorizationRequired }
+
+        let subscription = try await MusicSubscription.current
+        guard subscription.canPlayCatalogContent else { throw AppError.musicSubscriptionRequired }
+
+        var request = MusicCatalogResourceRequest<Song>(matching: \.id, equalTo: MusicItemID(songID))
+        request.limit = 1
+        let response = try await request.response()
+        guard let song = response.items.first else { throw AppError.appleMusicSongUnavailable }
+        return song
+    }
+
+    private func searchWithMusicKit(term: String) async throws -> [MusicSearchResult] {
         var request = MusicCatalogSearchRequest(term: term, types: [Song.self])
         request.limit = 20
         let response = try await request.response()
         return response.songs.map {
-            MusicSearchResult(songID: $0.id.rawValue, title: $0.title, artistName: $0.artistName, previewURL: $0.previewAssets?.first?.url)
+            MusicSearchResult(
+                songID: $0.id.rawValue,
+                title: $0.title,
+                artistName: $0.artistName,
+                duration: $0.duration,
+                previewURL: $0.previewAssets?.first?.url
+            )
         }
     }
 
@@ -245,8 +287,18 @@ struct MusicCatalogService: Sendable {
                 songID: String(item.trackID),
                 title: item.trackName,
                 artistName: item.artistName,
+                duration: nil,
                 previewURL: previewURL
             )
+        }
+    }
+
+    private func authorizedStatus() async throws -> MusicAuthorization.Status {
+        switch MusicAuthorization.currentStatus {
+        case .notDetermined:
+            return await MusicAuthorization.request()
+        default:
+            return MusicAuthorization.currentStatus
         }
     }
 }
@@ -306,20 +358,24 @@ final class CuePlaybackEngine: NSObject, ObservableObject {
     @Published private(set) var activeCueID: UUID?
 
     private let audioAssetService: AudioAssetService
+    private let musicCatalogService: MusicCatalogService
     private let debounceWindow: TimeInterval = 0.45
+    private let appleMusicClipDurationLimit: TimeInterval = 20
     private var audioPlayer: AVAudioPlayer?
     private var announcerPlayer: AVAudioPlayer?
     private var remotePlayer: AVPlayer?
+    private let applicationMusicPlayer = ApplicationMusicPlayer.shared
     private var stopTask: Task<Void, Never>?
     private var prewarmedCueID: UUID?
     private var prewarmedLocalPlayer: AVAudioPlayer?
-    private var prewarmedRemoteURL: URL?
+    private var cachedAppleMusicSongs: [String: Song] = [:]
     private var previewPlayer: AVAudioPlayer?
     private var lastStartDate: Date?
     private var lastStartedCueID: UUID?
 
-    init(audioAssetService: AudioAssetService) {
+    init(audioAssetService: AudioAssetService, musicCatalogService: MusicCatalogService) {
         self.audioAssetService = audioAssetService
+        self.musicCatalogService = musicCatalogService
     }
 
     func play(cue: Cue, announcerRelativePath: String? = nil) async throws {
@@ -342,9 +398,8 @@ final class CuePlaybackEngine: NSObject, ObservableObject {
 
     func prewarm(cue: Cue) async throws {
         switch cue.source {
-        case .appleMusic(let source):
+        case .appleMusic:
             prewarmedCueID = cue.id
-            prewarmedRemoteURL = source.previewURL
             prewarmedLocalPlayer = nil
         case .localAudio(let source):
             let url = try audioAssetService.assetURL(relativePath: source.relativePath)
@@ -353,7 +408,6 @@ final class CuePlaybackEngine: NSObject, ObservableObject {
             player.prepareToPlay()
             prewarmedCueID = cue.id
             prewarmedLocalPlayer = player
-            prewarmedRemoteURL = nil
         case .builtInClip(let source):
             let url = try audioAssetService.assetURL(relativePath: "\(source.id).caf")
             let player = try AVAudioPlayer(contentsOf: url)
@@ -361,7 +415,6 @@ final class CuePlaybackEngine: NSObject, ObservableObject {
             player.prepareToPlay()
             prewarmedCueID = cue.id
             prewarmedLocalPlayer = player
-            prewarmedRemoteURL = nil
         }
     }
 
@@ -412,6 +465,7 @@ final class CuePlaybackEngine: NSObject, ObservableObject {
         audioPlayer = nil
         remotePlayer?.pause()
         remotePlayer = nil
+        applicationMusicPlayer.stop()
         previewPlayer?.stop()
         previewPlayer = nil
         activeCueID = nil
@@ -419,7 +473,7 @@ final class CuePlaybackEngine: NSObject, ObservableObject {
 
     private func playCueSequence(_ cue: Cue, announcerRelativePath: String?) async throws {
         guard let relativePath = announcerRelativePath else {
-            try startPrimaryCue(cue)
+            try await startPrimaryCue(cue)
             return
         }
 
@@ -427,7 +481,7 @@ final class CuePlaybackEngine: NSObject, ObservableObject {
 
         let announcerURL = try audioAssetService.assetURL(relativePath: relativePath)
         guard FileManager.default.fileExists(atPath: announcerURL.path()) else {
-            try startPrimaryCue(cue)
+            try await startPrimaryCue(cue)
             return
         }
 
@@ -441,14 +495,14 @@ final class CuePlaybackEngine: NSObject, ObservableObject {
             try? await Task.sleep(for: .seconds(delay))
             guard let self, !Task.isCancelled else { return }
             do {
-                try self.startPrimaryCue(cue)
+                try await self.startPrimaryCue(cue)
             } catch {
                 self.stop()
             }
         }
     }
 
-    private func startPrimaryCue(_ cue: Cue) throws {
+    private func startPrimaryCue(_ cue: Cue) async throws {
         stopTask?.cancel()
         stopTask = nil
         announcerPlayer?.stop()
@@ -458,16 +512,38 @@ final class CuePlaybackEngine: NSObject, ObservableObject {
 
         switch cue.source {
         case .appleMusic(let source):
-            guard let previewURL = prewarmedCueID == cue.id ? prewarmedRemoteURL ?? source.previewURL : source.previewURL else {
-                throw AppError.missingPreview
+            let clipDuration = min(duration, appleMusicClipDurationLimit)
+            if source.duration != nil, await musicCatalogService.playbackCapability() == .fullSong {
+                do {
+                    let song = try await resolveSong(for: source)
+                    let entry = MusicPlayer.Queue.Entry(
+                        song,
+                        startTime: cue.startTime,
+                        endTime: cue.startTime + clipDuration
+                    )
+                    applicationMusicPlayer.queue = ApplicationMusicPlayer.Queue([entry], startingAt: entry)
+                    try await applicationMusicPlayer.play()
+                    stopTask = Task { @MainActor [weak self] in
+                        guard let self else { return }
+                        try? await Task.sleep(for: .seconds(clipDuration))
+                        self.stop()
+                    }
+                    return
+                } catch {
+                    guard source.previewURL != nil else { throw error }
+                }
             }
+
+            guard let previewURL = source.previewURL else { throw AppError.missingPreview }
             let player = AVPlayer(url: previewURL)
             remotePlayer = player
-            player.seek(to: CMTime(seconds: cue.startTime, preferredTimescale: 600), toleranceBefore: .zero, toleranceAfter: .zero) { [weak player] _ in
+            let maxPreviewStart = max(0, appleMusicClipDurationLimit - clipDuration)
+            let previewStart = min(max(0, cue.startTime), maxPreviewStart)
+            player.seek(to: CMTime(seconds: previewStart, preferredTimescale: 600), toleranceBefore: .zero, toleranceAfter: .zero) { [weak player] _ in
                 player?.play()
             }
             stopTask = Task { [weak self] in
-                try? await Task.sleep(for: .seconds(duration))
+                try? await Task.sleep(for: .seconds(clipDuration))
                 await self?.fadeRemote(duration: cue.fadeOutDuration)
             }
         case .localAudio(let source):
@@ -477,6 +553,16 @@ final class CuePlaybackEngine: NSObject, ObservableObject {
             let url = try audioAssetService.assetURL(relativePath: "\(source.id).caf")
             try playLocal(url: url, start: cue.startTime, duration: duration, fadeOut: cue.fadeOutDuration, reusePrewarm: prewarmedCueID == cue.id)
         }
+    }
+
+    private func resolveSong(for source: AppleMusicSource) async throws -> Song {
+        if let cached = cachedAppleMusicSongs[source.songID] {
+            return cached
+        }
+
+        let song = try await musicCatalogService.song(for: source.songID)
+        cachedAppleMusicSongs[source.songID] = song
+        return song
     }
 
     private func playLocal(url: URL, start: TimeInterval, duration: TimeInterval, fadeOut: TimeInterval, reusePrewarm: Bool) throws {
@@ -576,10 +662,8 @@ final class ReadinessService {
         }
 
         switch cue.source {
-        case .appleMusic(let source):
-            if source.previewURL == nil {
-                return ReadinessCheck(id: "player-\(player.id)", title: player.displayName, detail: "Apple Music cue is missing preview media.", state: .warning)
-            }
+        case .appleMusic:
+            break
         case .localAudio(let source):
             if !audioAssetService.assetExists(relativePath: source.relativePath) {
                 return ReadinessCheck(id: "player-\(player.id)", title: player.displayName, detail: "Local cue file is missing from app storage.", state: .failed)

@@ -131,6 +131,7 @@ final class AppModel: ObservableObject {
     @Published var pendingRosterImport: PendingRosterImport?
     @Published var supportBundle: SupportBundleExport?
     @Published var announcerRegenerationStatus: AnnouncerRegenerationStatus?
+    @Published private(set) var appleMusicPlaybackCapability: AppleMusicPlaybackCapability = .unknown
     private var hasFinishedLaunching = false
     private var persistTask: Task<Void, Never>?
     private var readinessRefreshTask: Task<Void, Never>?
@@ -147,7 +148,7 @@ final class AppModel: ObservableObject {
     let customAnnouncerRecorder = CustomAnnouncerRecorder()
 
     init() {
-        self.playbackEngine = CuePlaybackEngine(audioAssetService: audioAssetService)
+        self.playbackEngine = CuePlaybackEngine(audioAssetService: audioAssetService, musicCatalogService: musicCatalogService)
         self.readinessService = ReadinessService(audioAssetService: audioAssetService)
         self.state = (try? Self.load()) ?? {
             var state = AppState.empty
@@ -185,6 +186,7 @@ final class AppModel: ObservableObject {
 
         do {
             try configurePlaybackAudioSession()
+            await refreshAppleMusicPlaybackCapability()
             refreshReadiness()
             persist()
         } catch {
@@ -391,10 +393,9 @@ final class AppModel: ObservableObject {
         updatePlayer(updated)
     }
 
-    func clearAnnouncer(for player: Player) {
+    func clearCustomAnnouncer(for player: Player) {
         var updated = player
         updated.customAnnouncerRelativePath = nil
-        updated.generatedBuiltInAnnouncerRelativePath = nil
         updatePlayer(updated)
     }
 
@@ -412,7 +413,7 @@ final class AppModel: ObservableObject {
     func play(player: Player) async {
         guard let cue = player.cue else { return }
         do {
-            let announcerRelativePath = announcerAssetRelativePath(for: player)
+            let announcerRelativePath = await resolveAnnouncerAssetRelativePath(for: player)
             try await playbackEngine.play(cue: cue, announcerRelativePath: announcerRelativePath)
             haptics.success(isEnabled: state.settings.hapticsEnabled)
         } catch {
@@ -446,6 +447,11 @@ final class AppModel: ObservableObject {
     func previewAppleMusicSearchResult(_ result: MusicSearchResult) async {
         let cue = makeDefaultAppleMusicCue(for: result)
         await previewCue(cue)
+    }
+
+    func refreshAppleMusicPlaybackCapability() async {
+        let capability = await musicCatalogService.playbackCapability()
+        appleMusicPlaybackCapability = capability
     }
 
     func previewBuiltInAnnouncer(profile: TeamAnnouncerProfile? = nil) async {
@@ -834,9 +840,9 @@ final class AppModel: ObservableObject {
 
     func chooseSuggestedHook(for cue: Cue) -> Cue {
         var updated = cue
-        let clipLength = min(max(state.trimDefaults.preferredLength, 6), cueTimeLimit(for: cue))
+        let clipLength = min(max(state.trimDefaults.preferredLength, 6), cueDurationLimit(for: cue))
         updated.duration = max(0.5, clipLength)
-        let maxStart = max(0, cueTimeLimit(for: updated) - updated.duration)
+        let maxStart = max(0, cueTimelineLength(for: updated) - updated.duration)
         let candidateStart = min(max(4, maxStart * 0.45), maxStart)
         updated.startTime = roundedQuarterSecond(candidateStart)
         return updated
@@ -845,7 +851,7 @@ final class AppModel: ObservableObject {
     func chooseStartAtBeginning(for cue: Cue) -> Cue {
         var updated = cue
         updated.startTime = 0
-        updated.duration = min(max(state.trimDefaults.preferredLength, 6), cueTimeLimit(for: updated))
+        updated.duration = min(max(state.trimDefaults.preferredLength, 6), cueDurationLimit(for: updated))
         return updated
     }
 
@@ -865,8 +871,8 @@ final class AppModel: ObservableObject {
     }
 
     private func makeDefaultAppleMusicCue(for result: MusicSearchResult) -> Cue {
-        var cue = Cue.appleDefault(source: AppleMusicSource(songID: result.songID, title: result.title, artistName: result.artistName, previewURL: result.previewURL))
-        cue.duration = min(max(state.trimDefaults.preferredLength, 6), cueTimeLimit(for: cue))
+        var cue = Cue.appleDefault(source: AppleMusicSource(songID: result.songID, title: result.title, artistName: result.artistName, duration: result.duration, previewURL: result.previewURL))
+        cue.duration = min(max(state.trimDefaults.preferredLength, 6), cueDurationLimit(for: cue))
         return cue
     }
 
@@ -875,6 +881,7 @@ final class AppModel: ObservableObject {
             songID: result.songID,
             title: result.title,
             artistName: result.artistName,
+            duration: result.duration,
             previewURL: result.previewURL,
             selectedAt: .now
         )
@@ -886,14 +893,38 @@ final class AppModel: ObservableObject {
         persist()
     }
 
-    private func cueTimeLimit(for cue: Cue) -> Double {
+    func cueTimelineLength(for cue: Cue) -> Double {
         switch cue.source {
-        case .appleMusic:
-            return 20
+        case .appleMusic(let source):
+            switch appleMusicPlaybackCapability {
+            case .fullSong:
+                return max(source.duration ?? 30, cue.startTime + cue.duration)
+            case .previewOnly, .unknown:
+                return 20
+            }
         case .builtInClip:
             return max(12, cue.startTime + cue.duration)
         case .localAudio(let source):
             return max(source.duration ?? 30, cue.startTime + cue.duration)
+        }
+    }
+
+    func cueDurationLimit(for cue: Cue) -> Double {
+        switch cue.source {
+        case .appleMusic:
+            return min(20, cueTimelineLength(for: cue))
+        case .builtInClip, .localAudio:
+            return cueTimelineLength(for: cue)
+        }
+    }
+
+    func appleMusicTrimHelpText(for cue: Cue) -> String? {
+        guard case .appleMusic = cue.source else { return nil }
+        switch appleMusicPlaybackCapability {
+        case .fullSong:
+            return "Choose up to 20 seconds from anywhere in the full song."
+        case .previewOnly, .unknown:
+            return "No Apple Music playback subscription is active. You can choose up to 20 seconds from the available preview clip."
         }
     }
 
@@ -946,6 +977,34 @@ final class AppModel: ObservableObject {
         return nil
     }
 
+    private func resolveAnnouncerAssetRelativePath(for player: Player) async -> String? {
+        if let existing = announcerAssetRelativePath(for: player) {
+            return existing
+        }
+
+        guard selectedTeam?.session.gameDayAnnouncerMode == .announcer,
+              let team = selectedTeam else {
+            return nil
+        }
+
+        do {
+            let asset = try await generateBuiltInAnnouncerAsset(for: player, teamName: team.name, profile: team.announcerProfile)
+            guard let liveTeamIndex = state.teams.firstIndex(where: { $0.id == team.id }),
+                  let playerIndex = state.teams[liveTeamIndex].players.firstIndex(where: { $0.id == player.id }) else {
+                return nil
+            }
+            state.teams[liveTeamIndex].players[playerIndex].generatedBuiltInAnnouncerRelativePath = asset.relativePath
+            state.teams[liveTeamIndex].announcerProfile.applyResolvedVoice(from: asset)
+            state.teams[liveTeamIndex].modifiedAt = .now
+            scheduleReadinessRefresh()
+            persist()
+            return asset.relativePath
+        } catch {
+            lastError = error.localizedDescription
+            return nil
+        }
+    }
+
     private func triggerAnnouncerRegeneration(for teamID: UUID, phase: String) {
         announcerRegenerationTask?.cancel()
         announcerRegenerationTask = Task { @MainActor [weak self] in
@@ -964,15 +1023,13 @@ final class AppModel: ObservableObject {
         for (index, player) in players.enumerated() {
             guard !Task.isCancelled else { break }
             do {
-                let rendered = try await renderBuiltInAnnouncer(for: player, teamName: teamName, profile: profile)
-                let asset = try audioAssetService.storeSpeechData(rendered.data, displayName: "\(player.displayName)-built-in-announcer")
+                let asset = try await generateBuiltInAnnouncerAsset(for: player, teamName: teamName, profile: profile)
                 guard let liveTeamIndex = state.teams.firstIndex(where: { $0.id == teamID }),
                       let playerIndex = state.teams[liveTeamIndex].players.firstIndex(where: { $0.id == player.id }) else {
                     continue
                 }
                 state.teams[liveTeamIndex].players[playerIndex].generatedBuiltInAnnouncerRelativePath = asset.relativePath
-                state.teams[liveTeamIndex].announcerProfile.resolvedVoiceIdentifier = rendered.resolvedVoiceIdentifier
-                state.teams[liveTeamIndex].announcerProfile.voiceLanguageCode = rendered.voiceLanguageCode
+                state.teams[liveTeamIndex].announcerProfile.applyResolvedVoice(from: asset)
                 state.teams[liveTeamIndex].modifiedAt = .now
                 announcerRegenerationStatus = AnnouncerRegenerationStatus(teamID: teamID, phase: phase, completed: index + 1, total: players.count)
                 persist()
@@ -991,6 +1048,19 @@ final class AppModel: ObservableObject {
         return try await announcerRenderer.renderSpeechAudio(for: phrase, profile: profile)
     }
 
+    private func generateBuiltInAnnouncerAsset(for player: Player, teamName: String, profile: TeamAnnouncerProfile) async throws -> GeneratedAnnouncerAsset {
+        let rendered = try await renderBuiltInAnnouncer(for: player, teamName: teamName, profile: profile)
+        let asset = try audioAssetService.storeSpeechData(rendered.data, displayName: "\(player.displayName)-built-in-announcer")
+        guard audioAssetService.assetExists(relativePath: asset.relativePath) else {
+            throw AppError.invalidImport
+        }
+        return GeneratedAnnouncerAsset(
+            relativePath: asset.relativePath,
+            resolvedVoiceIdentifier: rendered.resolvedVoiceIdentifier,
+            voiceLanguageCode: rendered.voiceLanguageCode
+        )
+    }
+
     private func qualityRank(for quality: AVSpeechSynthesisVoiceQuality) -> Int {
         switch quality {
         case .premium:
@@ -1000,6 +1070,19 @@ final class AppModel: ObservableObject {
         default:
             return 1
         }
+    }
+}
+
+private struct GeneratedAnnouncerAsset {
+    var relativePath: String
+    var resolvedVoiceIdentifier: String?
+    var voiceLanguageCode: String?
+}
+
+private extension TeamAnnouncerProfile {
+    mutating func applyResolvedVoice(from asset: GeneratedAnnouncerAsset) {
+        resolvedVoiceIdentifier = asset.resolvedVoiceIdentifier
+        voiceLanguageCode = asset.voiceLanguageCode
     }
 }
 
@@ -1026,13 +1109,25 @@ actor AnnouncerSpeechRenderer {
                 guard !finished else { return }
                 guard let pcmBuffer = buffer as? AVAudioPCMBuffer else {
                     finished = true
-                    continuation.resume(throwing: AppError.invalidImport)
+                    do {
+                        file = nil
+                        let data = try Data(contentsOf: tempURL)
+                        try? FileManager.default.removeItem(at: tempURL)
+                        continuation.resume(returning: RenderedAnnouncerAudio(
+                            data: data,
+                            resolvedVoiceIdentifier: resolvedVoice?.identifier,
+                            voiceLanguageCode: resolvedVoice?.language
+                        ))
+                    } catch {
+                        continuation.resume(throwing: error)
+                    }
                     return
                 }
 
                 if pcmBuffer.frameLength == 0 {
                     finished = true
                     do {
+                        file = nil
                         let data = try Data(contentsOf: tempURL)
                         try? FileManager.default.removeItem(at: tempURL)
                         continuation.resume(returning: RenderedAnnouncerAudio(
