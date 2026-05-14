@@ -4,6 +4,10 @@ Use this file as a concise decision log for project-specific architectural, beha
 
 ## 2026-05-13
 
+- Approved: resolve the MusicKit token failure by enabling the MusicKit App Service for App ID `com.jkfisher.rollcall`, not by adding a local entitlement.
+  Rationale: Apple's token service rejected the bundle ID as an unregistered client, and Xcode rejected `com.apple.developer.music.user-token` as an invalid entitlement for this target.
+  Status: approved
+
 - Approved: subscribed Apple Music mode must use catalog-backed MusicKit selections only, with preview fallback reserved for preview-only devices.
   Rationale: silently using iTunes preview results on a subscribed device makes the trim UI lie about full-song selection; a clear failure is safer than assigning the wrong 20-second window.
   Status: approved

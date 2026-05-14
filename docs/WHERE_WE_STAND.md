@@ -36,8 +36,8 @@ What works now:
 
 Known limitations:
 - Waveforms and per-cue gain remain intentionally deferred.
-- Physical-device installs now depend on a valid local Apple development provisioning profile for `com.jkfisher.rollcall`; project signing is configured, but first-run provisioning may still need Xcode account/device approval on this Mac.
-- Apple Music full-song trimming now depends on a device account state and MusicKit App Service configuration that this environment cannot emulate, so it still needs an on-device feel pass with and without an active Apple Music playback subscription.
+- Physical-device installs now depend on a valid local Apple development provisioning profile for `com.jkfisher.rollcall`; full-song Apple Music also requires the MusicKit App Service to be enabled for that App ID in Apple Developer.
+- Apple Music full-song trimming now depends on a device account state and MusicKit App Service configuration that this environment cannot emulate, so it still needs an on-device feel pass with and without an active Apple Music playback subscription after App ID registration/provisioning refresh.
 - The new Apple Music hook suggestion is intentionally conservative and still needs an on-device feel pass to judge whether its default entrance guesses are actually helpful.
 - Roll Call now gives only lightweight Focus guidance for interruptions; it still does not have OS-level Do Not Disturb or Guided Access integration.
 - Built-in announcer clips regenerate in batch when Built-in Voice settings are saved or a package is imported, but invalid player/profile text still surfaces as readiness warnings until the next successful regeneration pass.
@@ -46,9 +46,9 @@ Known limitations:
 Verification:
 - `xcodebuild -project '/Users/jkfisher/Documents/Coding/Roll Call/RollCall.xcodeproj' -scheme RollCall -destination 'generic/platform=iOS' -derivedDataPath '/Users/jkfisher/Documents/Coding/Roll Call/.DerivedData' build`
 - `xcrun swift-frontend -typecheck -primary-file RollCall/Services.swift RollCall/Models.swift RollCall/AppModel.swift RollCall/RootView.swift RollCall/RollCallApp.swift -sdk /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS26.5.sdk -target arm64-apple-ios18.0`
-- Result in this session: the direct Swift frontend typecheck for the edited playback path succeeded. The generic iOS `xcodebuild` compiled the Swift sources and still stopped later in asset-catalog tooling in this environment, so the most important remaining verification is an on-device smoke pass for full-song trimming and announcer playback.
+- Result in this session: the direct Swift frontend typecheck for the edited playback path succeeded. A follow-up generic iOS build proved that adding a local `com.apple.developer.music.user-token` entitlement is invalid for this target; MusicKit must be enabled as an App ID App Service instead. The remaining verification is an on-device smoke pass for full-song trimming after the App ID/provisioning refresh.
 
 Recommended next priorities:
-1. Launch `0.3.7` on-device and do a focused smoke pass for subscribed-device full-song trimming, preview-only fallback trimming, announcer-enabled playback, and the new Game Day active-state visuals.
+1. Enable the MusicKit App Service for App ID `com.jkfisher.rollcall`, refresh signing/provisioning, then launch `0.3.7` on-device and do a focused smoke pass for subscribed-device full-song trimming, preview-only fallback trimming, announcer-enabled playback, and the new Game Day active-state visuals.
 2. Add focused verification around package import/export round-trips, support-bundle contents, and backup retention behavior after repeated imports.
 3. Decide whether any future Focus integration should stay guidance-only or expand into App Intents / Shortcut-assisted setup.
