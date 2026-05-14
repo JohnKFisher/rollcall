@@ -4,6 +4,7 @@ import Foundation
 @preconcurrency import MusicKit
 import Network
 import UniformTypeIdentifiers
+import ZIPFoundation
 
 enum AppError: LocalizedError {
     case missingPreview
@@ -18,7 +19,10 @@ enum AppError: LocalizedError {
     case noAudioTrack
     case microphonePermissionDenied
     case recordingUnavailable
+    case customIntroSaveFailed(String)
     case invalidAnnouncerText
+    case invalidAnnouncerAudio
+    case announcerGenerationTimedOut
     case missingBuiltInClip
     case appleMusicFullSongCatalogUnavailable
 
@@ -45,11 +49,17 @@ enum AppError: LocalizedError {
         case .noAudioTrack:
             return "That video does not contain an audio track that Roll Call can import."
         case .microphonePermissionDenied:
-            return "Microphone access is required to record a custom announcer intro."
+            return "Microphone access is required to record an Announcement Cue."
         case .recordingUnavailable:
             return "Custom announcer recording is not available right now."
+        case .customIntroSaveFailed(let detail):
+            return "Roll Call could not save that Announcement Cue recording. [\(AppMetadata.appVersion) build \(AppMetadata.buildNumber) \(AppMetadata.customIntroStorageMarker)] \(detail)"
         case .invalidAnnouncerText:
             return "Enter announcer text before generating or previewing built-in voice audio."
+        case .invalidAnnouncerAudio:
+            return "Roll Call could not create a usable built-in announcer clip for this voice on this device."
+        case .announcerGenerationTimedOut:
+            return "Built-in voice generation took too long and was stopped. Try a shorter phrase or a different installed voice."
         case .missingBuiltInClip:
             return "A built-in General Clip could not be loaded from the app bundle."
         case .appleMusicFullSongCatalogUnavailable:
@@ -64,7 +74,13 @@ private func builtInClipRelativePath(for source: BuiltInClipSource) -> String {
 
 struct AudioAssetService: Sendable {
     func assetURL(relativePath: String) throws -> URL {
-        try AppPaths.assetsDirectory().appendingPathComponent(relativePath)
+        try AppPaths.assetURL(relativePath: relativePath)
+    }
+
+    func makeWritableAssetURL(fileExtension: String) throws -> URL {
+        let normalizedExtension = fileExtension.trimmingCharacters(in: .whitespacesAndNewlines)
+        let ext = normalizedExtension.isEmpty ? "m4a" : normalizedExtension
+        return try AppPaths.assetsDirectory().appendingPathComponent("\(UUID().uuidString).\(ext)")
     }
 
     func importMedia(from url: URL) async throws -> LocalAudioSource {
@@ -99,7 +115,13 @@ struct AudioAssetService: Sendable {
 
     func storeSpeechData(_ data: Data, displayName: String) throws -> LocalAudioSource {
         let destination = try AppPaths.assetsDirectory().appendingPathComponent("\(UUID().uuidString).caf")
+        guard !data.isEmpty else { throw AppError.invalidAnnouncerAudio }
         try data.write(to: destination, options: .atomic)
+        guard FileManager.default.fileExists(atPath: destination.path),
+              let size = try? destination.resourceValues(forKeys: [.fileSizeKey]).fileSize,
+              size > 0 else {
+            throw AppError.invalidAnnouncerAudio
+        }
         return try localAudioSource(for: destination, displayName: displayName, hiddenOriginNote: nil)
     }
 
@@ -109,11 +131,28 @@ struct AudioAssetService: Sendable {
         try? FileManager.default.removeItem(at: url)
     }
 
+    func storeCustomAnnouncerRecording(from sourceURL: URL, playerID: UUID, displayName: String) throws -> LocalAudioSource {
+        let relativePath = "custom-intro-\(playerID.uuidString.lowercased()).caf"
+        let destination = try AppPaths.assetsDirectory().appendingPathComponent(relativePath)
+        let recordedData = try Data(contentsOf: sourceURL)
+        guard !recordedData.isEmpty else {
+            throw AppError.customIntroSaveFailed("recorded temp file was empty before app-storage write")
+        }
+        if FileManager.default.fileExists(atPath: destination.path) {
+            try FileManager.default.removeItem(at: destination)
+        }
+        try recordedData.write(to: destination, options: .atomic)
+        guard FileManager.default.fileExists(atPath: destination.path),
+              ((try? destination.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0) > 0 else {
+            throw AppError.customIntroSaveFailed("flat saved asset was not visible at \(relativePath)")
+        }
+        return try localAudioSource(for: destination, displayName: displayName, hiddenOriginNote: nil, relativePath: relativePath)
+    }
+
     func storeCopiedAsset(from sourceURL: URL, suggestedExtension: String?, displayName: String, hiddenOriginNote: HiddenOriginNote?) throws -> LocalAudioSource {
         let ext = suggestedExtension?.isEmpty == false ? suggestedExtension! : sourceURL.pathExtension
-        let normalizedExtension = ext.isEmpty ? "m4a" : ext
-        let destination = try AppPaths.assetsDirectory().appendingPathComponent("\(UUID().uuidString).\(normalizedExtension)")
-        if FileManager.default.fileExists(atPath: destination.path()) {
+        let destination = try makeWritableAssetURL(fileExtension: ext)
+        if FileManager.default.fileExists(atPath: destination.path) {
             try FileManager.default.removeItem(at: destination)
         }
         try FileManager.default.copyItem(at: sourceURL, to: destination)
@@ -124,8 +163,8 @@ struct AudioAssetService: Sendable {
         for builtIn in BuiltInClip.defaults {
             guard case .builtInClip(let source) = builtIn.cue.source else { continue }
             let relativePath = builtInClipRelativePath(for: source)
-            let url = try AppPaths.assetsDirectory().appendingPathComponent(relativePath)
-            guard !FileManager.default.fileExists(atPath: url.path()) else { continue }
+            let url = try assetURL(relativePath: relativePath)
+            guard !FileManager.default.fileExists(atPath: url.path) else { continue }
             guard let bundledURL = Bundle.main.url(forResource: source.id, withExtension: "mp3", subdirectory: "BuiltInAudio") else {
                 throw AppError.missingBuiltInClip
             }
@@ -135,19 +174,30 @@ struct AudioAssetService: Sendable {
 
     func assetExists(relativePath: String) -> Bool {
         guard let url = try? assetURL(relativePath: relativePath) else { return false }
-        return FileManager.default.fileExists(atPath: url.path())
+        return FileManager.default.fileExists(atPath: url.path)
     }
 
-    private func localAudioSource(for url: URL, displayName: String, hiddenOriginNote: HiddenOriginNote?) throws -> LocalAudioSource {
+    private func localAudioSource(for url: URL, displayName: String, hiddenOriginNote: HiddenOriginNote?, relativePath: String? = nil) throws -> LocalAudioSource {
         let duration = try audioDuration(for: url)
         return LocalAudioSource(
             id: UUID(),
             displayName: displayName,
-            relativePath: url.lastPathComponent,
+            relativePath: relativePath ?? url.lastPathComponent,
             duration: duration.isFinite ? duration : nil,
             importedAt: .now,
             hiddenOriginNote: hiddenOriginNote
         )
+    }
+
+    private func ensureDirectoryExists(at url: URL) throws {
+        var isDirectory: ObjCBool = false
+        if FileManager.default.fileExists(atPath: url.path, isDirectory: &isDirectory) {
+            if isDirectory.boolValue {
+                return
+            }
+            try FileManager.default.removeItem(at: url)
+        }
+        try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
     }
 
     private func extractAudio(fromVideoAt url: URL, displayName: String) async throws -> LocalAudioSource {
@@ -418,7 +468,7 @@ final class CuePlaybackEngine: NSObject, ObservableObject {
     private var audioPlayer: AVAudioPlayer?
     private var announcerPlayer: AVAudioPlayer?
     private var remotePlayer: AVPlayer?
-    private let applicationMusicPlayer = ApplicationMusicPlayer.shared
+    private var applicationMusicPlayer: ApplicationMusicPlayer?
     private var stopTask: Task<Void, Never>?
     private var prewarmedCueID: UUID?
     private var prewarmedLocalPlayer: AVAudioPlayer?
@@ -426,7 +476,6 @@ final class CuePlaybackEngine: NSObject, ObservableObject {
     private var previewPlayer: AVAudioPlayer?
     private var lastStartDate: Date?
     private var lastStartedCueID: UUID?
-
     init(audioAssetService: AudioAssetService, musicCatalogService: MusicCatalogService) {
         self.audioAssetService = audioAssetService
         self.musicCatalogService = musicCatalogService
@@ -470,6 +519,10 @@ final class CuePlaybackEngine: NSObject, ObservableObject {
             prewarmedCueID = cue.id
             prewarmedLocalPlayer = player
         }
+    }
+
+    func preconnectForUpcomingPlayback() {
+        _ = makeApplicationMusicPlayer()
     }
 
     func supportDiagnostics() -> PlaybackSupportDiagnostics {
@@ -519,46 +572,65 @@ final class CuePlaybackEngine: NSObject, ObservableObject {
         audioPlayer = nil
         remotePlayer?.pause()
         remotePlayer = nil
-        applicationMusicPlayer.stop()
+        applicationMusicPlayer?.stop()
         previewPlayer?.stop()
         previewPlayer = nil
         activeCueID = nil
     }
 
     private func playCueSequence(_ cue: Cue, announcerRelativePath: String?) async throws {
-        guard let relativePath = announcerRelativePath else {
-            try await startPrimaryCue(cue)
-            return
-        }
+        if let relativePath = announcerRelativePath {
+            try? await prewarm(cue: cue)
 
-        try? await prewarm(cue: cue)
-
-        let announcerURL = try audioAssetService.assetURL(relativePath: relativePath)
-        guard FileManager.default.fileExists(atPath: announcerURL.path()) else {
-            try await startPrimaryCue(cue)
-            return
-        }
-
-        let player = try AVAudioPlayer(contentsOf: announcerURL)
-        announcerPlayer = player
-        player.prepareToPlay()
-        player.play()
-
-        stopTask = Task { [weak self] in
-            let delay = player.duration + cue.pauseAfterAnnouncer
-            try? await Task.sleep(for: .seconds(delay))
-            guard let self, !Task.isCancelled else { return }
-            do {
-                try await self.startPrimaryCue(cue)
-            } catch {
-                self.stop()
+            let announcerURL = try audioAssetService.assetURL(relativePath: relativePath)
+            guard FileManager.default.fileExists(atPath: announcerURL.path) else {
+                try await startPrimaryCue(cue)
+                return
             }
+
+            let player: AVAudioPlayer
+            do {
+                player = try AVAudioPlayer(contentsOf: announcerURL)
+            } catch {
+                try await startPrimaryCue(cue)
+                return
+            }
+            announcerPlayer = player
+            player.prepareToPlay()
+            guard player.play() else {
+                announcerPlayer = nil
+                try await startPrimaryCue(cue)
+                return
+            }
+
+            let delay = player.duration + cue.pauseAfterAnnouncer
+            guard delay.isFinite, delay >= 0 else {
+                try await startPrimaryCue(cue)
+                return
+            }
+
+            stopTask = Task { [weak self] in
+                try? await Task.sleep(for: .seconds(delay))
+                guard let self, !Task.isCancelled else { return }
+                do {
+                    try await self.startPrimaryCue(cue, cancelPendingStopTask: false)
+                } catch {
+                    self.stop()
+                }
+            }
+            return
         }
+
+        try await startPrimaryCue(cue)
     }
 
-    private func startPrimaryCue(_ cue: Cue) async throws {
-        stopTask?.cancel()
-        stopTask = nil
+    private func startPrimaryCue(_ cue: Cue, cancelPendingStopTask: Bool = true) async throws {
+        if cancelPendingStopTask {
+            stopTask?.cancel()
+            stopTask = nil
+        } else {
+            stopTask = nil
+        }
         announcerPlayer?.stop()
         announcerPlayer = nil
 
@@ -575,8 +647,9 @@ final class CuePlaybackEngine: NSObject, ObservableObject {
                         startTime: cue.startTime,
                         endTime: cue.startTime + clipDuration
                     )
-                    applicationMusicPlayer.queue = ApplicationMusicPlayer.Queue([entry], startingAt: entry)
-                    try await applicationMusicPlayer.play()
+                    let musicPlayer = makeApplicationMusicPlayer()
+                    musicPlayer.queue = ApplicationMusicPlayer.Queue([entry], startingAt: entry)
+                    try await musicPlayer.play()
                     stopTask = Task { @MainActor [weak self] in
                         guard let self else { return }
                         try? await Task.sleep(for: .seconds(clipDuration))
@@ -617,6 +690,15 @@ final class CuePlaybackEngine: NSObject, ObservableObject {
         let song = try await musicCatalogService.song(for: source.songID)
         cachedAppleMusicSongs[source.songID] = song
         return song
+    }
+
+    private func makeApplicationMusicPlayer() -> ApplicationMusicPlayer {
+        if let applicationMusicPlayer {
+            return applicationMusicPlayer
+        }
+        let player = ApplicationMusicPlayer.shared
+        applicationMusicPlayer = player
+        return player
     }
 
     private func playLocal(url: URL, start: TimeInterval, duration: TimeInterval, fadeOut: TimeInterval, reusePrewarm: Bool) throws {
@@ -696,7 +778,6 @@ final class ReadinessService {
         let musicAuthStatus = MusicAuthorization.currentStatus
         let playerChecks = (team?.battingOrderPlayers ?? []).compactMap { readinessCheck(for: $0, team: team) }
         let customChecks = customAnnouncerChecks(for: team)
-        let voiceFallbackChecks = announcerVoiceChecks(for: team)
         return ReadinessStatus(
             generatedAt: .now,
             checks: [
@@ -705,7 +786,7 @@ final class ReadinessService {
                 ReadinessCheck(id: "network", title: "Apple Music Network", detail: appleMusicCount == 0 ? "No Apple Music cues assigned." : (pathStatus == .satisfied ? "Connection available." : "Connection unavailable. Apple Music cues may fail."), state: appleMusicCount == 0 ? .unknown : (pathStatus == .satisfied ? .ready : .warning)),
                 ReadinessCheck(id: "music-auth", title: "Apple Music Access", detail: appleMusicCount == 0 ? "No Apple Music cues assigned." : appleMusicAuthorizationDetail(for: musicAuthStatus), state: readinessStateForMusic(status: musicAuthStatus, appleMusicCount: appleMusicCount)),
                 ReadinessCheck(id: "lineup", title: "Present Players", detail: "\(team?.presentPlayersInBattingOrder.count ?? 0) players marked present", state: team == nil ? .warning : ((team?.presentPlayersInBattingOrder.isEmpty ?? true) ? .warning : .ready)),
-            ] + customChecks + voiceFallbackChecks + playerChecks
+            ] + customChecks + playerChecks
         )
     }
 
@@ -731,14 +812,7 @@ final class ReadinessService {
         if team?.session.gameDayAnnouncerMode == .announcer {
             if let customAnnouncerRelativePath = player.customAnnouncerRelativePath {
                 if !audioAssetService.assetExists(relativePath: customAnnouncerRelativePath) {
-                    return ReadinessCheck(id: "player-\(player.id)-custom-announcer", title: player.displayName, detail: "Custom announcer intro file is missing from app storage.", state: .failed)
-                }
-            } else {
-                guard let generatedAssetRelativePath = player.generatedBuiltInAnnouncerRelativePath else {
-                    return ReadinessCheck(id: "player-\(player.id)-announcer", title: player.displayName, detail: "Built-in announcer intro has not been generated yet.", state: .warning)
-                }
-                if !audioAssetService.assetExists(relativePath: generatedAssetRelativePath) {
-                    return ReadinessCheck(id: "player-\(player.id)-announcer", title: player.displayName, detail: "Built-in announcer intro asset is missing.", state: .failed)
+                    return ReadinessCheck(id: "player-\(player.id)-custom-announcer", title: player.displayName, detail: "Announcement Cue file is missing from app storage.", state: .failed)
                 }
             }
         }
@@ -757,13 +831,16 @@ final class ReadinessService {
         let presentPlayers = team.presentPlayersInBattingOrder
         guard !presentPlayers.isEmpty else { return [] }
 
-        let playersWithCustom = presentPlayers.filter { $0.customAnnouncerRelativePath != nil }
+        let playersWithCustom = presentPlayers.filter {
+            guard let relativePath = $0.customAnnouncerRelativePath else { return false }
+            return audioAssetService.assetExists(relativePath: relativePath)
+        }
         if playersWithCustom.isEmpty {
             return [
                 ReadinessCheck(
                     id: "custom-announcers-none",
-                    title: "Custom Announcers",
-                    detail: "No present players have a custom announcer intro. Built-in Voice will be used instead when announcer mode is on.",
+                    title: "Announcement Cues",
+                    detail: "No present players have an Announcement Cue recorded.",
                     state: .warning
                 )
             ]
@@ -774,29 +851,10 @@ final class ReadinessService {
             return ReadinessCheck(
                 id: "player-\(player.id)-custom-coverage",
                 title: player.displayName,
-                detail: "This present player does not have a custom announcer intro.",
+                detail: "This present player does not have an Announcement Cue recorded.",
                 state: .warning
             )
         }
-    }
-
-    private func announcerVoiceChecks(for team: Team?) -> [ReadinessCheck] {
-        guard let team else { return [] }
-        guard team.session.gameDayAnnouncerMode == .announcer else { return [] }
-        guard let requested = team.announcerProfile.requestedVoiceIdentifier,
-              let resolved = team.announcerProfile.resolvedVoiceIdentifier,
-              requested != resolved else {
-            return []
-        }
-
-        return [
-            ReadinessCheck(
-                id: "announcer-voice-fallback",
-                title: "Built-in Voice Fallback",
-                detail: "The requested built-in voice is unavailable on this device. Roll Call regenerated announcers with an available fallback voice.",
-                state: .warning
-            )
-        ]
     }
 
     private func readinessStateForMusic(status: MusicAuthorization.Status, appleMusicCount: Int) -> ReadinessState {
@@ -822,33 +880,48 @@ final class ReadinessService {
 
 struct PackageService: Sendable {
     func export(team: Team, state: AppState) throws -> URL {
-        let exportURL = FileManager.default.temporaryDirectory.appendingPathComponent("\(safePackageName(for: team.name)).rollcall", isDirectory: true)
-        if FileManager.default.fileExists(atPath: exportURL.path()) {
+        let packageName = safePackageName(for: team.name)
+        let exportURL = FileManager.default.temporaryDirectory.appendingPathComponent("\(packageName).rollcall", isDirectory: false)
+        let stagingDirectory = FileManager.default.temporaryDirectory.appendingPathComponent("\(packageName)-\(UUID().uuidString)", isDirectory: true)
+        if FileManager.default.fileExists(atPath: exportURL.path) {
             try FileManager.default.removeItem(at: exportURL)
         }
-        try FileManager.default.createDirectory(at: exportURL, withIntermediateDirectories: true)
+        if FileManager.default.fileExists(atPath: stagingDirectory.path) {
+            try FileManager.default.removeItem(at: stagingDirectory)
+        }
+        try FileManager.default.createDirectory(at: stagingDirectory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: stagingDirectory) }
 
         let manifest = TeamPackageManifest(schemaVersion: state.schemaVersion, appVersion: state.appVersion, exportedAt: .now, deviceLabel: state.deviceIdentity.label, team: sanitized(team))
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
         encoder.dateEncodingStrategy = .iso8601
-        try encoder.encode(manifest).write(to: exportURL.appendingPathComponent("manifest.json"), options: .atomic)
+        try encoder.encode(manifest).write(to: stagingDirectory.appendingPathComponent("manifest.json"), options: .atomic)
 
-        let packageAssetsURL = exportURL.appendingPathComponent("Assets", isDirectory: true)
+        let packageAssetsURL = stagingDirectory.appendingPathComponent("Assets", isDirectory: true)
         try FileManager.default.createDirectory(at: packageAssetsURL, withIntermediateDirectories: true)
         try copyAssets(for: manifest.team, into: packageAssetsURL)
+        try FileManager.default.zipItem(at: stagingDirectory, to: exportURL, shouldKeepParent: false)
 
         return exportURL
     }
 
     func `import`(packageURL: URL, audioAssetService: AudioAssetService) throws -> TeamPackageManifest {
-        let manifestURL = try manifestURL(for: packageURL)
+        let extractedDirectory = try extractedDirectoryIfNeeded(for: packageURL)
+        defer {
+            if let extractedDirectory {
+                try? FileManager.default.removeItem(at: extractedDirectory)
+            }
+        }
+
+        let packageRootURL = extractedDirectory ?? packageURL
+        let manifestURL = try manifestURL(for: packageRootURL)
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601
         var manifest = try decoder.decode(TeamPackageManifest.self, from: Data(contentsOf: manifestURL))
 
-        if try isDirectory(packageURL) {
-            let packageAssetsURL = packageURL.appendingPathComponent("Assets", isDirectory: true)
+        if try isDirectory(packageRootURL) {
+            let packageAssetsURL = packageRootURL.appendingPathComponent("Assets", isDirectory: true)
             manifest.team = try importAssets(for: manifest.team, from: packageAssetsURL, audioAssetService: audioAssetService)
         }
         return manifest
@@ -951,10 +1024,28 @@ struct PackageService: Sendable {
         return sanitized.isEmpty ? "RollCall-Team" : sanitized.replacingOccurrences(of: " ", with: "-")
     }
 
+    private func extractedDirectoryIfNeeded(for packageURL: URL) throws -> URL? {
+        if try isDirectory(packageURL) {
+            return nil
+        }
+        let extractedURL = FileManager.default.temporaryDirectory.appendingPathComponent("RollCall-Import-\(UUID().uuidString)", isDirectory: true)
+        if FileManager.default.fileExists(atPath: extractedURL.path) {
+            try FileManager.default.removeItem(at: extractedURL)
+        }
+        try FileManager.default.createDirectory(at: extractedURL, withIntermediateDirectories: true)
+        do {
+            try FileManager.default.unzipItem(at: packageURL, to: extractedURL)
+            return extractedURL
+        } catch {
+            try? FileManager.default.removeItem(at: extractedURL)
+            throw error
+        }
+    }
+
     private func manifestURL(for packageURL: URL) throws -> URL {
         if try isDirectory(packageURL) {
             let manifestURL = packageURL.appendingPathComponent("manifest.json")
-            guard FileManager.default.fileExists(atPath: manifestURL.path()) else { throw AppError.invalidImport }
+            guard FileManager.default.fileExists(atPath: manifestURL.path) else { throw AppError.invalidImport }
             return manifestURL
         }
         return packageURL
@@ -974,16 +1065,16 @@ struct PackageService: Sendable {
                 try copyAssetIfPresent(relativePath: source.relativePath, into: assetsDirectory)
             }
             try copyAssetIfPresent(relativePath: player.customAnnouncerRelativePath, into: assetsDirectory)
-            try copyAssetIfPresent(relativePath: player.generatedBuiltInAnnouncerRelativePath, into: assetsDirectory)
         }
     }
 
     private func copyAssetIfPresent(relativePath: String?, into packageAssetsDirectory: URL) throws {
         guard let relativePath else { return }
-        let sourceURL = try AppPaths.assetsDirectory().appendingPathComponent(relativePath)
-        guard FileManager.default.fileExists(atPath: sourceURL.path()) else { return }
+        let sourceURL = try AppPaths.assetURL(relativePath: relativePath)
+        guard FileManager.default.fileExists(atPath: sourceURL.path) else { return }
         let destinationURL = packageAssetsDirectory.appendingPathComponent(relativePath)
-        if FileManager.default.fileExists(atPath: destinationURL.path()) {
+        try FileManager.default.createDirectory(at: destinationURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+        if FileManager.default.fileExists(atPath: destinationURL.path) {
             try FileManager.default.removeItem(at: destinationURL)
         }
         try FileManager.default.copyItem(at: sourceURL, to: destinationURL)
@@ -1001,7 +1092,6 @@ struct PackageService: Sendable {
                 player.cue?.source = .localAudio(importedSource)
             }
             player.customAnnouncerRelativePath = try importGeneratedAudioIfPresent(relativePath: player.customAnnouncerRelativePath, from: packageAssetsDirectory, audioAssetService: audioAssetService)
-            player.generatedBuiltInAnnouncerRelativePath = try importGeneratedAudioIfPresent(relativePath: player.generatedBuiltInAnnouncerRelativePath, from: packageAssetsDirectory, audioAssetService: audioAssetService)
             return player
         }
         return importedTeam
@@ -1009,7 +1099,7 @@ struct PackageService: Sendable {
 
     private func importLocalAudio(_ source: LocalAudioSource, from packageAssetsDirectory: URL, audioAssetService: AudioAssetService) throws -> LocalAudioSource {
         let sourceURL = packageAssetsDirectory.appendingPathComponent(source.relativePath)
-        guard FileManager.default.fileExists(atPath: sourceURL.path()) else { return source }
+        guard FileManager.default.fileExists(atPath: sourceURL.path) else { return source }
         var imported = try audioAssetService.storeCopiedAsset(
             from: sourceURL,
             suggestedExtension: sourceURL.pathExtension,
@@ -1024,7 +1114,7 @@ struct PackageService: Sendable {
     private func importGeneratedAudioIfPresent(relativePath: String?, from packageAssetsDirectory: URL, audioAssetService: AudioAssetService) throws -> String? {
         guard let relativePath else { return nil }
         let sourceURL = packageAssetsDirectory.appendingPathComponent(relativePath)
-        guard FileManager.default.fileExists(atPath: sourceURL.path()) else { return nil }
+        guard FileManager.default.fileExists(atPath: sourceURL.path) else { return nil }
         let imported = try audioAssetService.storeCopiedAsset(
             from: sourceURL,
             suggestedExtension: sourceURL.pathExtension,
@@ -1036,10 +1126,10 @@ struct PackageService: Sendable {
 
     private func importPhotoIfPresent(relativePath: String, from packageAssetsDirectory: URL) throws -> String? {
         let sourceURL = packageAssetsDirectory.appendingPathComponent(relativePath)
-        guard FileManager.default.fileExists(atPath: sourceURL.path()) else { return nil }
+        guard FileManager.default.fileExists(atPath: sourceURL.path) else { return nil }
         let ext = sourceURL.pathExtension.isEmpty ? "jpg" : sourceURL.pathExtension
-        let destinationURL = try AppPaths.assetsDirectory().appendingPathComponent("\(UUID().uuidString).\(ext)")
-        if FileManager.default.fileExists(atPath: destinationURL.path()) {
+        let destinationURL = try AppPaths.assetURL(relativePath: "\(UUID().uuidString).\(ext)")
+        if FileManager.default.fileExists(atPath: destinationURL.path) {
             try FileManager.default.removeItem(at: destinationURL)
         }
         try FileManager.default.copyItem(at: sourceURL, to: destinationURL)

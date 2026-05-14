@@ -1,7 +1,9 @@
 import Foundation
 
 enum AppMetadata {
-    static let appVersion = "0.3.7"
+    static let appVersion = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0.0.0"
+    static let buildNumber = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "0"
+    static let customIntroStorageMarker = "flat-custom-intro-v2"
 }
 
 enum CueSource: Codable, Equatable {
@@ -565,6 +567,19 @@ enum AppPaths {
         return url
     }
 
+    static func assetURL(relativePath: String) throws -> URL {
+        let trimmed = relativePath.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, !trimmed.hasPrefix("/") else { throw AppError.invalidImport }
+
+        return try trimmed
+            .split(separator: "/")
+            .reduce(assetsDirectory()) { partialURL, component in
+                let part = String(component)
+                guard part != ".", part != ".." else { throw AppError.invalidImport }
+                return partialURL.appendingPathComponent(part)
+            }
+    }
+
     static func snapshotsDirectory() throws -> URL {
         let url = try baseDirectory().appendingPathComponent("Snapshots", isDirectory: true)
         try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
@@ -599,6 +614,15 @@ extension Cue {
 }
 
 extension BuiltInClip {
+    var sourceID: String? {
+        guard case .builtInClip(let source) = cue.source else { return nil }
+        return source.id
+    }
+
+    static func firstMatchingSourceID(_ sourceID: String, in clips: [BuiltInClip]) -> BuiltInClip? {
+        clips.first { $0.sourceID == sourceID }
+    }
+
     static let defaults: [BuiltInClip] = [
         BuiltInClip(id: UUID(), title: "Small Cheer", cue: Cue(id: UUID(), label: "Small Cheer", source: .builtInClip(BuiltInClipSource(id: "small-cheer", displayName: "Small Cheer")), startTime: 0, duration: 5.5, fadeOutDuration: 0.35, pauseAfterAnnouncer: 0.2)),
         BuiltInClip(id: UUID(), title: "Victory Roar", cue: Cue(id: UUID(), label: "Victory Roar", source: .builtInClip(BuiltInClipSource(id: "victory-roar", displayName: "Victory Roar")), startTime: 0, duration: 6.0, fadeOutDuration: 0.35, pauseAfterAnnouncer: 0.2)),

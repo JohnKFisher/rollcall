@@ -1,0 +1,69 @@
+{
+  "" : {
+    "diagnostics" : "/Users/jkfisher/Documents/Coding/Roll Call/tmp/DerivedData/Build/Intermediates.noindex/RollCall.build/Debug-iphoneos/RollCall.build/Objects-normal/arm64/RollCall-primary.dia",
+    "emit-module-dependencies" : "/Users/jkfisher/Documents/Coding/Roll Call/tmp/DerivedData/Build/Intermediates.noindex/RollCall.build/Debug-iphoneos/RollCall.build/Objects-normal/arm64/RollCall-primary-emit-module.d",
+    "emit-module-diagnostics" : "/Users/jkfisher/Documents/Coding/Roll Call/tmp/DerivedData/Build/Intermediates.noindex/RollCall.build/Debug-iphoneos/RollCall.build/Objects-normal/arm64/RollCall-primary-emit-module.dia",
+    "pch" : "/Users/jkfisher/Documents/Coding/Roll Call/tmp/DerivedData/Build/Intermediates.noindex/RollCall.build/Debug-iphoneos/RollCall.build/Objects-normal/arm64/RollCall-primary-Bridging-header.pch",
+    "swift-dependencies" : "/Users/jkfisher/Documents/Coding/Roll Call/tmp/DerivedData/Build/Intermediates.noindex/RollCall.build/Debug-iphoneos/RollCall.build/Objects-normal/arm64/RollCall-primary.swiftdeps"
+  },
+  "/Users/jkfisher/Documents/Coding/Roll Call/RollCall/AppModel.swift" : {
+    "const-values" : "/Users/jkfisher/Documents/Coding/Roll Call/tmp/DerivedData/Build/Intermediates.noindex/RollCall.build/Debug-iphoneos/RollCall.build/Objects-normal/arm64/AppModel.swiftconstvalues",
+    "dependencies" : "/Users/jkfisher/Documents/Coding/Roll Call/tmp/DerivedData/Build/Intermediates.noindex/RollCall.build/Debug-iphoneos/RollCall.build/Objects-normal/arm64/AppModel.d",
+    "diagnostics" : "/Users/jkfisher/Documents/Coding/Roll Call/tmp/DerivedData/Build/Intermediates.noindex/RollCall.build/Debug-iphoneos/RollCall.build/Objects-normal/arm64/AppModel.dia",
+    "index-unit-output-path" : "/RollCall.build/Debug-iphoneos/RollCall.build/Objects-normal/arm64/AppModel.o",
+    "llvm-bc" : "/Users/jkfisher/Documents/Coding/Roll Call/tmp/DerivedData/Build/Intermediates.noindex/RollCall.build/Debug-iphoneos/RollCall.build/Objects-normal/arm64/AppModel.bc",
+    "object" : "/Users/jkfisher/Documents/Coding/Roll Call/tmp/DerivedData/Build/Intermediates.noindex/RollCall.build/Debug-iphoneos/RollCall.build/Objects-normal/arm64/AppModel.o",
+    "swift-dependencies" : "/Users/jkfisher/Documents/Coding/Roll Call/tmp/DerivedData/Build/Intermediates.noindex/RollCall.build/Debug-iphoneos/RollCall.build/Objects-normal/arm64/AppModel.swiftdeps",
+    "swiftmodule" : "/Users/jkfisher/Documents/Coding/Roll Call/tmp/DerivedData/Build/Intermediates.noindex/RollCall.build/Debug-iphoneos/RollCall.build/Objects-normal/arm64/AppModel~partial.swiftmodule"
+  },
+  "/Users/jkfisher/Documents/Coding/Roll Call/RollCall/Models.swift" : {
+    "const-values" : "/Users/jkfisher/Documents/Coding/Roll Call/tmp/DerivedData/Build/Intermediates.noindex/RollCall.build/Debug-iphoneos/RollCall.build/Objects-normal/arm64/Models.swiftconstvalues",
+    "dependencies" : "/Users/jkfisher/Documents/Coding/Roll Call/tmp/DerivedData/Build/Intermediates.noindex/RollCall.build/Debug-iphoneos/RollCall.build/Objects-normal/arm64/Models.d",
+    "diagnostics" : "/Users/jkfisher/Documents/Coding/Roll Call/tmp/DerivedData/Build/Intermediates.noindex/RollCall.build/Debug-iphoneos/RollCall.build/Objects-normal/arm64/Models.dia",
+    "index-unit-output-path" : "/RollCall.build/Debug-iphoneos/RollCall.build/Objects-normal/arm64/Models.o",
+    "llvm-bc" : "/Users/jkfisher/Documents/Coding/Roll Call/tmp/DerivedData/Build/Intermediates.noindex/RollCall.build/Debug-iphoneos/RollCall.build/Objects-normal/arm64/Models.bc",
+    "object" : "/Users/jkfisher/Documents/Coding/Roll Call/tmp/DerivedData/Build/Intermediates.noindex/RollCall.build/Debug-iphoneos/RollCall.build/Objects-normal/arm64/Models.o",
+    "swift-dependencies" : "/Users/jkfisher/Documents/Coding/Roll Call/tmp/DerivedData/Build/Intermediates.noindex/RollCall.build/Debug-iphoneos/RollCall.build/Objects-normal/arm64/Models.swiftdeps",
+    "swiftmodule" : "/Users/jkfisher/Documents/Coding/Roll Call/tmp/DerivedData/Build/Intermediates.noindex/RollCall.build/Debug-iphoneos/RollCall.build/Objects-normal/arm64/Models~partial.swiftmodule"
+  },
+  "/Users/jkfisher/Documents/Coding/Roll Call/RollCall/RollCallApp.swift" : {
+    "const-values" : "/Users/jkfisher/Documents/Coding/Roll Call/tmp/DerivedData/Build/Intermediates.noindex/RollCall.build/Debug-iphoneos/RollCall.build/Objects-normal/arm64/RollCallApp.swiftconstvalues",
+    "dependencies" : "/Users/jkfisher/Documents/Coding/Roll Call/tmp/DerivedData/Build/Intermediates.noindex/RollCall.build/Debug-iphoneos/RollCall.build/Objects-normal/arm64/RollCallApp.d",
+    "diagnostics" : "/Users/jkfisher/Documents/Coding/Roll Call/tmp/DerivedData/Build/Intermediates.noindex/RollCall.build/Debug-iphoneos/RollCall.build/Objects-normal/arm64/RollCallApp.dia",
+    "index-unit-output-path" : "/RollCall.build/Debug-iphoneos/RollCall.build/Objects-normal/arm64/RollCallApp.o",
+    "llvm-bc" : "/Users/jkfisher/Documents/Coding/Roll Call/tmp/DerivedData/Build/Intermediates.noindex/RollCall.build/Debug-iphoneos/RollCall.build/Objects-normal/arm64/RollCallApp.bc",
+    "object" : "/Users/jkfisher/Documents/Coding/Roll Call/tmp/DerivedData/Build/Intermediates.noindex/RollCall.build/Debug-iphoneos/RollCall.build/Objects-normal/arm64/RollCallApp.o",
+    "swift-dependencies" : "/Users/jkfisher/Documents/Coding/Roll Call/tmp/DerivedData/Build/Intermediates.noindex/RollCall.build/Debug-iphoneos/RollCall.build/Objects-normal/arm64/RollCallApp.swiftdeps",
+    "swiftmodule" : "/Users/jkfisher/Documents/Coding/Roll Call/tmp/DerivedData/Build/Intermediates.noindex/RollCall.build/Debug-iphoneos/RollCall.build/Objects-normal/arm64/RollCallApp~partial.swiftmodule"
+  },
+  "/Users/jkfisher/Documents/Coding/Roll Call/RollCall/RootView.swift" : {
+    "const-values" : "/Users/jkfisher/Documents/Coding/Roll Call/tmp/DerivedData/Build/Intermediates.noindex/RollCall.build/Debug-iphoneos/RollCall.build/Objects-normal/arm64/RootView.swiftconstvalues",
+    "dependencies" : "/Users/jkfisher/Documents/Coding/Roll Call/tmp/DerivedData/Build/Intermediates.noindex/RollCall.build/Debug-iphoneos/RollCall.build/Objects-normal/arm64/RootView.d",
+    "diagnostics" : "/Users/jkfisher/Documents/Coding/Roll Call/tmp/DerivedData/Build/Intermediates.noindex/RollCall.build/Debug-iphoneos/RollCall.build/Objects-normal/arm64/RootView.dia",
+    "index-unit-output-path" : "/RollCall.build/Debug-iphoneos/RollCall.build/Objects-normal/arm64/RootView.o",
+    "llvm-bc" : "/Users/jkfisher/Documents/Coding/Roll Call/tmp/DerivedData/Build/Intermediates.noindex/RollCall.build/Debug-iphoneos/RollCall.build/Objects-normal/arm64/RootView.bc",
+    "object" : "/Users/jkfisher/Documents/Coding/Roll Call/tmp/DerivedData/Build/Intermediates.noindex/RollCall.build/Debug-iphoneos/RollCall.build/Objects-normal/arm64/RootView.o",
+    "swift-dependencies" : "/Users/jkfisher/Documents/Coding/Roll Call/tmp/DerivedData/Build/Intermediates.noindex/RollCall.build/Debug-iphoneos/RollCall.build/Objects-normal/arm64/RootView.swiftdeps",
+    "swiftmodule" : "/Users/jkfisher/Documents/Coding/Roll Call/tmp/DerivedData/Build/Intermediates.noindex/RollCall.build/Debug-iphoneos/RollCall.build/Objects-normal/arm64/RootView~partial.swiftmodule"
+  },
+  "/Users/jkfisher/Documents/Coding/Roll Call/RollCall/Services.swift" : {
+    "const-values" : "/Users/jkfisher/Documents/Coding/Roll Call/tmp/DerivedData/Build/Intermediates.noindex/RollCall.build/Debug-iphoneos/RollCall.build/Objects-normal/arm64/Services.swiftconstvalues",
+    "dependencies" : "/Users/jkfisher/Documents/Coding/Roll Call/tmp/DerivedData/Build/Intermediates.noindex/RollCall.build/Debug-iphoneos/RollCall.build/Objects-normal/arm64/Services.d",
+    "diagnostics" : "/Users/jkfisher/Documents/Coding/Roll Call/tmp/DerivedData/Build/Intermediates.noindex/RollCall.build/Debug-iphoneos/RollCall.build/Objects-normal/arm64/Services.dia",
+    "index-unit-output-path" : "/RollCall.build/Debug-iphoneos/RollCall.build/Objects-normal/arm64/Services.o",
+    "llvm-bc" : "/Users/jkfisher/Documents/Coding/Roll Call/tmp/DerivedData/Build/Intermediates.noindex/RollCall.build/Debug-iphoneos/RollCall.build/Objects-normal/arm64/Services.bc",
+    "object" : "/Users/jkfisher/Documents/Coding/Roll Call/tmp/DerivedData/Build/Intermediates.noindex/RollCall.build/Debug-iphoneos/RollCall.build/Objects-normal/arm64/Services.o",
+    "swift-dependencies" : "/Users/jkfisher/Documents/Coding/Roll Call/tmp/DerivedData/Build/Intermediates.noindex/RollCall.build/Debug-iphoneos/RollCall.build/Objects-normal/arm64/Services.swiftdeps",
+    "swiftmodule" : "/Users/jkfisher/Documents/Coding/Roll Call/tmp/DerivedData/Build/Intermediates.noindex/RollCall.build/Debug-iphoneos/RollCall.build/Objects-normal/arm64/Services~partial.swiftmodule"
+  },
+  "/Users/jkfisher/Documents/Coding/Roll Call/tmp/DerivedData/Build/Intermediates.noindex/RollCall.build/Debug-iphoneos/RollCall.build/DerivedSources/GeneratedAssetSymbols.swift" : {
+    "const-values" : "/Users/jkfisher/Documents/Coding/Roll Call/tmp/DerivedData/Build/Intermediates.noindex/RollCall.build/Debug-iphoneos/RollCall.build/Objects-normal/arm64/GeneratedAssetSymbols.swiftconstvalues",
+    "dependencies" : "/Users/jkfisher/Documents/Coding/Roll Call/tmp/DerivedData/Build/Intermediates.noindex/RollCall.build/Debug-iphoneos/RollCall.build/Objects-normal/arm64/GeneratedAssetSymbols.d",
+    "diagnostics" : "/Users/jkfisher/Documents/Coding/Roll Call/tmp/DerivedData/Build/Intermediates.noindex/RollCall.build/Debug-iphoneos/RollCall.build/Objects-normal/arm64/GeneratedAssetSymbols.dia",
+    "index-unit-output-path" : "/RollCall.build/Debug-iphoneos/RollCall.build/Objects-normal/arm64/GeneratedAssetSymbols.o",
+    "llvm-bc" : "/Users/jkfisher/Documents/Coding/Roll Call/tmp/DerivedData/Build/Intermediates.noindex/RollCall.build/Debug-iphoneos/RollCall.build/Objects-normal/arm64/GeneratedAssetSymbols.bc",
+    "object" : "/Users/jkfisher/Documents/Coding/Roll Call/tmp/DerivedData/Build/Intermediates.noindex/RollCall.build/Debug-iphoneos/RollCall.build/Objects-normal/arm64/GeneratedAssetSymbols.o",
+    "swift-dependencies" : "/Users/jkfisher/Documents/Coding/Roll Call/tmp/DerivedData/Build/Intermediates.noindex/RollCall.build/Debug-iphoneos/RollCall.build/Objects-normal/arm64/GeneratedAssetSymbols.swiftdeps",
+    "swiftmodule" : "/Users/jkfisher/Documents/Coding/Roll Call/tmp/DerivedData/Build/Intermediates.noindex/RollCall.build/Debug-iphoneos/RollCall.build/Objects-normal/arm64/GeneratedAssetSymbols~partial.swiftmodule"
+  }
+}

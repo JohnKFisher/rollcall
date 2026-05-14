@@ -4,6 +4,10 @@ Use this file as a concise decision log for project-specific architectural, beha
 
 ## 2026-05-13
 
+- Approved: remove Built-in Voice from the product for now and center custom recorded intros only, with Game Day using either cue-only playback or custom-intro-plus-cue playback.
+  Rationale: Apple speech generation/export has proven too unreliable on-device for this app's core job, so a simpler custom-intro-only model is safer and clearer.
+  Status: approved
+
 - Approved: resolve the MusicKit token failure by enabling the MusicKit App Service for App ID `com.jkfisher.rollcall`, not by adding a local entitlement.
   Rationale: Apple's token service rejected the bundle ID as an unregistered client, and Xcode rejected `com.apple.developer.music.user-token` as an invalid entitlement for this target.
   Status: approved
@@ -28,6 +32,16 @@ Use this file as a concise decision log for project-specific architectural, beha
   Rationale: the feature now needs to feel polished out of the box, and the licensing trail must live in the repo alongside the shipped assets.
   Status: approved
 
+## 2026-05-14
+
+- Approved: when a Game Day player is tapped without a selected song cue, play the built-in `Small Cheer` clip as the default fallback.
+  Rationale: this keeps tap behavior useful even when player setup is incomplete, while preserving a single implementation point for a future user-selectable default fallback cue.
+  Status: approved
+
+- Approved: switch `.rollcall` export/import to a true zipped single-file archive format, while keeping import compatibility with existing directory-style packages.
+  Rationale: sharing should produce one expected file instead of a package folder, but prior exports must remain usable.
+  Status: approved
+
 ## 2026-05-12
 
 - Approved: Apple Music cue editing should adapt to subscription capability, using full-song trimming for active playback subscriptions and preview-only trimming otherwise.
@@ -36,7 +50,7 @@ Use this file as a concise decision log for project-specific architectural, beha
 
 - Approved: move announcer behavior to a team-scoped Built-in Voice profile plus optional per-player custom recordings, with Game Day choosing custom intro first, built-in fallback second, and no-intro mode as a team session control.
   Rationale: announcer wording, voice choice, package portability, and custom-recording override behavior need a stable product model instead of per-cue ad hoc intro state.
-  Status: approved
+  Status: superseded
 
 - Approved: move Apple Music song choice into a dedicated recents-plus-search picker and make cue shaping a separate trim-focused step with preset-first controls and opt-in precision.
   Rationale: the old inline search plus raw timing sliders made a common setup path feel awkward; the new flow keeps song choice, clip feel, and fine adjustments separated without rewriting the cue model.

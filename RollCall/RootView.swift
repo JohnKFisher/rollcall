@@ -24,6 +24,7 @@ struct RootView: View {
     @State private var showLineupEditor = false
     @State private var showRenameTeamAlert = false
     @State private var renameTeamName = ""
+    @State private var packageSharePresented = false
 
     private var errorBinding: Binding<Bool> {
         Binding(get: { appModel.lastError != nil }, set: { newValue in if !newValue { appModel.lastError = nil } })
@@ -138,6 +139,10 @@ struct RootView: View {
 
                     Section("Roster") {
                         ForEach(playersTabRoster(for: team)) { player in
+                            let cueLabel = player.cue?.label
+                            let hasCustomIntro = appModel.hasStoredCustomAnnouncer(for: player)
+                            let isCustomIntroMissing = player.customAnnouncerRelativePath != nil && !hasCustomIntro
+                            let isPresent = player.isPresent
                             Button {
                                 selectedPlayer = player
                             } label: {
@@ -151,22 +156,26 @@ struct RootView: View {
                                             .foregroundStyle(.secondary)
                                     }
                                     Spacer()
-                                    if let cue = player.cue {
-                                        Text(cue.label)
+                                    VStack(alignment: .trailing, spacing: 6) {
+                                        Text(cueStatusText(cueLabel: cueLabel))
                                             .font(.caption.weight(.semibold))
                                             .padding(.horizontal, 10)
                                             .padding(.vertical, 6)
-                                            .background(Color.orange.opacity(0.15), in: Capsule())
-                                            .foregroundStyle(.orange)
-                                    } else {
-                                        Text("Add Cue")
-                                            .foregroundStyle(.secondary)
+                                            .background(cueStatusBackground(cueLabel: cueLabel), in: Capsule())
+                                            .foregroundStyle(cueStatusForeground(cueLabel: cueLabel))
+
+                                        Text(customIntroStatusText(hasCustomIntro: hasCustomIntro, isMissing: isCustomIntroMissing))
+                                            .font(.caption.weight(.semibold))
+                                            .padding(.horizontal, 10)
+                                            .padding(.vertical, 6)
+                                            .background(customIntroStatusBackground(hasCustomIntro: hasCustomIntro, isMissing: isCustomIntroMissing), in: Capsule())
+                                            .foregroundStyle(customIntroStatusForeground(hasCustomIntro: hasCustomIntro, isMissing: isCustomIntroMissing))
                                     }
                                 }
                             }
                             .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-                                Button(player.isPresent ? "Mark Out" : "Mark In") { appModel.togglePresent(player) }
-                                    .tint(player.isPresent ? .red : .green)
+                                Button(isPresent ? "Mark Out" : "Mark In") { appModel.togglePresent(player) }
+                                    .tint(isPresent ? .red : .green)
                             }
                         }
                     }
@@ -262,12 +271,12 @@ struct RootView: View {
                             .padding(.vertical, 10)
                             .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
 
-                        Picker("Announcer Mode", selection: Binding(
+                        Picker("Intro Mode", selection: Binding(
                             get: { team.session.gameDayAnnouncerMode },
                             set: { appModel.setGameDayAnnouncerMode($0) }
                         )) {
-                            Text("No Announcer").tag(GameDayAnnouncerMode.noAnnouncer)
-                            Text("Announcer").tag(GameDayAnnouncerMode.announcer)
+                            Text("Cue Only").tag(GameDayAnnouncerMode.noAnnouncer)
+                            Text("Announcement Cues").tag(GameDayAnnouncerMode.announcer)
                         }
                         .pickerStyle(.segmented)
 
@@ -392,10 +401,13 @@ struct RootView: View {
                         Task { await appModel.exportSelectedTeam() }
                     }
                     .disabled(appModel.selectedTeam == nil)
-                    if let exportURL = appModel.exportURL {
-                        ShareLink(item: exportURL) {
+                    if appModel.exportURL != nil {
+                        Button {
+                            packageSharePresented = true
+                        } label: {
                             Label("Share Latest .rollcall Package", systemImage: "square.and.arrow.up")
                         }
+                        .buttonStyle(.plain)
                     }
                     Button("Import .rollcall Package") { packageImportPresented = true }
                 }
@@ -405,10 +417,6 @@ struct RootView: View {
                         get: { appModel.state.settings.hapticsEnabled },
                         set: { appModel.setHapticsEnabled($0) }
                     ))
-                }
-
-                if let team = appModel.selectedTeam {
-                    TeamAnnouncerSettingsSection(appModel: appModel, team: team)
                 }
 
                 Section("Recovery") {
@@ -424,12 +432,17 @@ struct RootView: View {
                 }
 
                 Section("About") {
-                    Text("Roll Call \(AppMetadata.appVersion)")
+                    Text("Roll Call \(AppMetadata.appVersion) (\(AppMetadata.buildNumber))")
                     Text("Copyright John Kenneth Fisher")
                     Link("GitHub: JohnKFisher/roll-call", destination: URL(string: "https://github.com/JohnKFisher/roll-call")!)
                 }
             }
             .navigationTitle("Settings")
+            .sheet(isPresented: $packageSharePresented) {
+                if let exportURL = appModel.exportURL {
+                    ActivityShareSheet(items: [exportURL])
+                }
+            }
         }
     }
 
@@ -450,6 +463,16 @@ struct RootView: View {
         case .unknown: return .secondary
         }
     }
+}
+
+private struct ActivityShareSheet: UIViewControllerRepresentable {
+    let items: [Any]
+
+    func makeUIViewController(context: Context) -> UIActivityViewController {
+        UIActivityViewController(activityItems: items, applicationActivities: nil)
+    }
+
+    func updateUIViewController(_ uiViewController: UIActivityViewController, context: Context) {}
 }
 
 private struct GameDayBackground: View {
@@ -477,7 +500,14 @@ private struct GameDayPlayerGrid: View {
         ScrollView {
             LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 14) {
                 ForEach(appModel.selectedTeamPresentPlayers) { player in
-                    let isActive = playbackEngine.activeCueID == player.cue?.id
+                    let isActive = if let cueID = player.cue?.id {
+                        playbackEngine.activeCueID == cueID
+                    } else {
+                        playbackEngine.activeCueID == player.id
+                    }
+                    let hasCustomIntro = appModel.hasStoredCustomAnnouncer(for: player)
+                    let isCustomIntroMissing = player.customAnnouncerRelativePath != nil && !hasCustomIntro
+                    let cueLabel = player.cue?.label ?? "No Cue Yet"
                     Button {
                         Task { await appModel.play(player: player) }
                     } label: {
@@ -489,9 +519,12 @@ private struct GameDayPlayerGrid: View {
                             Text(player.displayName)
                                 .font(.title3.weight(.bold))
                                 .multilineTextAlignment(.center)
-                            Text(player.cue?.label ?? "No Cue Yet")
+                            Text(cueLabel)
                                 .font(.footnote)
                                 .foregroundStyle(.secondary)
+                            Text(customIntroStatusText(hasCustomIntro: hasCustomIntro, isMissing: isCustomIntroMissing, readyLabel: "Announcement Cue Ready"))
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(customIntroStatusForeground(hasCustomIntro: hasCustomIntro, isMissing: isCustomIntroMissing))
                             if isActive {
                                 Label("Now Playing", systemImage: "speaker.wave.2.fill")
                                     .font(.caption.weight(.semibold))
@@ -695,102 +728,6 @@ private struct DeveloperToolsView: View {
     }
 }
 
-private struct TeamAnnouncerSettingsSection: View {
-    @ObservedObject var appModel: AppModel
-    let team: Team
-    @State private var draftProfile: TeamAnnouncerProfile
-    @State private var includeAllVoices = false
-
-    init(appModel: AppModel, team: Team) {
-        self.appModel = appModel
-        self.team = team
-        _draftProfile = State(initialValue: team.announcerProfile)
-    }
-
-    var body: some View {
-        Section("Built-in Voice") {
-            Text("Applies to the selected team. Tokens: `<number>`, `<name>`, `<team>`.")
-                .font(.footnote)
-                .foregroundStyle(.secondary)
-
-            TextField("Phrase Template", text: $draftProfile.phraseTemplate, axis: .vertical)
-                .lineLimit(2...4)
-
-            Toggle("Show All Languages", isOn: $includeAllVoices)
-
-            Picker("Voice", selection: Binding(
-                get: { draftProfile.requestedVoiceIdentifier ?? "automatic" },
-                set: { newValue in
-                    if newValue == "automatic" {
-                        draftProfile.requestedVoiceIdentifier = nil
-                    } else {
-                        draftProfile.requestedVoiceIdentifier = newValue
-                        if let option = appModel.announcerVoiceOptions(includeAllLanguages: true).first(where: { $0.id == newValue }) {
-                            draftProfile.voiceLanguageCode = option.languageCode
-                        }
-                    }
-                }
-            )) {
-                Text("Automatic Best Match").tag("automatic")
-                ForEach(appModel.announcerVoiceOptions(includeAllLanguages: includeAllVoices)) { voice in
-                    Text("\(voice.name) (\(voice.languageCode))").tag(voice.id)
-                }
-            }
-
-            VStack(alignment: .leading, spacing: 10) {
-                Text("Rate \(String(format: "%.2f", draftProfile.rate))")
-                Slider(value: Binding(
-                    get: { Double(draftProfile.rate) },
-                    set: { draftProfile.rate = Float($0) }
-                ), in: 0.35...0.6)
-
-                Text("Pitch \(String(format: "%.2f", draftProfile.pitchMultiplier))")
-                Slider(value: Binding(
-                    get: { Double(draftProfile.pitchMultiplier) },
-                    set: { draftProfile.pitchMultiplier = Float($0) }
-                ), in: 0.8...1.2)
-
-                Text("Volume \(String(format: "%.2f", draftProfile.volume))")
-                Slider(value: Binding(
-                    get: { Double(draftProfile.volume) },
-                    set: { draftProfile.volume = Float($0) }
-                ), in: 0.4...1.0)
-            }
-
-            Text(appModel.announcerPreviewText(for: team, profile: draftProfile))
-                .font(.footnote)
-                .foregroundStyle(.secondary)
-
-            Button("Preview Built-in Voice") {
-                Task { await appModel.previewBuiltInAnnouncer(profile: draftProfile) }
-            }
-
-            Button("Save Built-in Voice") {
-                appModel.saveSelectedTeamAnnouncerProfile(draftProfile)
-            }
-            .buttonStyle(.borderedProminent)
-
-            if let requested = draftProfile.requestedVoiceIdentifier,
-               let resolved = team.announcerProfile.resolvedVoiceIdentifier,
-               requested != resolved {
-                Text("Current device fallback: the requested voice is unavailable, so Roll Call is using a different installed voice.")
-                    .font(.footnote)
-                    .foregroundStyle(.orange)
-            }
-
-            if let regeneration = appModel.announcerRegenerationStatus,
-               regeneration.teamID == team.id {
-                Text(regeneration.progressText)
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-            }
-        }
-        .onChange(of: team.announcerProfile) { _, newValue in
-            draftProfile = newValue
-        }
-    }
-}
-
 private struct PlayerQuickAddView: View {
     private enum Field: Hashable {
         case name
@@ -801,29 +738,67 @@ private struct PlayerQuickAddView: View {
     @State private var name = ""
     @State private var number = ""
     @FocusState private var focusedField: Field?
+    
+    private var canAddPlayer: Bool {
+        !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
 
     var body: some View {
         TextField("Player name", text: $name)
             .focused($focusedField, equals: .name)
             .submitLabel(.next)
+            .textInputAutocapitalization(.words)
+            .autocorrectionDisabled(true)
             .onSubmit {
                 focusedField = .number
             }
         TextField("Number", text: $number)
             .focused($focusedField, equals: .number)
             .keyboardType(.numberPad)
-        Button("Add Player") {
-            appModel.addPlayer(name: name, number: number)
-            name = ""
-            number = ""
-            focusedField = nil
+            .submitLabel(.done)
+        HStack {
+            Button("Dismiss Keyboard") {
+                focusedField = nil
+            }
+            .buttonStyle(.bordered)
+            .foregroundStyle(.secondary)
+
+            Spacer()
+
+            Button("Add Player") {
+                addPlayerAndReset()
+            }
+            .buttonStyle(.borderedProminent)
+            .disabled(!canAddPlayer)
         }
-        .buttonStyle(.borderedProminent)
-        .disabled(name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+        .toolbar {
+            ToolbarItemGroup(placement: .keyboard) {
+                Button("Done") {
+                    focusedField = nil
+                }
+                Spacer()
+                Button("Add") {
+                    addPlayerAndReset()
+                }
+                .disabled(!canAddPlayer)
+            }
+        }
+    }
+
+    private func addPlayerAndReset() {
+        appModel.addPlayer(name: name, number: number)
+        name = ""
+        number = ""
+        focusedField = .name
     }
 }
 
 private struct PlayerEditorSheet: View {
+    private struct PendingPhotoCrop: Identifiable {
+        let id = UUID()
+        let image: UIImage
+    }
+
     private enum Field: Hashable {
         case displayName
         case uniformNumber
@@ -835,23 +810,31 @@ private struct PlayerEditorSheet: View {
     @State var player: Player
     @State private var importPresented = false
     @State private var photoItem: PhotosPickerItem?
+    @State private var pendingPhotoCrop: PendingPhotoCrop?
+    @State private var photoCropFallbackTask: Task<Void, Never>?
+    @State private var didCropperRender = false
     @State private var showAppleMusicPicker = false
     @State private var trimMode: TrimSuggestionMode = .suggestedHook
     @State private var showAdvancedTrim = false
     @State private var liveScrubTask: Task<Void, Never>?
     @State private var pendingClearAction: PendingClearAction?
+    @State private var isStartTrimEditingEnabled = false
     @FocusState private var focusedField: Field?
 
     private let lengthOptions: [Double] = [6, 8, 10, 12, 15]
 
     var body: some View {
+        let hasStoredCustomIntro = appModel.hasStoredCustomAnnouncer(for: player)
+        let isCustomIntroMissing = player.customAnnouncerRelativePath != nil && !hasStoredCustomIntro
+
         NavigationStack {
             Form {
                 Section("Player") {
+                    let photoRelativePath = player.photoRelativePath
                     PhotosPicker(selection: $photoItem, matching: .images) {
                         VStack(spacing: 10) {
-                            PlayerPhotoThumbnail(relativePath: player.photoRelativePath, size: 110, cornerRadius: 28)
-                            Text(player.photoRelativePath == nil ? "Tap to Choose Photo" : "Tap to Replace Photo")
+                            PlayerPhotoThumbnail(relativePath: photoRelativePath, size: 110, cornerRadius: 28)
+                            Text(photoRelativePath == nil ? "Tap to Choose Photo" : "Tap to Replace Photo")
                                 .font(.footnote.weight(.semibold))
                                 .foregroundStyle(.orange)
                         }
@@ -902,14 +885,19 @@ private struct PlayerEditorSheet: View {
                     Button("Import Audio or Video") { importPresented = true }
                 }
 
-                Section("Custom Announcer") {
-                    Text("Optional. Game Day announcer mode will use this recording first, then Built-in Voice if no custom intro is present.")
+                Section("Announcement Cue") {
+                    Text("Optional. When Game Day is set to Announcement Cues, Roll Call will play this recording before the player’s cue.")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
 
+                    if isCustomIntroMissing {
+                        Label("Roll Call still has an Announcement Cue reference for this player, but the audio file is missing from app storage.", systemImage: "exclamationmark.triangle.fill")
+                            .font(.footnote)
+                            .foregroundStyle(.red)
+                    }
+
                     if appModel.isRecordingCustomAnnouncer(for: player) {
                         Button("Stop Recording") {
-                            appModel.updatePlayer(player)
                             let currentPlayer = player
                             Task {
                                 await appModel.stopRecordingCustomAnnouncer(for: currentPlayer)
@@ -919,17 +907,17 @@ private struct PlayerEditorSheet: View {
                         .buttonStyle(.borderedProminent)
                         .tint(.red)
                     } else {
-                        Button(player.customAnnouncerRelativePath == nil ? "Record Custom Intro" : "Re-record Custom Intro") {
-                            appModel.updatePlayer(player)
+                        Button(appModel.customAnnouncerButtonTitle(for: player)) {
                             let currentPlayer = player
                             Task {
                                 await appModel.startRecordingCustomAnnouncer(for: currentPlayer)
                             }
                         }
+                        .disabled(appModel.isCustomAnnouncerTransitioning(for: player))
                     }
 
-                    if player.customAnnouncerRelativePath != nil {
-                        Button("Preview Custom Intro") {
+                    if hasStoredCustomIntro {
+                        Button("Preview Announcement Cue") {
                             appModel.previewCustomAnnouncer(for: player)
                         }
                     }
@@ -995,15 +983,6 @@ private struct PlayerEditorSheet: View {
                     appModel.cancelRecordingCustomAnnouncer()
                 }
             }
-            .onChange(of: player.displayName) { _, _ in
-                invalidateAnnouncerAsset()
-            }
-            .onChange(of: player.uniformNumber) { _, _ in
-                invalidateAnnouncerAsset()
-            }
-            .onChange(of: player.pronunciationOverride) { _, _ in
-                invalidateAnnouncerAsset()
-            }
             .alert("Are you sure?", isPresented: Binding(
                 get: { pendingClearAction != nil },
                 set: { if !$0 { pendingClearAction = nil } }
@@ -1054,6 +1033,27 @@ private struct PlayerEditorSheet: View {
                     .presentationDetents([.medium])
                 }
             }
+            .fullScreenCover(item: $pendingPhotoCrop) { pending in
+                BasicPhotoCropperSheet(
+                    image: pending.image,
+                    onReady: {
+                        didCropperRender = true
+                        photoCropFallbackTask?.cancel()
+                        photoCropFallbackTask = nil
+                    },
+                    onCancel: {
+                        photoCropFallbackTask?.cancel()
+                        photoCropFallbackTask = nil
+                        pendingPhotoCrop = nil
+                    },
+                    onApply: { croppedImage in
+                        photoCropFallbackTask?.cancel()
+                        photoCropFallbackTask = nil
+                        savePlayerPhoto(croppedImage)
+                        pendingPhotoCrop = nil
+                    }
+                )
+            }
         }
     }
 
@@ -1070,11 +1070,29 @@ private struct PlayerEditorSheet: View {
     private func importPhoto() async {
         guard let photoItem,
               let data = try? await photoItem.loadTransferable(type: Data.self),
-              let image = UIImage(data: data),
-              let jpeg = image.jpegData(compressionQuality: 0.8),
-              let assetsDir = try? AppPaths.assetsDirectory()
+              let image = UIImage(data: data)
         else { return }
 
+        await MainActor.run {
+            photoCropFallbackTask?.cancel()
+            didCropperRender = false
+            pendingPhotoCrop = PendingPhotoCrop(image: image)
+            photoCropFallbackTask = Task {
+                try? await Task.sleep(for: .seconds(1.5))
+                guard !Task.isCancelled else { return }
+                await MainActor.run {
+                    guard !didCropperRender, let pending = pendingPhotoCrop else { return }
+                    savePlayerPhoto(pending.image)
+                    appModel.lastError = "Photo crop screen did not load in time. Roll Call saved the original photo instead."
+                    pendingPhotoCrop = nil
+                }
+            }
+        }
+    }
+
+    private func savePlayerPhoto(_ image: UIImage) {
+        guard let jpeg = image.jpegData(compressionQuality: 0.8),
+              let assetsDir = try? AppPaths.assetsDirectory() else { return }
         let fileName = "\(UUID().uuidString).jpg"
         do {
             try jpeg.write(to: assetsDir.appendingPathComponent(fileName), options: .atomic)
@@ -1084,12 +1102,9 @@ private struct PlayerEditorSheet: View {
         }
     }
 
-    private func invalidateAnnouncerAsset() {
-        player.generatedBuiltInAnnouncerRelativePath = nil
-    }
-
     private func refreshPlayerFromModel() {
         player = appModel.selectedTeam?.players.first(where: { $0.id == player.id }) ?? player
+        isStartTrimEditingEnabled = false
         normalizeTrimModeForCurrentCue()
     }
 
@@ -1143,6 +1158,10 @@ private struct PlayerEditorSheet: View {
                     Text("Start")
                         .font(.headline)
                     Spacer()
+                    Button(isStartTrimEditingEnabled ? "Done" : "Enable") {
+                        isStartTrimEditingEnabled.toggle()
+                    }
+                    .buttonStyle(.bordered)
                     Text(secondsText(cue.startTime))
                         .monospacedDigit()
                         .foregroundStyle(.secondary)
@@ -1158,6 +1177,17 @@ private struct PlayerEditorSheet: View {
                         scheduleLiveScrubPreview()
                     }
                 )
+                .allowsHitTesting(isStartTrimEditingEnabled)
+                .opacity(isStartTrimEditingEnabled ? 1 : 0.45)
+                .overlay(alignment: .center) {
+                    if !isStartTrimEditingEnabled {
+                        Text("Tap Enable to adjust start")
+                            .font(.caption.weight(.semibold))
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 6)
+                            .background(.ultraThinMaterial, in: Capsule())
+                    }
+                }
             }
 
             VStack(alignment: .leading, spacing: 8) {
@@ -1225,6 +1255,173 @@ private struct PlayerEditorSheet: View {
     }
 }
 
+private struct BasicPhotoCropperSheet: View {
+    let image: UIImage
+    let onReady: () -> Void
+    let onCancel: () -> Void
+    let onApply: (UIImage) -> Void
+
+    @State private var zoom: CGFloat = 1
+    @State private var lastZoom: CGFloat = 1
+    @State private var offset: CGSize = .zero
+    @State private var lastOffset: CGSize = .zero
+
+    private let cropSize: CGFloat = 280
+
+    var body: some View {
+        NavigationStack {
+            VStack(spacing: 18) {
+                Text("Pinch to zoom, drag to position.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+
+                ZStack {
+                    Rectangle()
+                        .fill(Color.black.opacity(0.92))
+
+                    GeometryReader { geometry in
+                        let side = min(cropSize, min(geometry.size.width, geometry.size.height))
+                        ZStack {
+                            Image(uiImage: image)
+                                .resizable()
+                                .aspectRatio(contentMode: .fill)
+                                .frame(width: side, height: side)
+                                .scaleEffect(zoom)
+                                .offset(offset)
+                                .clipped()
+                                .gesture(dragGesture(maxSide: side))
+                                .simultaneousGesture(magnifyGesture(maxSide: side))
+
+                            RoundedRectangle(cornerRadius: 20, style: .continuous)
+                                .stroke(Color.white.opacity(0.88), lineWidth: 2)
+                                .frame(width: side, height: side)
+                                .allowsHitTesting(false)
+                        }
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    }
+                    .frame(height: cropSize)
+                }
+                .frame(height: cropSize + 24)
+                .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
+                .padding(.horizontal, 16)
+
+                HStack(spacing: 12) {
+                    Button("Reset") {
+                        zoom = 1
+                        lastZoom = 1
+                        offset = .zero
+                        lastOffset = .zero
+                    }
+                    .buttonStyle(.bordered)
+
+                    Spacer()
+                }
+                .padding(.horizontal, 16)
+            }
+            .padding(.top, 12)
+            .navigationTitle("Adjust Photo")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button("Cancel") { onCancel() }
+                }
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Use Photo") {
+                        onApply(croppedImage() ?? image)
+                    }
+                }
+            }
+            .onAppear {
+                onReady()
+            }
+        }
+    }
+
+    private func magnifyGesture(maxSide: CGFloat) -> some Gesture {
+        MagnificationGesture()
+            .onChanged { value in
+                zoom = min(max(lastZoom * value, 1), 4)
+                clampOffset(maxSide: maxSide)
+            }
+            .onEnded { _ in
+                lastZoom = zoom
+                clampOffset(maxSide: maxSide)
+                lastOffset = offset
+            }
+    }
+
+    private func dragGesture(maxSide: CGFloat) -> some Gesture {
+        DragGesture()
+            .onChanged { value in
+                offset = CGSize(
+                    width: lastOffset.width + value.translation.width,
+                    height: lastOffset.height + value.translation.height
+                )
+                clampOffset(maxSide: maxSide)
+            }
+            .onEnded { _ in
+                clampOffset(maxSide: maxSide)
+                lastOffset = offset
+            }
+    }
+
+    private func clampOffset(maxSide: CGFloat) {
+        let normalized = image.normalizedUpImage()
+        let baseScale = max(maxSide / normalized.size.width, maxSide / normalized.size.height)
+        let scaledWidth = normalized.size.width * baseScale * zoom
+        let scaledHeight = normalized.size.height * baseScale * zoom
+        let maxX = max((scaledWidth - maxSide) / 2, 0)
+        let maxY = max((scaledHeight - maxSide) / 2, 0)
+        offset.width = min(max(offset.width, -maxX), maxX)
+        offset.height = min(max(offset.height, -maxY), maxY)
+    }
+
+    private func croppedImage() -> UIImage? {
+        let normalized = image.normalizedUpImage()
+        guard let cgImage = normalized.cgImage else { return nil }
+
+        let side = cropSize
+        let baseScale = max(side / normalized.size.width, side / normalized.size.height)
+        let effectiveScale = baseScale * zoom
+        let displayedWidth = normalized.size.width * effectiveScale
+        let displayedHeight = normalized.size.height * effectiveScale
+
+        let originX = (side - displayedWidth) / 2 + offset.width
+        let originY = (side - displayedHeight) / 2 + offset.height
+
+        var cropRect = CGRect(
+            x: (0 - originX) / effectiveScale,
+            y: (0 - originY) / effectiveScale,
+            width: side / effectiveScale,
+            height: side / effectiveScale
+        ).integral
+
+        cropRect.origin.x = max(0, min(cropRect.origin.x, normalized.size.width - cropRect.width))
+        cropRect.origin.y = max(0, min(cropRect.origin.y, normalized.size.height - cropRect.height))
+        cropRect.size.width = min(cropRect.width, normalized.size.width - cropRect.origin.x)
+        cropRect.size.height = min(cropRect.height, normalized.size.height - cropRect.origin.y)
+
+        guard let cropped = cgImage.cropping(to: cropRect), cropped.width > 0, cropped.height > 0 else {
+            return nil
+        }
+        return UIImage(cgImage: cropped, scale: normalized.scale, orientation: .up)
+    }
+}
+
+private extension UIImage {
+    func normalizedUpImage() -> UIImage {
+        if imageOrientation == .up {
+            return self
+        }
+        let format = UIGraphicsImageRendererFormat.default()
+        format.scale = scale
+        let renderer = UIGraphicsImageRenderer(size: size, format: format)
+        return renderer.image { _ in
+            draw(in: CGRect(origin: .zero, size: size))
+        }
+    }
+}
+
 private extension PlayerEditorSheet {
     enum PendingClearAction: Identifiable {
         case song
@@ -1253,10 +1450,52 @@ private extension PlayerEditorSheet {
             case .song:
                 return "This will remove the current cue for this player."
             case .customAnnouncer:
-                return "This will remove only the custom announcer recording for this player. Built-in Voice can still be used."
+                return "This will remove only the Announcement Cue recording for this player."
             }
         }
     }
+}
+
+private func cueStatusText(cueLabel: String?) -> String {
+    cueLabel ?? "Add Cue"
+}
+
+private func cueStatusBackground(cueLabel: String?) -> Color {
+    cueLabel == nil ? Color.gray.opacity(0.14) : Color.orange.opacity(0.15)
+}
+
+private func cueStatusForeground(cueLabel: String?) -> Color {
+    cueLabel == nil ? .secondary : .orange
+}
+
+private func customIntroStatusText(hasCustomIntro: Bool, isMissing: Bool, readyLabel: String = "Announcement Cue") -> String {
+    if hasCustomIntro {
+        return readyLabel
+    }
+    if isMissing {
+        return "Announcement Cue Missing"
+    }
+    return "No Announcement Cue"
+}
+
+private func customIntroStatusForeground(hasCustomIntro: Bool, isMissing: Bool) -> Color {
+    if hasCustomIntro {
+        return .green
+    }
+    if isMissing {
+        return .red
+    }
+    return .secondary
+}
+
+private func customIntroStatusBackground(hasCustomIntro: Bool, isMissing: Bool) -> Color {
+    if hasCustomIntro {
+        return Color.green.opacity(0.15)
+    }
+    if isMissing {
+        return Color.red.opacity(0.14)
+    }
+    return Color.secondary.opacity(0.14)
 }
 
 private enum TrimSuggestionMode: String, CaseIterable, Identifiable {
@@ -1615,11 +1854,37 @@ private struct PlayerPhotoThumbnail: View {
 
 private extension View {
     func dismissesKeyboardOnTap() -> some View {
-        simultaneousGesture(
-            TapGesture().onEnded {
-                UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
-            }
-        )
+        background(KeyboardDismissTapOverlay())
+    }
+}
+
+private struct KeyboardDismissTapOverlay: UIViewRepresentable {
+    func makeUIView(context: Context) -> UIView {
+        let view = UIView(frame: .zero)
+        view.backgroundColor = .clear
+
+        let tap = UITapGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.handleTap))
+        tap.cancelsTouchesInView = false
+        tap.delegate = context.coordinator
+        view.addGestureRecognizer(tap)
+
+        return view
+    }
+
+    func updateUIView(_ uiView: UIView, context: Context) {}
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator()
+    }
+
+    final class Coordinator: NSObject, UIGestureRecognizerDelegate {
+        @objc func handleTap() {
+            UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+        }
+
+        func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer) -> Bool {
+            true
+        }
     }
 }
 
@@ -1634,7 +1899,7 @@ private final class PlayerPhotoCache {
         if let cached = cache.object(forKey: key) {
             return cached
         }
-        guard let url = try? AppPaths.assetsDirectory().appendingPathComponent(relativePath),
+        guard let url = try? AppPaths.assetURL(relativePath: relativePath),
               let image = UIImage(contentsOfFile: url.path)
         else {
             return nil
