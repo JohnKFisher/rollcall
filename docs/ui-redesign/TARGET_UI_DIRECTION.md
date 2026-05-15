@@ -18,14 +18,17 @@ Reviewed inputs:
 - `docs/current-state/COMPONENT_CATALOG.md`
 - `docs/current-state/VISUAL_REFERENCES.md`
 - `docs/current-state/KNOWN_BUGS_AND_TECH_DEBT.md`
+- `docs/roll_call_dev_notes.md`
 - `docs/DECISIONS.md`
 - `docs/WHERE_WE_STAND.md`
 
-Important uncertainty:
-- `docs/roll_call_dev_notes.md` was not found in this checkout during this planning pass, so this document cannot claim to incorporate it directly.
-
 Important visual-documentation limitation:
 - live screenshots were not captured in the current-state package; the existing visual references are code-derived because simulator capture was blocked by the `ZIPFoundation` build issue.
+
+Important interpretation note from `docs/roll_call_dev_notes.md`:
+- those notes are directional concepts and structural thoughts
+- they are not finalized designs, immediate implementation requirements, or pixel-perfect specs
+- they explicitly say major redesign work should not outrank stability, correct behavior, responsiveness, usability, or reliable playback flow
 
 ## Planning Constraints
 
@@ -51,6 +54,13 @@ This document does not propose:
 - persistence/model rewrites
 - Apple Music product-flow replacement
 - package-format or restore/import behavior changes
+
+## Directional Priority
+
+The current dev notes reinforce this sequencing:
+- immediate priority remains stability, correct behavior, responsiveness, usability, and reliable playback flow
+- this document is a future-facing alignment tool, not a reason to jump into a broad redesign now
+- UI work should stay staged so low-risk clarity improvements happen before high-risk live-use workflow changes
 
 ## 1. Product Feel
 
@@ -91,6 +101,8 @@ Keep the app at six top-level tabs for now:
 
 This is still a simplified structure because it keeps the current screen count stable, avoids new navigation depth, and makes the live-use hierarchy clearer without merging protected workflows prematurely.
 
+This is intentionally an interim recommendation, not a claim that the final bottom-tab flow is settled. The dev notes explicitly say the tab structure likely needs a fuller rethink later.
+
 ### Why this structure
 
 - `Game Day` is the core live-use destination.
@@ -122,6 +134,8 @@ Reasonable next step after low-risk UI work:
 Possible later direction, with approval:
 - make `Game Day` the default selected tab
 - move it to the first tab position if not already first
+- move `Clips` closer to `Game Day` if that better matches real live-use flow
+- reconsider the full bottom-tab order once lower-risk shell work and validation are complete
 
 Why this is later:
 - changing the default landing tab is a behavior change
@@ -145,7 +159,7 @@ Safe-now banner contents:
 Optional later contents:
 - current lineup status
 - quick entry to lineup sheet
-- accent styling tied to team identity
+- accent styling tied to team identity or color context
 
 ### Where it should appear
 
@@ -217,6 +231,7 @@ Grid section:
 - lower on the screen
 - visually quieter than the live card
 - still large enough for reliable taps
+- likely trends toward a cleaner three-column emphasis first, with denser layouts considered later only if real use supports them
 
 ### Key interaction goals
 
@@ -225,6 +240,16 @@ Grid section:
 - active playback should be unmistakable
 - stop state should be visible and literal
 - lineup access should feel like queue management, not a hidden admin task
+
+### Queue-Forward Direction
+
+The dev notes point toward a more queue-centered long-term `Game Day`:
+- a prominent `Now Batting / Next Batter` section
+- explicit `Play Queue`
+- manual `Previous` and `Next`
+- smoother visual advancement as queue playback progresses
+
+That is a valid target direction, but this document treats it as a presentation goal unless and until deeper runtime behavior changes are explicitly approved.
 
 ### Prewarm expectations
 
@@ -239,6 +264,7 @@ Unsafe language without approval/testing:
 - anything promising seamless crossfade
 - anything promising instant playback under all Apple Music states
 - anything that treats preview-only and full-song Apple Music behavior as identical
+- anything that implies queue-driven automatic advancement is already safely implemented without runtime verification
 
 ### Hard boundary
 
@@ -250,6 +276,7 @@ Do not propose:
 - debounce changes
 - announcer sequencing changes
 - fade-behavior changes
+- queue-runtime behavior changes
 
 Those require explicit approval.
 
@@ -281,6 +308,12 @@ But it should not:
 - add queue logic
 - add favorites/model state unless separately approved
 - change how built-in clips are sourced or played
+
+### Later Possibility
+
+The dev notes also float future user-added General Clips.
+
+That should remain later and approval-gated because it expands product scope beyond visual alignment and would introduce new content-management behavior.
 
 ## 6. Readiness Redesign
 
@@ -331,6 +364,8 @@ Requires approval:
 ### Goal
 
 Make `Settings` feel organized and calm, with advanced/operational tools clearly separated from normal use.
+
+The dev notes mention renaming a prior `More` concept to `Settings`. The current app already reflects that naming direction, so the remaining work here is organization and clarity inside `Settings`, not a tab rename.
 
 ### Proposed structure
 
@@ -522,6 +557,7 @@ Requires approval before implementation:
 Reason:
 - this is the core live-use screen
 - even presentation-only changes can affect usability under pressure
+- the dev notes point toward a stronger queue-centered live workflow, which raises the risk of accidental behavior drift if implemented too early
 
 ### Phase 5: Player Editor
 
@@ -544,8 +580,10 @@ Reason:
 The following changes should require explicit human approval before implementation:
 - making `Game Day` the default launch tab
 - reordering top-level tabs
+- broadly rethinking the bottom-tab model
 - changing any `Game Day` tap/play/stop interaction semantics
 - changing previous/next batter behavior
+- introducing or changing queue-playback behavior, including automatic visual advancement tied to runtime playback
 - changing lineup editor behavior, reorder mechanics, or presence mechanics
 - changing Apple Music picker flow, capability messaging, or trim entry flow
 - changing trim defaults, trim math, or preview behavior
@@ -554,6 +592,7 @@ The following changes should require explicit human approval before implementati
 - changing readiness calculation semantics
 - adding deep links or `Fix This` navigation from readiness cards
 - adding a true per-team color system if it requires new stored state
+- adding user-created General Clips or clip-library management
 - changing settings/import/export/backup semantics
 - changing Player Editor structure beyond visual-only extraction
 - moving experimental/developer features into normal user flows
@@ -563,14 +602,17 @@ The following changes should require explicit human approval before implementati
 These should be answered before code changes begin:
 - Should `Game Day` stay non-default during the first redesign pass, or is making it primary part of the intended product shift?
 - Should top-level tab order actually change, or should only the visual emphasis change first?
+- If tab order changes later, should `Clips` move immediately after `Game Day`?
 - Should the team banner be display-only at first, or should it eventually include quick actions?
 - Is `Readiness` meant to remain a separate tab long-term, or eventually become a stronger pre-game layer that routes into setup areas?
 - Should `General Clips` remain an always-separate tab, or eventually feel more like a companion board to `Game Day`?
+- Is future user-added General Clips support actually desired, or should General Clips stay built-in only for now?
 - Is a per-team accent/theme actually wanted, or is a stronger single app accent enough?
 - How much visual energy should `Game Day` keep relative to the simpler setup/admin screens?
 - Should `Settings` keep recovery and developer areas in the same tab, or should one of those become more isolated later?
 - When `Game Day` is redesigned, should the lineup button be framed as `Lineup`, `Queue`, or another term the owner prefers?
 - Does the owner want `Previous Batter` surfaced explicitly, or should navigation stay biased toward `Next Batter` only unless there is a strong use case?
+- If queue-forward `Game Day` is the long-term direction, should UI-only auto-advance cues wait until verified runtime support exists underneath them?
 
 ## Recommended Overall Direction
 

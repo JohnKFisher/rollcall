@@ -16,6 +16,14 @@
 		A10000000000000000000007 /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000108 /* LaunchScreen.storyboard */; };
 		A10000000000000000000008 /* BuiltInAudio in Resources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000109 /* BuiltInAudio */; };
 		A20000000000000000000001 /* ZIPFoundation in Frameworks */ = {isa = PBXBuildFile; productRef = A20000000000000000000002 /* ZIPFoundation */; };
+		A30000000000000000000001 /* RollCallDesignSystem.swift in Sources */ = {isa = PBXBuildFile; fileRef = A30000000000000000000101 /* RollCallDesignSystem.swift */; };
+		A30000000000000000000002 /* RollCallColors.swift in Sources */ = {isa = PBXBuildFile; fileRef = A30000000000000000000102 /* RollCallColors.swift */; };
+		A30000000000000000000003 /* RollCallTypography.swift in Sources */ = {isa = PBXBuildFile; fileRef = A30000000000000000000103 /* RollCallTypography.swift */; };
+		A30000000000000000000004 /* RollCallSpacing.swift in Sources */ = {isa = PBXBuildFile; fileRef = A30000000000000000000104 /* RollCallSpacing.swift */; };
+		A30000000000000000000005 /* RollCallButtonStyles.swift in Sources */ = {isa = PBXBuildFile; fileRef = A30000000000000000000105 /* RollCallButtonStyles.swift */; };
+		A30000000000000000000006 /* RollCallCardStyles.swift in Sources */ = {isa = PBXBuildFile; fileRef = A30000000000000000000106 /* RollCallCardStyles.swift */; };
+		A30000000000000000000007 /* StatusChip.swift in Sources */ = {isa = PBXBuildFile; fileRef = A30000000000000000000107 /* StatusChip.swift */; };
+		A30000000000000000000008 /* TeamBanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = A30000000000000000000108 /* TeamBanner.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -28,6 +36,14 @@
 		A10000000000000000000107 /* RollCall.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = RollCall.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		A10000000000000000000108 /* LaunchScreen.storyboard */ = {isa = PBXFileReference; lastKnownFileType = file.storyboard; path = LaunchScreen.storyboard; sourceTree = "<group>"; };
 		A10000000000000000000109 /* BuiltInAudio */ = {isa = PBXFileReference; lastKnownFileType = folder; path = BuiltInAudio; sourceTree = "<group>"; };
+		A30000000000000000000101 /* RollCallDesignSystem.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RollCallDesignSystem.swift; sourceTree = "<group>"; };
+		A30000000000000000000102 /* RollCallColors.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RollCallColors.swift; sourceTree = "<group>"; };
+		A30000000000000000000103 /* RollCallTypography.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RollCallTypography.swift; sourceTree = "<group>"; };
+		A30000000000000000000104 /* RollCallSpacing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RollCallSpacing.swift; sourceTree = "<group>"; };
+		A30000000000000000000105 /* RollCallButtonStyles.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RollCallButtonStyles.swift; sourceTree = "<group>"; };
+		A30000000000000000000106 /* RollCallCardStyles.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RollCallCardStyles.swift; sourceTree = "<group>"; };
+		A30000000000000000000107 /* StatusChip.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StatusChip.swift; sourceTree = "<group>"; };
+		A30000000000000000000108 /* TeamBanner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TeamBanner.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -58,11 +74,27 @@
 				A10000000000000000000103 /* Services.swift */,
 				A10000000000000000000104 /* AppModel.swift */,
 				A10000000000000000000105 /* RootView.swift */,
+				A30000000000000000000142 /* DesignSystem */,
 				A10000000000000000000106 /* Assets.xcassets */,
 				A10000000000000000000108 /* LaunchScreen.storyboard */,
 				A10000000000000000000109 /* BuiltInAudio */,
 			);
 			path = RollCall;
+			sourceTree = "<group>";
+		};
+		A30000000000000000000142 /* DesignSystem */ = {
+			isa = PBXGroup;
+			children = (
+				A30000000000000000000101 /* RollCallDesignSystem.swift */,
+				A30000000000000000000102 /* RollCallColors.swift */,
+				A30000000000000000000103 /* RollCallTypography.swift */,
+				A30000000000000000000104 /* RollCallSpacing.swift */,
+				A30000000000000000000105 /* RollCallButtonStyles.swift */,
+				A30000000000000000000106 /* RollCallCardStyles.swift */,
+				A30000000000000000000107 /* StatusChip.swift */,
+				A30000000000000000000108 /* TeamBanner.swift */,
+			);
+			path = DesignSystem;
 			sourceTree = "<group>";
 		};
 		A10000000000000000000144 /* Products */ = {
@@ -174,6 +206,14 @@
 				A10000000000000000000003 /* Services.swift in Sources */,
 				A10000000000000000000004 /* AppModel.swift in Sources */,
 				A10000000000000000000005 /* RootView.swift in Sources */,
+				A30000000000000000000001 /* RollCallDesignSystem.swift in Sources */,
+				A30000000000000000000002 /* RollCallColors.swift in Sources */,
+				A30000000000000000000003 /* RollCallTypography.swift in Sources */,
+				A30000000000000000000004 /* RollCallSpacing.swift in Sources */,
+				A30000000000000000000005 /* RollCallButtonStyles.swift in Sources */,
+				A30000000000000000000006 /* RollCallCardStyles.swift in Sources */,
+				A30000000000000000000007 /* StatusChip.swift in Sources */,
+				A30000000000000000000008 /* TeamBanner.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
