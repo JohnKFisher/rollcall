@@ -53,7 +53,7 @@ Known limitations:
 Verification:
 - `xcodebuild -project '/Users/jkfisher/Documents/Coding/Roll Call/RollCall.xcodeproj' -scheme RollCall -destination 'generic/platform=iOS' -derivedDataPath '/Users/jkfisher/Documents/Coding/Roll Call/.DerivedData' build`
 - `xcrun swift-frontend -typecheck -primary-file RollCall/Services.swift RollCall/Models.swift RollCall/AppModel.swift RollCall/RootView.swift RollCall/RollCallApp.swift -sdk /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS26.5.sdk -target arm64-apple-ios18.0`
-- Result in this session: the direct Swift frontend typecheck for the edited announcer/player-status path succeeded. A follow-up generic iOS build in this environment still failed during asset-catalog tooling because CoreSimulator services were unavailable, so the remaining verification is an on-device or healthy-Xcode smoke pass for custom-intro playback, cue-only playback, and the updated player/Game Day status affordances.
+- Result in this session: both the direct Swift frontend typecheck and the generic iOS `xcodebuild` path were blocked by this sandbox's Xcode/SwiftPM environment, which could not use its normal module/package caches and reported unavailable CoreSimulator services. The remaining verification is a healthy local Xcode or on-device smoke pass for team removal, custom-intro playback, cue-only playback, and the updated player/Game Day status affordances.
 
 Recommended next priorities:
 1. Enable the MusicKit App Service for App ID `com.jkfisher.rollcall`, refresh signing/provisioning, then launch `0.4.5` on-device and do a focused smoke pass for subscribed-device full-song trimming, preview-only fallback trimming, custom-intro playback, and the new Game Day active-state visuals.
