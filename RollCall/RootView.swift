@@ -338,23 +338,24 @@ struct RootView: View {
 
     private var readinessTab: some View {
         NavigationStack {
-            List {
+            ScrollView {
                 if let readiness = appModel.state.lastReadiness {
-                    Section("Updated \(readiness.generatedAt.formatted(date: .omitted, time: .shortened))") {
-                        ForEach(readiness.checks) { check in
-                            HStack(alignment: .top, spacing: 12) {
-                                Image(systemName: iconName(for: check.state))
-                                    .foregroundStyle(color(for: check.state))
-                                VStack(alignment: .leading, spacing: 4) {
-                                    Text(check.title).font(.headline)
-                                    Text(check.detail).foregroundStyle(.secondary)
-                                }
-                            }
-                            .padding(.vertical, 4)
+                    VStack(alignment: .leading, spacing: RollCallSpacingTier.large.value) {
+                        ReadinessOverviewCard(readiness: readiness)
+
+                        ForEach(readinessIssueFamilies(for: readiness.checks)) { family in
+                            ReadinessIssueFamilyCard(family: family)
                         }
                     }
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, RollCallSpacingTier.large.value)
+                } else {
+                    ReadinessEmptyCard()
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, RollCallSpacingTier.large.value)
                 }
             }
+            .background(Color(uiColor: .systemGroupedBackground))
             .navigationTitle("Readiness")
             .toolbar {
                 Button("Refresh") { appModel.refreshReadiness() }
@@ -420,48 +421,137 @@ struct RootView: View {
 
     private var settingsTab: some View {
         NavigationStack {
-            List {
-                Section("Packages") {
-                    Button("Export Selected Team") {
-                        Task { await appModel.exportSelectedTeam() }
+            ScrollView {
+                VStack(alignment: .leading, spacing: RollCallSpacingTier.large.value) {
+                    SettingsSectionGroup(
+                        title: "Team Package",
+                        helperText: "Share the selected team or bring in a .rollcall package from another device."
+                    ) {
+                        VStack(spacing: RollCallSpacingTier.standard.value) {
+                            Button {
+                                Task { await appModel.exportSelectedTeam() }
+                            } label: {
+                                SettingsRowLabel(
+                                    title: "Export Selected Team",
+                                    detail: "Create the latest portable team package.",
+                                    systemImage: "shippingbox.fill"
+                                )
+                            }
+                            .rollCallButtonStyle(.primary)
+                            .disabled(appModel.selectedTeam == nil)
+
+                            if appModel.exportURL != nil {
+                                Button {
+                                    packageSharePresented = true
+                                } label: {
+                                    SettingsRowLabel(
+                                        title: "Share Latest .rollcall Package",
+                                        detail: "Open the system share sheet for the most recent export.",
+                                        systemImage: "square.and.arrow.up"
+                                    )
+                                }
+                                .rollCallButtonStyle(.secondary)
+                            }
+
+                            Button {
+                                packageImportPresented = true
+                            } label: {
+                                SettingsRowLabel(
+                                    title: "Import .rollcall Package",
+                                    detail: "Import a shared team package.",
+                                    systemImage: "tray.and.arrow.down.fill"
+                                )
+                            }
+                            .rollCallButtonStyle(.secondary)
+                        }
                     }
-                    .disabled(appModel.selectedTeam == nil)
-                    if appModel.exportURL != nil {
-                        Button {
-                            packageSharePresented = true
+
+                    SettingsSectionGroup(
+                        title: "Game Day",
+                        helperText: "Keep live-use preferences simple and predictable."
+                    ) {
+                        Toggle(isOn: Binding(
+                            get: { appModel.state.settings.hapticsEnabled },
+                            set: { appModel.setHapticsEnabled($0) }
+                        )) {
+                            SettingsRowLabel(
+                                title: "Game Day Haptics",
+                                detail: "Use subtle feedback for live controls.",
+                                systemImage: "iphone.radiowaves.left.and.right"
+                            )
+                        }
+                    }
+
+                    SettingsSectionGroup(
+                        title: "Recovery",
+                        helperText: "Backup and restore tools stay separate from everyday setup."
+                    ) {
+                        NavigationLink {
+                            RecoveryCenterView(appModel: appModel)
                         } label: {
-                            Label("Share Latest .rollcall Package", systemImage: "square.and.arrow.up")
+                            SettingsNavigationLabel(
+                                title: "Recovery & Backups",
+                                detail: "Create or restore local recovery points.",
+                                systemImage: "arrow.counterclockwise.circle.fill"
+                            )
                         }
                         .buttonStyle(.plain)
                     }
-                    Button("Import .rollcall Package") { packageImportPresented = true }
-                }
 
-                Section("Game Day") {
-                    Toggle("Game Day Haptics", isOn: Binding(
-                        get: { appModel.state.settings.hapticsEnabled },
-                        set: { appModel.setHapticsEnabled($0) }
-                    ))
-                }
+                    SettingsSectionGroup(title: "About") {
+                        VStack(alignment: .leading, spacing: RollCallSpacingTier.standard.value) {
+                            HStack(alignment: .center, spacing: RollCallSpacingTier.standard.value) {
+                                SettingsIcon(systemImage: "baseball.fill", role: .accent)
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Text("Roll Call")
+                                        .rollCallText(.cardTitle)
+                                    Text("Game day cues for local teams.")
+                                        .rollCallText(.helperText)
+                                }
+                                Spacer()
+                                StatusChip(
+                                    text: "v\(AppMetadata.appVersion) (\(AppMetadata.buildNumber))",
+                                    role: .neutral,
+                                    emphasis: .subdued
+                                )
+                            }
 
-                Section("Recovery") {
-                    NavigationLink("Recovery & Backups") {
-                        RecoveryCenterView(appModel: appModel)
+                            Divider()
+
+                            Text("Copyright John Kenneth Fisher")
+                                .rollCallText(.helperText)
+
+                            Link(destination: URL(string: "https://github.com/JohnKFisher/roll-call")!) {
+                                SettingsRowLabel(
+                                    title: "GitHub: JohnKFisher/roll-call",
+                                    detail: "Open the public project page.",
+                                    systemImage: "link"
+                                )
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+
+                    SettingsSectionGroup(
+                        title: "Advanced / Developer Tools",
+                        helperText: "Experimental and diagnostic features stay out of normal user flows."
+                    ) {
+                        NavigationLink {
+                            DeveloperToolsView(appModel: appModel, showExperimentalWarning: $showExperimentalWarning)
+                        } label: {
+                            SettingsNavigationLabel(
+                                title: "Developer Tools",
+                                detail: "Open experimental settings and support utilities.",
+                                systemImage: "wrench.and.screwdriver.fill"
+                            )
+                        }
+                        .buttonStyle(.plain)
                     }
                 }
-
-                Section("Developer") {
-                    NavigationLink("Developer Tools") {
-                        DeveloperToolsView(appModel: appModel, showExperimentalWarning: $showExperimentalWarning)
-                    }
-                }
-
-                Section("About") {
-                    Text("Roll Call \(AppMetadata.appVersion) (\(AppMetadata.buildNumber))")
-                    Text("Copyright John Kenneth Fisher")
-                    Link("GitHub: JohnKFisher/roll-call", destination: URL(string: "https://github.com/JohnKFisher/roll-call")!)
-                }
+                .padding(.horizontal, 16)
+                .padding(.vertical, RollCallSpacingTier.large.value)
             }
+            .background(Color(uiColor: .systemGroupedBackground))
             .navigationTitle("Settings")
             .sheet(isPresented: $packageSharePresented) {
                 if let exportURL = appModel.exportURL {
@@ -487,6 +577,424 @@ struct RootView: View {
         case .failed: return .red
         case .unknown: return .secondary
         }
+    }
+
+    private func readinessIssueFamilies(for checks: [ReadinessCheck]) -> [ReadinessIssueFamily] {
+        let order = [
+            "audio",
+            "apple-music",
+            "team",
+            "player-cues",
+            "announcement-cues",
+            "photos",
+            "other"
+        ]
+        let grouped = Dictionary(grouping: checks, by: readinessFamilyID(for:))
+
+        return order.compactMap { id in
+            guard let checks = grouped[id], !checks.isEmpty else { return nil }
+            return ReadinessIssueFamily(
+                id: id,
+                title: readinessFamilyTitle(for: id),
+                helperText: readinessFamilyHelperText(for: id),
+                checks: checks
+            )
+        }
+    }
+
+    private func readinessFamilyID(for check: ReadinessCheck) -> String {
+        if check.id == "route" || check.id == "volume" {
+            return "audio"
+        }
+        if check.id == "network" || check.id == "music-auth" {
+            return "apple-music"
+        }
+        if check.id == "lineup" {
+            return "team"
+        }
+        if check.id.contains("custom-announcer") {
+            return "announcement-cues"
+        }
+        if check.id.contains("photo") {
+            return "photos"
+        }
+        if check.id.hasPrefix("player-") {
+            return "player-cues"
+        }
+        return "other"
+    }
+
+    private func readinessFamilyTitle(for id: String) -> String {
+        switch id {
+        case "audio": return "Audio Output"
+        case "apple-music": return "Apple Music Access"
+        case "team": return "Team & Present Players"
+        case "player-cues": return "Player Cues"
+        case "announcement-cues": return "Announcement Cues"
+        case "photos": return "Player Photos"
+        default: return "Other Checks"
+        }
+    }
+
+    private func readinessFamilyHelperText(for id: String) -> String {
+        switch id {
+        case "audio":
+            return "Route and volume checks for game-day playback."
+        case "apple-music":
+            return "Network and authorization checks for Apple Music cues."
+        case "team":
+            return "Selected team and present-player coverage."
+        case "player-cues":
+            return "Cue coverage for players marked present."
+        case "announcement-cues":
+            return "Custom announcement files used before player cues."
+        case "photos":
+            return "Player photo files referenced by the roster."
+        default:
+            return "Additional readiness checks."
+        }
+    }
+}
+
+private struct ReadinessIssueFamily: Identifiable {
+    let id: String
+    let title: String
+    let helperText: String
+    let checks: [ReadinessCheck]
+
+    var status: ReadinessState {
+        if checks.contains(where: { $0.state == .failed }) {
+            return .failed
+        }
+        if checks.contains(where: { $0.state == .warning }) {
+            return .warning
+        }
+        if checks.contains(where: { $0.state == .unknown }) {
+            return .unknown
+        }
+        return .ready
+    }
+}
+
+private struct ReadinessOverviewCard: View {
+    let readiness: ReadinessStatus
+
+    private var readyCount: Int {
+        readiness.checks.filter { $0.state == .ready }.count
+    }
+
+    private var warningCount: Int {
+        readiness.checks.filter { $0.state == .warning }.count
+    }
+
+    private var failedCount: Int {
+        readiness.checks.filter { $0.state == .failed }.count
+    }
+
+    private var unknownCount: Int {
+        readiness.checks.filter { $0.state == .unknown }.count
+    }
+
+    var body: some View {
+        SectionCard(family: .status) {
+            VStack(alignment: .leading, spacing: RollCallSpacingTier.standard.value) {
+                HStack(alignment: .top, spacing: RollCallSpacingTier.standard.value) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Pre-Game Checklist")
+                            .rollCallText(.screenTitle)
+                        Text("Updated \(readiness.generatedAt.formatted(date: .omitted, time: .shortened))")
+                            .rollCallText(.helperText)
+                    }
+
+                    Spacer(minLength: RollCallSpacingTier.standard.value)
+
+                    StatusChip(
+                        text: summaryText,
+                        role: summaryRole,
+                        systemImage: summaryIcon,
+                        emphasis: .standard
+                    )
+                }
+
+                Text("Readiness reports what Roll Call can currently verify. It does not guarantee playback on every route or network condition.")
+                    .rollCallText(.helperText)
+
+                LazyVGrid(
+                    columns: [GridItem(.adaptive(minimum: 118), spacing: RollCallSpacingTier.tight.value)],
+                    alignment: .leading,
+                    spacing: RollCallSpacingTier.tight.value
+                ) {
+                    StatusChip(text: "\(readyCount) ready", role: .ready, systemImage: "checkmark.circle", emphasis: .subdued)
+                    StatusChip(text: "\(warningCount) warnings", role: .warning, systemImage: "exclamationmark.triangle", emphasis: .subdued)
+                    StatusChip(text: "\(failedCount) failed", role: .destructive, systemImage: "xmark.octagon", emphasis: .subdued)
+                    if unknownCount > 0 {
+                        StatusChip(text: "\(unknownCount) unknown", role: .neutral, systemImage: "questionmark.circle", emphasis: .subdued)
+                    }
+                }
+            }
+        }
+    }
+
+    private var summaryText: String {
+        if failedCount > 0 {
+            return "Needs Attention"
+        }
+        if warningCount > 0 {
+            return "Warnings"
+        }
+        if unknownCount > 0 {
+            return "Some Unknown"
+        }
+        return "Ready"
+    }
+
+    private var summaryRole: StatusChipRole {
+        if failedCount > 0 {
+            return .destructive
+        }
+        if warningCount > 0 {
+            return .warning
+        }
+        if unknownCount > 0 {
+            return .neutral
+        }
+        return .ready
+    }
+
+    private var summaryIcon: String {
+        if failedCount > 0 {
+            return "xmark.octagon"
+        }
+        if warningCount > 0 {
+            return "exclamationmark.triangle"
+        }
+        if unknownCount > 0 {
+            return "questionmark.circle"
+        }
+        return "checkmark.circle"
+    }
+}
+
+private struct ReadinessIssueFamilyCard: View {
+    let family: ReadinessIssueFamily
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: RollCallSpacingTier.tight.value) {
+            VStack(alignment: .leading, spacing: 3) {
+                HStack(alignment: .firstTextBaseline, spacing: RollCallSpacingTier.standard.value) {
+                    Text(family.title)
+                        .rollCallText(.sectionTitle)
+                    Spacer(minLength: RollCallSpacingTier.standard.value)
+                    StatusChip(
+                        text: family.status.readinessLabel,
+                        role: family.status.statusChipRole,
+                        systemImage: family.status.statusChipIcon,
+                        emphasis: .subdued
+                    )
+                }
+
+                Text(family.helperText)
+                    .rollCallText(.helperText)
+            }
+            .padding(.horizontal, 2)
+
+            SectionCard(family: family.status.cardFamily) {
+                VStack(spacing: 0) {
+                    ForEach(Array(family.checks.enumerated()), id: \.element.id) { index, check in
+                        if index > 0 {
+                            Divider()
+                                .padding(.leading, 42)
+                        }
+                        ReadinessCheckRow(check: check)
+                            .padding(.vertical, RollCallSpacingTier.tight.value)
+                    }
+                }
+            }
+        }
+    }
+}
+
+private struct ReadinessCheckRow: View {
+    let check: ReadinessCheck
+
+    var body: some View {
+        HStack(alignment: .top, spacing: RollCallSpacingTier.standard.value) {
+            Image(systemName: check.state.statusChipIcon)
+                .font(.system(size: 18, weight: .semibold))
+                .foregroundStyle(check.state.semanticColor)
+                .frame(width: 30, height: 30)
+                .background(check.state.semanticColor.opacity(0.13))
+                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                .accessibilityHidden(true)
+
+            VStack(alignment: .leading, spacing: 5) {
+                HStack(alignment: .firstTextBaseline, spacing: RollCallSpacingTier.tight.value) {
+                    Text(check.title)
+                        .rollCallText(.cardTitle)
+                    Spacer(minLength: RollCallSpacingTier.tight.value)
+                    StatusChip(
+                        text: check.state.readinessLabel,
+                        role: check.state.statusChipRole,
+                        emphasis: .subdued
+                    )
+                }
+                Text(check.detail)
+                    .rollCallText(.helperText)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .accessibilityElement(children: .combine)
+    }
+}
+
+private struct ReadinessEmptyCard: View {
+    var body: some View {
+        SectionCard(family: .status) {
+            VStack(alignment: .leading, spacing: RollCallSpacingTier.standard.value) {
+                StatusChip(text: "Not Checked Yet", role: .neutral, systemImage: "checklist", emphasis: .subdued)
+                Text("Pre-Game Checklist")
+                    .rollCallText(.screenTitle)
+                Text("Tap Refresh to generate the current readiness report.")
+                    .rollCallText(.helperText)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+}
+
+private extension ReadinessState {
+    var readinessLabel: String {
+        switch self {
+        case .ready: return "Ready"
+        case .warning: return "Warning"
+        case .failed: return "Failed"
+        case .unknown: return "Unknown"
+        }
+    }
+
+    var statusChipRole: StatusChipRole {
+        switch self {
+        case .ready: return .ready
+        case .warning: return .warning
+        case .failed: return .destructive
+        case .unknown: return .neutral
+        }
+    }
+
+    var statusChipIcon: String {
+        switch self {
+        case .ready: return "checkmark.circle"
+        case .warning: return "exclamationmark.triangle"
+        case .failed: return "xmark.octagon"
+        case .unknown: return "questionmark.circle"
+        }
+    }
+
+    var semanticColor: Color {
+        switch self {
+        case .ready: return Color.rollCall(.ready)
+        case .warning: return Color.rollCall(.warning)
+        case .failed: return Color.rollCall(.destructive)
+        case .unknown: return Color(uiColor: .secondaryLabel)
+        }
+    }
+
+    var cardFamily: RollCallCardFamily {
+        switch self {
+        case .ready, .unknown:
+            return .utility
+        case .warning, .failed:
+            return .status
+        }
+    }
+}
+
+private struct SettingsSectionGroup<Content: View>: View {
+    let title: String
+    let helperText: String?
+    let content: Content
+
+    init(
+        title: String,
+        helperText: String? = nil,
+        @ViewBuilder content: () -> Content
+    ) {
+        self.title = title
+        self.helperText = helperText
+        self.content = content()
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: RollCallSpacingTier.tight.value) {
+            VStack(alignment: .leading, spacing: 3) {
+                Text(title)
+                    .rollCallText(.sectionTitle)
+                if let helperText {
+                    Text(helperText)
+                        .rollCallText(.helperText)
+                }
+            }
+            .padding(.horizontal, 2)
+
+            SectionCard {
+                content
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+        }
+    }
+}
+
+private struct SettingsNavigationLabel: View {
+    let title: String
+    let detail: String
+    let systemImage: String
+
+    var body: some View {
+        HStack(spacing: RollCallSpacingTier.standard.value) {
+            SettingsRowLabel(title: title, detail: detail, systemImage: systemImage)
+            Spacer(minLength: RollCallSpacingTier.standard.value)
+            Image(systemName: "chevron.right")
+                .font(.footnote.weight(.semibold))
+                .foregroundStyle(Color(uiColor: .tertiaryLabel))
+        }
+        .contentShape(Rectangle())
+    }
+}
+
+private struct SettingsRowLabel: View {
+    let title: String
+    let detail: String
+    let systemImage: String
+
+    var body: some View {
+        HStack(alignment: .center, spacing: RollCallSpacingTier.standard.value) {
+            SettingsIcon(systemImage: systemImage, role: .accent)
+            VStack(alignment: .leading, spacing: 4) {
+                Text(title)
+                    .rollCallText(.cardTitle)
+                    .lineLimit(2)
+                Text(detail)
+                    .rollCallText(.helperText)
+                    .lineLimit(3)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .contentShape(Rectangle())
+    }
+}
+
+private struct SettingsIcon: View {
+    let systemImage: String
+    let role: RollCallColorRole
+
+    var body: some View {
+        Image(systemName: systemImage)
+            .font(.system(size: 17, weight: .semibold))
+            .foregroundStyle(Color.rollCall(role))
+            .frame(width: 34, height: 34)
+            .background(Color.rollCall(role).opacity(0.13))
+            .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
+            .accessibilityHidden(true)
     }
 }
 
