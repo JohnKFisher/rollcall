@@ -4,14 +4,14 @@ Use this file as a concise project status snapshot for the current version, what
 
 ## Roll Call
 
-Current version: `0.4.0` (build `8`)
+Current version: `0.4.5` (build `9`)
 
 Status:
 - Active prototype with a buildable iPhone app target at [RollCall.xcodeproj](/Users/jkfisher/Documents/Coding/Roll%20Call/RollCall.xcodeproj).
 - The repository has been cleaned up so the working source of truth is back on the intended `RollCall/` and `RollCall.xcodeproj/` names.
 
 What works now:
-- Team selection and duplication
+- Team selection, duplication, and confirmed removal
 - Selected-team rename from the Teams panel
 - Player roster editing
 - Today’s lineup editing with present-player tracking, next-batter flow, persisted manual order, and one-tap A-Z / number sorting
@@ -25,12 +25,15 @@ What works now:
 - Player roster and Game Day views now show custom-intro coverage alongside cue coverage
 - Game Day player taps now fall back to built-in `Small Cheer` when the player has no selected song cue
 - Apple Music cue caps, subscription-aware full-song playback, metadata hydration for full-song trim timelines, and cue prewarming hooks
+- Apple Music full-song playback now forces the current cue trim start when replaying catalog songs, to avoid stale start-position behavior on reused selections
+- Cue fade-out timing now runs inside the requested clip length for local audio and preview-based Apple Music playback
 - Experimental Apple Music local-copy flag and one-way conversion action
 - Game Day big-button player grid with active playback highlighting, Focus guidance, and a plain stop-audio affordance
 - General Clips tab using the shared cue engine with bundled licensed crowd clips tracked in `ATTRIBUTIONS.md`
 - Readiness dashboard with Apple Music, asset, and cue-specific checks
 - `.rollcall` package export/import with bundled local media, custom intro audio, and roster photos
 - `.rollcall` export now produces a zipped single-file archive (with backward-compatible import support for older directory-style packages)
+- Settings import now uses an explicit document picker so `.rollcall` files and legacy package folders can actually be chosen on-device
 - Manual backups plus in-app restore, with automatic pre-import backups and retention capped to the newest 10
 - CSV roster import with preview before apply
 - Branded launch screen based on the Music Triage splash style
@@ -40,6 +43,7 @@ Known limitations:
 - Waveforms and per-cue gain remain intentionally deferred.
 - Physical-device installs now depend on a valid local Apple development provisioning profile for `com.jkfisher.rollcall`; full-song Apple Music also requires the MusicKit App Service to be enabled for that App ID in Apple Developer.
 - Apple Music full-song trimming now depends on a device account state and MusicKit App Service configuration that this environment cannot emulate, so it still needs an on-device feel pass with and without an active Apple Music playback subscription after App ID registration/provisioning refresh.
+- Full-song Apple Music playback still ends hard through MusicKit; the fade-out control currently applies reliably to local audio and preview-based Apple Music playback, not subscribed full-song catalog playback.
 - The new Apple Music hook suggestion is intentionally conservative and still needs an on-device feel pass to judge whether its default entrance guesses are actually helpful.
 - Roll Call now gives only lightweight Focus guidance for interruptions; it still does not have OS-level Do Not Disturb or Guided Access integration.
 - Game Day custom-intro mode now depends entirely on recorded custom intros; players without a custom intro are clearly marked and will play only their cue.
@@ -52,6 +56,6 @@ Verification:
 - Result in this session: the direct Swift frontend typecheck for the edited announcer/player-status path succeeded. A follow-up generic iOS build in this environment still failed during asset-catalog tooling because CoreSimulator services were unavailable, so the remaining verification is an on-device or healthy-Xcode smoke pass for custom-intro playback, cue-only playback, and the updated player/Game Day status affordances.
 
 Recommended next priorities:
-1. Enable the MusicKit App Service for App ID `com.jkfisher.rollcall`, refresh signing/provisioning, then launch `0.3.8` on-device and do a focused smoke pass for subscribed-device full-song trimming, preview-only fallback trimming, custom-intro playback, and the new Game Day active-state visuals.
+1. Enable the MusicKit App Service for App ID `com.jkfisher.rollcall`, refresh signing/provisioning, then launch `0.4.5` on-device and do a focused smoke pass for subscribed-device full-song trimming, preview-only fallback trimming, custom-intro playback, and the new Game Day active-state visuals.
 2. Add focused verification around package import/export round-trips, support-bundle contents, and backup retention behavior after repeated imports.
 3. Decide whether any future Focus integration should stay guidance-only or expand into App Intents / Shortcut-assisted setup.

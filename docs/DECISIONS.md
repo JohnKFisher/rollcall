@@ -42,6 +42,10 @@ Use this file as a concise decision log for project-specific architectural, beha
   Rationale: sharing should produce one expected file instead of a package folder, but prior exports must remain usable.
   Status: approved
 
+- Approved: selected teams can be removed from the Teams panel through an explicit destructive confirmation action.
+  Rationale: team management needs a complete lifecycle, but deletion should stay visible, scoped to the current team, and hard to trigger accidentally.
+  Status: approved
+
 ## 2026-05-12
 
 - Approved: Apple Music cue editing should adapt to subscription capability, using full-song trimming for active playback subscriptions and preview-only trimming otherwise.

@@ -23,6 +23,7 @@ struct RootView: View {
     @State private var selectedTab: RootTab = .players
     @State private var showLineupEditor = false
     @State private var showRenameTeamAlert = false
+    @State private var showRemoveTeamConfirmation = false
     @State private var renameTeamName = ""
     @State private var packageSharePresented = false
 
@@ -90,6 +91,18 @@ struct RootView: View {
         } message: {
             Text("Update the selected team name.")
         }
+        .alert("Remove Team?", isPresented: $showRemoveTeamConfirmation) {
+            Button("Cancel", role: .cancel) {}
+            Button("Remove", role: .destructive) {
+                appModel.removeSelectedTeam()
+            }
+        } message: {
+            if let team = appModel.selectedTeam {
+                Text("Remove \(team.name) from this device? This deletes that team's \(team.players.count) players, lineup state, clips, and custom intros from the app. Existing exports and backups stay untouched.")
+            } else {
+                Text("Remove the selected team from this device. Existing exports and backups stay untouched.")
+            }
+        }
         .sheet(item: Binding(get: { appModel.pendingRosterImport }, set: { appModel.pendingRosterImport = $0 })) { pending in
             NavigationStack {
                 List {
@@ -117,10 +130,16 @@ struct RootView: View {
                 }
             }
         }
-        .fileImporter(isPresented: $packageImportPresented, allowedContentTypes: [UTType(filenameExtension: "rollcall") ?? .data], allowsMultipleSelection: false) { result in
-            if case .success(let urls) = result, let url = urls.first {
-                Task { await appModel.importPackage(from: url) }
-            }
+        .sheet(isPresented: $packageImportPresented) {
+            RollCallPackageImportSheet(
+                onPick: { url in
+                    packageImportPresented = false
+                    Task { await appModel.importPackage(from: url) }
+                },
+                onCancel: {
+                    packageImportPresented = false
+                }
+            )
         }
         .fileImporter(isPresented: $csvImportPresented, allowedContentTypes: [.commaSeparatedText, .text], allowsMultipleSelection: false) { result in
             if case .success(let urls) = result, let url = urls.first {
@@ -383,6 +402,9 @@ struct RootView: View {
                             }
                             Button("Duplicate Selected Team") { appModel.duplicateTeam() }
                             Button("Import Roster CSV") { csvImportPresented = true }
+                            Button("Remove Selected Team", role: .destructive) {
+                                showRemoveTeamConfirmation = true
+                            }
                         }
                     }
                 }
@@ -473,6 +495,50 @@ private struct ActivityShareSheet: UIViewControllerRepresentable {
     }
 
     func updateUIViewController(_ uiViewController: UIActivityViewController, context: Context) {}
+}
+
+private struct RollCallPackageImportSheet: UIViewControllerRepresentable {
+    let onPick: (URL) -> Void
+    let onCancel: () -> Void
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(onPick: onPick, onCancel: onCancel)
+    }
+
+    func makeUIViewController(context: Context) -> UIDocumentPickerViewController {
+        let picker = UIDocumentPickerViewController(
+            forOpeningContentTypes: [.data, .folder],
+            asCopy: false
+        )
+        picker.delegate = context.coordinator
+        picker.allowsMultipleSelection = false
+        picker.shouldShowFileExtensions = true
+        return picker
+    }
+
+    func updateUIViewController(_ uiViewController: UIDocumentPickerViewController, context: Context) {}
+
+    final class Coordinator: NSObject, UIDocumentPickerDelegate {
+        private let onPick: (URL) -> Void
+        private let onCancel: () -> Void
+
+        init(onPick: @escaping (URL) -> Void, onCancel: @escaping () -> Void) {
+            self.onPick = onPick
+            self.onCancel = onCancel
+        }
+
+        func documentPickerWasCancelled(_ controller: UIDocumentPickerViewController) {
+            onCancel()
+        }
+
+        func documentPicker(_ controller: UIDocumentPickerViewController, didPickDocumentsAt urls: [URL]) {
+            guard let url = urls.first else {
+                onCancel()
+                return
+            }
+            onPick(url)
+        }
+    }
 }
 
 private struct GameDayBackground: View {

@@ -641,20 +641,7 @@ final class CuePlaybackEngine: NSObject, ObservableObject {
             let clipDuration = min(duration, appleMusicClipDurationLimit)
             if source.isCatalogBacked != false, await musicCatalogService.playbackCapability() == .fullSong {
                 do {
-                    let song = try await resolveSong(for: source)
-                    let entry = MusicPlayer.Queue.Entry(
-                        song,
-                        startTime: cue.startTime,
-                        endTime: cue.startTime + clipDuration
-                    )
-                    let musicPlayer = makeApplicationMusicPlayer()
-                    musicPlayer.queue = ApplicationMusicPlayer.Queue([entry], startingAt: entry)
-                    try await musicPlayer.play()
-                    stopTask = Task { @MainActor [weak self] in
-                        guard let self else { return }
-                        try? await Task.sleep(for: .seconds(clipDuration))
-                        self.stop()
-                    }
+                    try await playCatalogSong(source: source, startTime: cue.startTime, duration: clipDuration)
                     return
                 } catch {
                     throw AppError.appleMusicFullSongCatalogUnavailable
@@ -667,12 +654,10 @@ final class CuePlaybackEngine: NSObject, ObservableObject {
             let maxPreviewStart = max(0, appleMusicClipDurationLimit - clipDuration)
             let previewStart = min(max(0, cue.startTime), maxPreviewStart)
             player.seek(to: CMTime(seconds: previewStart, preferredTimescale: 600), toleranceBefore: .zero, toleranceAfter: .zero) { [weak player] _ in
+                player?.volume = 1
                 player?.play()
             }
-            stopTask = Task { [weak self] in
-                try? await Task.sleep(for: .seconds(clipDuration))
-                await self?.fadeRemote(duration: cue.fadeOutDuration)
-            }
+            scheduleRemoteStop(duration: clipDuration, fadeOut: cue.fadeOutDuration)
         case .localAudio(let source):
             let url = try audioAssetService.assetURL(relativePath: source.relativePath)
             try playLocal(url: url, start: cue.startTime, duration: duration, fadeOut: cue.fadeOutDuration, reusePrewarm: prewarmedCueID == cue.id)
@@ -692,6 +677,37 @@ final class CuePlaybackEngine: NSObject, ObservableObject {
         return song
     }
 
+    private func playCatalogSong(source: AppleMusicSource, startTime: TimeInterval, duration: TimeInterval) async throws {
+        let song = try await resolveSong(for: source)
+        let entry = MusicPlayer.Queue.Entry(
+            song,
+            startTime: startTime,
+            endTime: startTime + duration
+        )
+        let musicPlayer = makeApplicationMusicPlayer()
+        musicPlayer.stop()
+        musicPlayer.queue = ApplicationMusicPlayer.Queue([entry], startingAt: entry)
+
+        // MusicKit queue-entry start times have been inconsistent when replaying the same
+        // catalog song across players, so force the playhead to the cue's current trim point.
+        if startTime > 0 {
+            musicPlayer.playbackTime = startTime
+        }
+
+        try await musicPlayer.play()
+
+        if startTime > 0 {
+            await Task.yield()
+            musicPlayer.playbackTime = startTime
+        }
+
+        stopTask = Task { @MainActor [weak self] in
+            guard let self else { return }
+            try? await Task.sleep(for: .seconds(duration))
+            self.stop()
+        }
+    }
+
     private func makeApplicationMusicPlayer() -> ApplicationMusicPlayer {
         if let applicationMusicPlayer {
             return applicationMusicPlayer
@@ -708,12 +724,48 @@ final class CuePlaybackEngine: NSObject, ObservableObject {
             try AVAudioPlayer(contentsOf: url)
         }
         audioPlayer = player
+        player.volume = 1
         player.currentTime = start
         player.play()
+        scheduleLocalStop(duration: duration, fadeOut: fadeOut)
+    }
+
+    private func scheduleLocalStop(duration: TimeInterval, fadeOut: TimeInterval) {
+        let fadeDuration = effectiveFadeDuration(playbackDuration: duration, fadeOut: fadeOut)
+        let sustainDuration = max(0, duration - fadeDuration)
         stopTask = Task { [weak self] in
-            try? await Task.sleep(for: .seconds(duration))
-            await self?.fadeLocal(duration: fadeOut)
+            if sustainDuration > 0 {
+                try? await Task.sleep(for: .seconds(sustainDuration))
+            }
+            guard let self, !Task.isCancelled else { return }
+            if fadeDuration > 0 {
+                await self.fadeLocal(duration: fadeDuration)
+            } else {
+                self.stop()
+            }
         }
+    }
+
+    private func scheduleRemoteStop(duration: TimeInterval, fadeOut: TimeInterval) {
+        let fadeDuration = effectiveFadeDuration(playbackDuration: duration, fadeOut: fadeOut)
+        let sustainDuration = max(0, duration - fadeDuration)
+        stopTask = Task { [weak self] in
+            if sustainDuration > 0 {
+                try? await Task.sleep(for: .seconds(sustainDuration))
+            }
+            guard let self, !Task.isCancelled else { return }
+            if fadeDuration > 0 {
+                await self.fadeRemote(duration: fadeDuration)
+            } else {
+                self.stop()
+            }
+        }
+    }
+
+    private func effectiveFadeDuration(playbackDuration: TimeInterval, fadeOut: TimeInterval) -> TimeInterval {
+        let boundedPlayback = max(0, playbackDuration)
+        let boundedFade = max(0, fadeOut)
+        return min(boundedPlayback, boundedFade)
     }
 
     private func fadeLocal(duration: TimeInterval) async {

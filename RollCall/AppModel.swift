@@ -393,6 +393,16 @@ final class AppModel: ObservableObject {
         persist()
     }
 
+    func removeSelectedTeam() {
+        guard let teamIndex else { return }
+        state.teams.remove(at: teamIndex)
+        normalizeSelectedTeamIfNeeded()
+        stopPlayback()
+        prewarmNextBatterCue()
+        scheduleReadinessRefresh()
+        persist()
+    }
+
     func addPlayer(name: String, number: String) {
         guard let teamIndex = teamIndex else { return }
         let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -1179,7 +1189,7 @@ final class AppModel: ObservableObject {
         guard case .appleMusic = cue.source else { return nil }
         switch appleMusicPlaybackCapability {
         case .fullSong:
-            return "Choose up to 20 seconds from anywhere in the full song."
+            return "Choose up to 20 seconds from anywhere in the full song. Fade-out timing currently applies reliably to preview and local audio playback; full-song Apple Music still ends hard through MusicKit."
         case .previewOnly, .unknown:
             return "No Apple Music playback subscription is active. You can choose up to 20 seconds from the available preview clip."
         }
