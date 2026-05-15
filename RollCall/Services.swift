@@ -1,6 +1,7 @@
 import AVFAudio
 import AVFoundation
 import Foundation
+import MediaPlayer
 @preconcurrency import MusicKit
 import Network
 import UniformTypeIdentifiers
@@ -458,27 +459,126 @@ private struct SupportBundlePayload: Codable {
 }
 
 @MainActor
+private protocol AppleMusicCatalogPlaybackControlling: AnyObject {
+    func preconnect()
+    func play(songID: String, startTime: TimeInterval, duration: TimeInterval) async throws
+    func setVolume(_ volume: Float)
+    func stop()
+}
+
+@MainActor
+private final class MediaPlayerCatalogPlaybackController: AppleMusicCatalogPlaybackControlling {
+    private let player: MPMusicPlayerApplicationController
+    private var fadeAnchorVolume: Float = 1
+    private var startupRampTask: Task<Void, Never>?
+
+    init(player: MPMusicPlayerApplicationController = MPMusicPlayerController.applicationQueuePlayer) {
+        self.player = player
+    }
+
+    func preconnect() {
+        _ = player
+    }
+
+    func play(songID: String, startTime: TimeInterval, duration: TimeInterval) async throws {
+        fadeAnchorVolume = currentPlayerVolume()
+        startupRampTask?.cancel()
+        player.stop()
+        setPlayerVolume(0)
+
+        let descriptor = MPMusicPlayerStoreQueueDescriptor(storeIDs: [songID])
+        descriptor.startItemID = songID
+        descriptor.setStartTime(startTime, forItemWithStoreID: songID)
+        descriptor.setEndTime(startTime + duration, forItemWithStoreID: songID)
+        player.setQueue(with: descriptor)
+
+        // MediaPlayer queue start times can still be sticky on reused selections, so
+        // force the playhead to the cue's current trim point before and after playback.
+        if startTime > 0 {
+            player.currentPlaybackTime = startTime
+        }
+
+        player.play()
+        setPlayerVolume(0)
+
+        if startTime > 0 {
+            await Task.yield()
+            player.currentPlaybackTime = startTime
+        }
+
+        beginStartupRamp()
+    }
+
+    func setVolume(_ volume: Float) {
+        let clamped = min(max(0, volume), 1)
+        if clamped >= 0.999 {
+            fadeAnchorVolume = currentPlayerVolume()
+        }
+        setPlayerVolume(fadeAnchorVolume * clamped)
+    }
+
+    func stop() {
+        startupRampTask?.cancel()
+        startupRampTask = nil
+        player.stop()
+        setPlayerVolume(fadeAnchorVolume)
+    }
+
+    private func setPlayerVolume(_ volume: Float) {
+        // `MPMusicPlayerController.volume` is marked unavailable on modern iOS SDKs,
+        // but the application queue player still exposes the underlying Objective-C
+        // setter. Keep this isolated as a provisional on-device experiment.
+        player.setValue(volume, forKey: "volume")
+    }
+
+    private func currentPlayerVolume() -> Float {
+        guard let number = player.value(forKey: "volume") as? NSNumber else { return 1 }
+        return min(max(number.floatValue, 0), 1)
+    }
+
+    private func beginStartupRamp() {
+        startupRampTask?.cancel()
+        let targetVolume = fadeAnchorVolume
+        startupRampTask = Task { @MainActor [weak self] in
+            guard let self else { return }
+            let steps = 4
+            for step in 1...steps {
+                guard !Task.isCancelled else { return }
+                let progress = Float(step) / Float(steps)
+                self.setPlayerVolume(targetVolume * progress)
+                try? await Task.sleep(for: .milliseconds(30))
+            }
+            self.startupRampTask = nil
+        }
+    }
+}
+
+@MainActor
 final class CuePlaybackEngine: NSObject, ObservableObject {
     @Published private(set) var activeCueID: UUID?
 
     private let audioAssetService: AudioAssetService
     private let musicCatalogService: MusicCatalogService
+    private let catalogPlaybackController: any AppleMusicCatalogPlaybackControlling
     private let debounceWindow: TimeInterval = 0.45
     private let appleMusicClipDurationLimit: TimeInterval = 20
     private var audioPlayer: AVAudioPlayer?
     private var announcerPlayer: AVAudioPlayer?
     private var remotePlayer: AVPlayer?
-    private var applicationMusicPlayer: ApplicationMusicPlayer?
     private var stopTask: Task<Void, Never>?
     private var prewarmedCueID: UUID?
     private var prewarmedLocalPlayer: AVAudioPlayer?
-    private var cachedAppleMusicSongs: [String: Song] = [:]
     private var previewPlayer: AVAudioPlayer?
     private var lastStartDate: Date?
     private var lastStartedCueID: UUID?
-    init(audioAssetService: AudioAssetService, musicCatalogService: MusicCatalogService) {
+
+    init(
+        audioAssetService: AudioAssetService,
+        musicCatalogService: MusicCatalogService
+    ) {
         self.audioAssetService = audioAssetService
         self.musicCatalogService = musicCatalogService
+        self.catalogPlaybackController = MediaPlayerCatalogPlaybackController()
     }
 
     func play(cue: Cue, announcerRelativePath: String? = nil) async throws {
@@ -504,6 +604,7 @@ final class CuePlaybackEngine: NSObject, ObservableObject {
         case .appleMusic:
             prewarmedCueID = cue.id
             prewarmedLocalPlayer = nil
+            catalogPlaybackController.preconnect()
         case .localAudio(let source):
             let url = try audioAssetService.assetURL(relativePath: source.relativePath)
             let player = try AVAudioPlayer(contentsOf: url)
@@ -522,7 +623,7 @@ final class CuePlaybackEngine: NSObject, ObservableObject {
     }
 
     func preconnectForUpcomingPlayback() {
-        _ = makeApplicationMusicPlayer()
+        catalogPlaybackController.preconnect()
     }
 
     func supportDiagnostics() -> PlaybackSupportDiagnostics {
@@ -572,7 +673,7 @@ final class CuePlaybackEngine: NSObject, ObservableObject {
         audioPlayer = nil
         remotePlayer?.pause()
         remotePlayer = nil
-        applicationMusicPlayer?.stop()
+        catalogPlaybackController.stop()
         previewPlayer?.stop()
         previewPlayer = nil
         activeCueID = nil
@@ -641,7 +742,7 @@ final class CuePlaybackEngine: NSObject, ObservableObject {
             let clipDuration = min(duration, appleMusicClipDurationLimit)
             if source.isCatalogBacked != false, await musicCatalogService.playbackCapability() == .fullSong {
                 do {
-                    try await playCatalogSong(source: source, startTime: cue.startTime, duration: clipDuration)
+                    try await playCatalogSong(source: source, startTime: cue.startTime, duration: clipDuration, fadeOut: cue.fadeOutDuration)
                     return
                 } catch {
                     throw AppError.appleMusicFullSongCatalogUnavailable
@@ -667,54 +768,9 @@ final class CuePlaybackEngine: NSObject, ObservableObject {
         }
     }
 
-    private func resolveSong(for source: AppleMusicSource) async throws -> Song {
-        if let cached = cachedAppleMusicSongs[source.songID] {
-            return cached
-        }
-
-        let song = try await musicCatalogService.song(for: source.songID)
-        cachedAppleMusicSongs[source.songID] = song
-        return song
-    }
-
-    private func playCatalogSong(source: AppleMusicSource, startTime: TimeInterval, duration: TimeInterval) async throws {
-        let song = try await resolveSong(for: source)
-        let entry = MusicPlayer.Queue.Entry(
-            song,
-            startTime: startTime,
-            endTime: startTime + duration
-        )
-        let musicPlayer = makeApplicationMusicPlayer()
-        musicPlayer.stop()
-        musicPlayer.queue = ApplicationMusicPlayer.Queue([entry], startingAt: entry)
-
-        // MusicKit queue-entry start times have been inconsistent when replaying the same
-        // catalog song across players, so force the playhead to the cue's current trim point.
-        if startTime > 0 {
-            musicPlayer.playbackTime = startTime
-        }
-
-        try await musicPlayer.play()
-
-        if startTime > 0 {
-            await Task.yield()
-            musicPlayer.playbackTime = startTime
-        }
-
-        stopTask = Task { @MainActor [weak self] in
-            guard let self else { return }
-            try? await Task.sleep(for: .seconds(duration))
-            self.stop()
-        }
-    }
-
-    private func makeApplicationMusicPlayer() -> ApplicationMusicPlayer {
-        if let applicationMusicPlayer {
-            return applicationMusicPlayer
-        }
-        let player = ApplicationMusicPlayer.shared
-        applicationMusicPlayer = player
-        return player
+    private func playCatalogSong(source: AppleMusicSource, startTime: TimeInterval, duration: TimeInterval, fadeOut: TimeInterval) async throws {
+        try await catalogPlaybackController.play(songID: source.songID, startTime: startTime, duration: duration)
+        scheduleCatalogStop(duration: duration, fadeOut: fadeOut)
     }
 
     private func playLocal(url: URL, start: TimeInterval, duration: TimeInterval, fadeOut: TimeInterval, reusePrewarm: Bool) throws {
@@ -762,6 +818,22 @@ final class CuePlaybackEngine: NSObject, ObservableObject {
         }
     }
 
+    private func scheduleCatalogStop(duration: TimeInterval, fadeOut: TimeInterval) {
+        let fadeDuration = effectiveFadeDuration(playbackDuration: duration, fadeOut: fadeOut)
+        let sustainDuration = max(0, duration - fadeDuration)
+        stopTask = Task { [weak self] in
+            if sustainDuration > 0 {
+                try? await Task.sleep(for: .seconds(sustainDuration))
+            }
+            guard let self, !Task.isCancelled else { return }
+            if fadeDuration > 0 {
+                await self.fadeCatalog(duration: fadeDuration)
+            } else {
+                self.stop()
+            }
+        }
+    }
+
     private func effectiveFadeDuration(playbackDuration: TimeInterval, fadeOut: TimeInterval) -> TimeInterval {
         let boundedPlayback = max(0, playbackDuration)
         let boundedFade = max(0, fadeOut)
@@ -781,6 +853,14 @@ final class CuePlaybackEngine: NSObject, ObservableObject {
         guard let player = remotePlayer else { return }
         for step in stride(from: 8, through: 1, by: -1) {
             player.volume = Float(step) / 8
+            try? await Task.sleep(for: .seconds(duration / 8))
+        }
+        stop()
+    }
+
+    private func fadeCatalog(duration: TimeInterval) async {
+        for step in stride(from: 8, through: 1, by: -1) {
+            catalogPlaybackController.setVolume(Float(step) / 8)
             try? await Task.sleep(for: .seconds(duration / 8))
         }
         stop()

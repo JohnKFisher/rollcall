@@ -1,5 +1,9 @@
 import Foundation
 
+private enum CueDefaults {
+    static let fadeOutDuration: TimeInterval = 2.0
+}
+
 enum AppMetadata {
     static let appVersion = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0.0.0"
     static let buildNumber = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "0"
@@ -200,7 +204,7 @@ struct Cue: Codable, Equatable, Identifiable {
         source = try container.decode(CueSource.self, forKey: .source)
         startTime = try container.decodeIfPresent(TimeInterval.self, forKey: .startTime) ?? 0
         duration = try container.decodeIfPresent(TimeInterval.self, forKey: .duration) ?? 12
-        fadeOutDuration = try container.decodeIfPresent(TimeInterval.self, forKey: .fadeOutDuration) ?? 0.35
+        fadeOutDuration = try container.decodeIfPresent(TimeInterval.self, forKey: .fadeOutDuration) ?? CueDefaults.fadeOutDuration
         pauseAfterAnnouncer = try container.decodeIfPresent(TimeInterval.self, forKey: .pauseAfterAnnouncer) ?? 0.2
         _ = try container.decodeIfPresent(AnnouncerConfig.self, forKey: .announcer)
     }
@@ -595,7 +599,7 @@ extension Cue {
             source: .localAudio(source),
             startTime: 0,
             duration: min(12, source.duration ?? 12),
-            fadeOutDuration: 0.35,
+            fadeOutDuration: CueDefaults.fadeOutDuration,
             pauseAfterAnnouncer: 0.2
         )
     }
@@ -607,7 +611,7 @@ extension Cue {
             source: .appleMusic(source),
             startTime: 0,
             duration: 12,
-            fadeOutDuration: 0.35,
+            fadeOutDuration: CueDefaults.fadeOutDuration,
             pauseAfterAnnouncer: 0.2
         )
     }

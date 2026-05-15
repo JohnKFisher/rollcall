@@ -2,6 +2,12 @@
 
 Use this file as a concise decision log for project-specific architectural, behavioral, tooling, and scope decisions.
 
+## 2026-05-15
+
+- Approved: AirDropped or shared `.rollcall` files should open directly into Roll Call's existing import flow, while preserving the current backup-first import semantics.
+  Rationale: the app already treats `.rollcall` as the portable team handoff format, so direct file opening reduces friction without introducing live sync or changing package contents.
+  Status: approved
+
 ## 2026-05-13
 
 - Approved: remove Built-in Voice from the product for now and center custom recorded intros only, with Game Day using either cue-only playback or custom-intro-plus-cue playback.
@@ -33,6 +39,14 @@ Use this file as a concise decision log for project-specific architectural, beha
   Status: approved
 
 ## 2026-05-14
+
+- Approved: subscribed full-song Apple Music playback may use an internal MediaPlayer application-player backend to preserve the Apple Music-first selection flow while pursuing reliable fade-capable playback.
+  Rationale: MusicKit `ApplicationMusicPlayer` keeps the picker and trim model honest, but it still hard-stops subscribed catalog playback; swapping the playback backend internally is safer than unsupported local capture/export experiments.
+  Status: approved
+
+- Approved: hide local audio import from the main cue-source section, but keep it available behind a secondary fallback affordance.
+  Rationale: Apple Music should stay primary in the product flow, while dependable device-owned media remains available without competing visually as the default setup path.
+  Status: approved
 
 - Approved: when a Game Day player is tapped without a selected song cue, play the built-in `Small Cheer` clip as the default fallback.
   Rationale: this keeps tap behavior useful even when player setup is incomplete, while preserving a single implementation point for a future user-selectable default fallback cue.

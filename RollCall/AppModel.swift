@@ -3,6 +3,7 @@ import AVFoundation
 import Combine
 import Foundation
 import UIKit
+import UniformTypeIdentifiers
 
 struct PendingRosterImport: Identifiable {
     let id = UUID()
@@ -259,6 +260,7 @@ final class AppModel: ObservableObject {
     private var prewarmTask: Task<Void, Never>?
     private var startupWarmupTask: Task<Void, Never>?
     private var announcerRegenerationTask: Task<Void, Never>?
+    private var pendingIncomingPackageURLs: [URL] = []
 
     let audioAssetService = AudioAssetService()
     let musicCatalogService = MusicCatalogService()
@@ -312,9 +314,19 @@ final class AppModel: ObservableObject {
             refreshReadiness()
             scheduleStartupGameDayWarmup()
             persist()
+            await importPendingIncomingPackagesIfNeeded()
         } catch {
             lastError = error.localizedDescription
         }
+    }
+
+    func handleIncomingPackage(_ url: URL) {
+        guard isSupportedIncomingPackageURL(url) else {
+            lastError = "Roll Call can only open .rollcall packages from Share or AirDrop."
+            return
+        }
+        pendingIncomingPackageURLs.append(url)
+        Task { await self.importPendingIncomingPackagesIfNeeded() }
     }
 
     var selectedTeam: Team? {
@@ -725,6 +737,10 @@ final class AppModel: ObservableObject {
     }
 
     func importPackage(from url: URL) async {
+        await performPackageImport(from: url)
+    }
+
+    private func performPackageImport(from url: URL) async {
         await busy {
             let scoped = url.startAccessingSecurityScopedResource()
             defer {
@@ -1030,6 +1046,32 @@ final class AppModel: ObservableObject {
         } catch {
             lastError = error.localizedDescription
         }
+    }
+
+    private func importPendingIncomingPackagesIfNeeded() async {
+        guard hasFinishedLaunching, !isBusy else { return }
+        while !pendingIncomingPackageURLs.isEmpty {
+            let nextURL = pendingIncomingPackageURLs.removeFirst()
+            await performPackageImport(from: nextURL)
+        }
+    }
+
+    private func isSupportedIncomingPackageURL(_ url: URL) -> Bool {
+        guard url.isFileURL else { return false }
+        if url.pathExtension.localizedCaseInsensitiveCompare("rollcall") == .orderedSame {
+            return true
+        }
+        if let type = UTType(filenameExtension: url.pathExtension),
+           type.conforms(to: .rollCallPackage) {
+            return true
+        }
+
+        var isDirectory = ObjCBool(false)
+        guard FileManager.default.fileExists(atPath: url.path, isDirectory: &isDirectory),
+              isDirectory.boolValue else {
+            return false
+        }
+        return FileManager.default.fileExists(atPath: url.appendingPathComponent("manifest.json").path)
     }
 
     func announcerPreviewText(for team: Team, profile: TeamAnnouncerProfile? = nil) -> String {

@@ -61,6 +61,9 @@ struct RootView: View {
         .task {
             await appModel.finishLaunchingIfNeeded()
         }
+        .onOpenURL { url in
+            appModel.handleIncomingPackage(url)
+        }
         .overlay(alignment: .top) {
             if appModel.isBusy {
                 ProgressView("Working…")
@@ -507,7 +510,7 @@ private struct RollCallPackageImportSheet: UIViewControllerRepresentable {
 
     func makeUIViewController(context: Context) -> UIDocumentPickerViewController {
         let picker = UIDocumentPickerViewController(
-            forOpeningContentTypes: [.data, .folder],
+            forOpeningContentTypes: [.rollCallPackage, .data, .folder],
             asCopy: false
         )
         picker.delegate = context.coordinator
@@ -947,8 +950,6 @@ private struct PlayerEditorSheet: View {
                                 .frame(maxWidth: .infinity)
                         }
                     }
-
-                    Button("Import Audio or Video") { importPresented = true }
                 }
 
                 Section("Announcement Cue") {
@@ -986,6 +987,17 @@ private struct PlayerEditorSheet: View {
                         Button("Preview Announcement Cue") {
                             appModel.previewCustomAnnouncer(for: player)
                         }
+                    }
+                }
+
+                Section("More Audio Options") {
+                    DisclosureGroup("Import from Device") {
+                        Button("Import Audio or Video") { importPresented = true }
+                            .padding(.top, 6)
+                        Text("Fallback path for device-owned audio when Apple Music is not the right source for this cue.")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                            .padding(.top, 2)
                     }
                 }
 
@@ -1186,7 +1198,7 @@ private struct PlayerEditorSheet: View {
     }
 
     private func secondsText(_ value: Double) -> String {
-        String(format: "%.2fs", value)
+        formattedCueTime(value)
     }
 
     @ViewBuilder
@@ -1235,6 +1247,7 @@ private struct PlayerEditorSheet: View {
                 StartScrubControl(
                     progress: cueTimeLimit <= 0 ? 0 : cue.startTime / cueTimeLimit,
                     displayRange: cueTimeLimit,
+                    currentValueText: secondsText(cue.startTime),
                     onSeek: { progress in
                         updateCueStart(progress: progress)
                     },
@@ -1319,6 +1332,16 @@ private struct PlayerEditorSheet: View {
             await appModel.previewCue(cue)
         }
     }
+}
+
+private func formattedCueTime(_ value: Double) -> String {
+    let clamped = max(0, value)
+    if clamped >= 60 {
+        let minutes = Int(clamped) / 60
+        let seconds = clamped.truncatingRemainder(dividingBy: 60)
+        return String(format: "%d:%05.2f", minutes, seconds)
+    }
+    return String(format: "%.2fs", clamped)
 }
 
 private struct BasicPhotoCropperSheet: View {
@@ -1763,14 +1786,17 @@ private struct AppleMusicRow: View {
 private struct StartScrubControl: View {
     let progress: Double
     let displayRange: Double
+    let currentValueText: String
     let onSeek: (Double) -> Void
     let onLiveScrub: (Double) -> Void
 
     @GestureState private var isPressing = false
+    @GestureState private var isDragging = false
 
     var body: some View {
         GeometryReader { proxy in
             let width = max(proxy.size.width, 1)
+            let thumbOffset = max(0, min(width - 28, width * progress - 14))
             ZStack(alignment: .leading) {
                 RoundedRectangle(cornerRadius: 10, style: .continuous)
                     .fill(Color.secondary.opacity(0.18))
@@ -1778,16 +1804,28 @@ private struct StartScrubControl: View {
                 RoundedRectangle(cornerRadius: 10, style: .continuous)
                     .fill(Color.orange.opacity(0.8))
                     .frame(width: max(14, width * progress), height: 18)
+                if isDragging {
+                    Text(currentValueText)
+                        .font(.caption2.weight(.semibold))
+                        .monospacedDigit()
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 5)
+                        .background(.ultraThinMaterial, in: Capsule())
+                        .offset(x: max(0, min(width - 72, width * progress - 36)), y: -30)
+                }
                 Circle()
                     .fill(Color.orange)
                     .frame(width: 28, height: 28)
-                    .offset(x: max(0, min(width - 28, width * progress - 14)))
+                    .offset(x: thumbOffset)
                     .shadow(radius: 2)
             }
             .frame(maxWidth: .infinity, minHeight: 36, maxHeight: 36, alignment: .center)
             .contentShape(Rectangle())
             .gesture(
                 DragGesture(minimumDistance: 0)
+                    .updating($isDragging) { _, state, _ in
+                        state = true
+                    }
                     .onChanged { value in
                         let newProgress = min(max(0, value.location.x / width), 1)
                         onSeek(newProgress)
@@ -1848,7 +1886,7 @@ private struct AdvancedTrimSheet: View {
 
                 Section("Fade Out") {
                     nudgeRow(title: "Fade", value: cue.fadeOutDuration) { delta in
-                        cue.fadeOutDuration = min(max(0.1, cue.fadeOutDuration + delta), 2.0)
+                        cue.fadeOutDuration = min(max(0.1, cue.fadeOutDuration + delta), 3.0)
                     }
                 }
             }
@@ -1868,7 +1906,7 @@ private struct AdvancedTrimSheet: View {
             Spacer()
             Button("-0.25") { apply(-0.25) }
                 .buttonStyle(.bordered)
-            Text(String(format: "%.2fs", value))
+            Text(formattedCueTime(value))
                 .monospacedDigit()
                 .frame(minWidth: 68)
             Button("+0.25") { apply(0.25) }
