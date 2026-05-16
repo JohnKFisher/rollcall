@@ -164,11 +164,16 @@ struct RootView: View {
                 .listRowBackground(Color.clear)
 
                 if let team = appModel.selectedTeam {
-                    Section("Quick Add") {
+                    Section {
                         PlayerQuickAddView(appModel: appModel)
+                    } header: {
+                        PlayersSectionHeader(
+                            title: "Add Player",
+                            helperText: "Fast roster entry stays here; detailed cue and photo setup opens from each player row."
+                        )
                     }
 
-                    Section("Roster") {
+                    Section {
                         ForEach(playersTabRoster(for: team)) { player in
                             let cueLabel = player.cue?.label
                             let hasCustomIntro = appModel.hasStoredCustomAnnouncer(for: player)
@@ -177,44 +182,32 @@ struct RootView: View {
                             Button {
                                 selectedPlayer = player
                             } label: {
-                                HStack {
-                                    PlayerPhotoThumbnail(relativePath: player.photoRelativePath, size: 52)
-                                    VStack(alignment: .leading, spacing: 4) {
-                                        Text(player.displayName)
-                                            .font(.headline)
-                                        Text(player.uniformNumber.isEmpty ? "No number" : "#\(player.uniformNumber)")
-                                            .font(.subheadline)
-                                            .foregroundStyle(.secondary)
-                                    }
-                                    Spacer()
-                                    VStack(alignment: .trailing, spacing: 6) {
-                                        Text(cueStatusText(cueLabel: cueLabel))
-                                            .font(.caption.weight(.semibold))
-                                            .padding(.horizontal, 10)
-                                            .padding(.vertical, 6)
-                                            .background(cueStatusBackground(cueLabel: cueLabel), in: Capsule())
-                                            .foregroundStyle(cueStatusForeground(cueLabel: cueLabel))
-
-                                        Text(customIntroStatusText(hasCustomIntro: hasCustomIntro, isMissing: isCustomIntroMissing))
-                                            .font(.caption.weight(.semibold))
-                                            .padding(.horizontal, 10)
-                                            .padding(.vertical, 6)
-                                            .background(customIntroStatusBackground(hasCustomIntro: hasCustomIntro, isMissing: isCustomIntroMissing), in: Capsule())
-                                            .foregroundStyle(customIntroStatusForeground(hasCustomIntro: hasCustomIntro, isMissing: isCustomIntroMissing))
-                                    }
-                                }
+                                PlayerRosterRow(
+                                    player: player,
+                                    cueLabel: cueLabel,
+                                    isPresent: isPresent,
+                                    isCustomIntroMissing: isCustomIntroMissing
+                                )
                             }
+                            .buttonStyle(.plain)
                             .swipeActions(edge: .trailing, allowsFullSwipe: false) {
                                 Button(isPresent ? "Mark Out" : "Mark In") { appModel.togglePresent(player) }
                                     .tint(isPresent ? .red : .green)
                             }
                         }
+                    } header: {
+                        PlayersSectionHeader(
+                            title: "Roster",
+                            helperText: "\(team.players.count) players sorted by name. Swipe a row to mark availability."
+                        )
                     }
                 } else {
                     ContentUnavailableView("No Team Selected", systemImage: "person.3.sequence.fill", description: Text("Create or select a team on the Teams tab."))
                 }
             }
-            .navigationTitle(playersTabTitle)
+            .listStyle(.insetGrouped)
+            .navigationTitle("Players")
+            .navigationBarTitleDisplayMode(.inline)
             .scrollDismissesKeyboard(.interactively)
             .dismissesKeyboardOnTap()
             .sheet(item: $selectedPlayer) { player in
@@ -1603,6 +1596,94 @@ private struct PlayerQuickAddView: View {
         name = ""
         number = ""
         focusedField = .name
+    }
+}
+
+private struct PlayersSectionHeader: View {
+    let title: String
+    let helperText: String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Text(title)
+                .rollCallText(.sectionTitle)
+            Text(helperText)
+                .rollCallText(.helperText)
+                .textCase(nil)
+        }
+        .padding(.top, 2)
+        .textCase(nil)
+    }
+}
+
+private struct PlayerRosterRow: View {
+    let player: Player
+    let cueLabel: String?
+    let isPresent: Bool
+    let isCustomIntroMissing: Bool
+
+    var body: some View {
+        HStack(alignment: .center, spacing: RollCallSpacingTier.standard.value) {
+            PlayerPhotoThumbnail(relativePath: player.photoRelativePath, size: 44, cornerRadius: 12)
+
+            VStack(alignment: .leading, spacing: 6) {
+                HStack(alignment: .firstTextBaseline, spacing: RollCallSpacingTier.tight.value) {
+                    Text(player.displayName)
+                        .rollCallText(.cardTitle)
+                        .lineLimit(2)
+                    if !player.uniformNumber.isEmpty {
+                        Text("#\(player.uniformNumber)")
+                            .rollCallText(.helperText)
+                            .lineLimit(1)
+                    }
+                }
+
+                HStack(alignment: .center, spacing: RollCallSpacingTier.tight.value) {
+                    cueSummary
+
+                    if isCustomIntroMissing {
+                        Label("Announcement missing", systemImage: "exclamationmark.triangle.fill")
+                            .rollCallText(.chipLabel)
+                            .foregroundStyle(Color.rollCall(.destructive))
+                            .lineLimit(1)
+                    }
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+
+            VStack(alignment: .trailing, spacing: RollCallSpacingTier.tight.value) {
+                StatusChip(
+                    text: isPresent ? "Present" : "Out",
+                    role: isPresent ? .ready : .disabled,
+                    systemImage: isPresent ? "checkmark.circle" : "minus.circle",
+                    emphasis: .subdued
+                )
+
+                Image(systemName: "chevron.right")
+                    .font(.footnote.weight(.semibold))
+                    .foregroundStyle(Color(uiColor: .tertiaryLabel))
+                    .accessibilityHidden(true)
+            }
+        }
+        .padding(.vertical, 4)
+        .contentShape(Rectangle())
+        .accessibilityElement(children: .combine)
+        .accessibilityHint("Opens player details.")
+    }
+
+    @ViewBuilder
+    private var cueSummary: some View {
+        if let cueLabel {
+            Label(cueLabel, systemImage: "music.note")
+                .rollCallText(.helperText)
+                .foregroundStyle(Color(uiColor: .secondaryLabel))
+                .lineLimit(1)
+        } else {
+            Label("No cue", systemImage: "music.note")
+                .rollCallText(.helperText)
+                .foregroundStyle(Color.rollCall(.warning))
+                .lineLimit(1)
+        }
     }
 }
 
