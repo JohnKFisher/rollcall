@@ -37,46 +37,28 @@ struct TeamBanner: View {
     }
 
     var body: some View {
-        HStack(spacing: RollCallSpacingTier.standard.value) {
-            accentBar
-
-            VStack(alignment: .leading, spacing: 3) {
-                Text(displayName)
-                    .rollCallText(.cardTitle, surface: surface)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.82)
-
-                Text(displayStatus)
-                    .rollCallText(.helperText, surface: surface)
-                    .lineLimit(1)
-            }
-
+        HStack(spacing: RollCallSpacingTier.tight.value) {
+            Text(displayName)
+                .rollCallText(.cardTitle, surface: surface)
+                .lineLimit(1)
+                .minimumScaleFactor(0.82)
             Spacer(minLength: RollCallSpacingTier.tight.value)
-
-            if let secondaryStatus {
-                StatusChip(
-                    text: secondaryStatus.text,
-                    role: secondaryStatus.chipRole,
-                    systemImage: secondaryStatus.systemImage,
-                    emphasis: .subdued
-                )
-            }
         }
-        .frame(minHeight: 54)
-        .padding(.vertical, 8)
+        .frame(height: 34)
+        .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, 12)
         .background(background)
+        .overlay(alignment: .leading) {
+            Rectangle()
+                .fill(resolvedAccent)
+                .frame(width: 4)
+                .accessibilityHidden(true)
+        }
         .overlay(border)
-        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
         .accessibilityElement(children: .combine)
-    }
-
-    private var accentBar: some View {
-        RoundedRectangle(cornerRadius: 3, style: .continuous)
-            .fill(resolvedAccent)
-            .frame(width: 5)
-            .frame(maxHeight: .infinity)
-            .accessibilityHidden(true)
+        .accessibilityLabel("Team")
+        .accessibilityValue(accessibilityStatus)
     }
 
     private var displayName: String {
@@ -90,7 +72,11 @@ struct TeamBanner: View {
         if teamName == nil {
             return "Choose or create a team"
         }
-        return variant == .liveSide ? "Live team context" : "Current team"
+        return secondaryStatus?.text ?? (variant == .liveSide ? "Live team context" : "Current team")
+    }
+
+    private var accessibilityStatus: String {
+        "\(displayName), \(displayStatus)"
     }
 
     private var surface: RollCallSurfaceVariant {
@@ -111,8 +97,8 @@ struct TeamBanner: View {
     }
 
     private var border: some View {
-        RoundedRectangle(cornerRadius: 12, style: .continuous)
-            .strokeBorder(Color.rollCall(.neutralStructure, surface: surface), lineWidth: 1)
+        RoundedRectangle(cornerRadius: 7, style: .continuous)
+            .strokeBorder(Color.rollCall(.neutralStructure, surface: surface).opacity(0.55), lineWidth: 1)
     }
 }
 
@@ -179,4 +165,3 @@ private extension TeamBannerSecondaryStatus {
         .padding()
     }
 }
-

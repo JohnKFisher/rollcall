@@ -154,6 +154,15 @@ struct RootView: View {
     private var playersTab: some View {
         NavigationStack {
             List {
+                Section {
+                    TeamBanner(
+                        teamName: appModel.selectedTeam?.name,
+                        secondaryStatus: selectedTeamBannerStatus
+                    )
+                }
+                .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
+                .listRowBackground(Color.clear)
+
                 if let team = appModel.selectedTeam {
                     Section("Quick Add") {
                         PlayerQuickAddView(appModel: appModel)
@@ -249,6 +258,15 @@ struct RootView: View {
     private var generalClipsTab: some View {
         NavigationStack {
             List {
+                Section {
+                    TeamBanner(
+                        teamName: appModel.selectedTeam?.name,
+                        secondaryStatus: selectedTeamBannerStatus
+                    )
+                }
+                .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
+                .listRowBackground(Color.clear)
+
                 if appModel.selectedTeamBuiltInClips.isEmpty {
                     ContentUnavailableView("No Clips Ready", systemImage: "speaker.wave.2", description: Text("Select a team to use the built-in crowd clip library."))
                 } else {
@@ -339,84 +357,141 @@ struct RootView: View {
     private var readinessTab: some View {
         NavigationStack {
             ScrollView {
-                if let readiness = appModel.state.lastReadiness {
-                    VStack(alignment: .leading, spacing: RollCallSpacingTier.large.value) {
-                        ReadinessOverviewCard(readiness: readiness)
+                VStack(alignment: .leading, spacing: RollCallSpacingTier.large.value) {
+                    TeamBanner(
+                        teamName: appModel.selectedTeam?.name,
+                        secondaryStatus: selectedTeamBannerStatus
+                    )
+
+                    if let readiness = appModel.state.lastReadiness {
+                        ReadinessOverviewCard(readiness: readiness) {
+                            appModel.refreshReadiness()
+                        }
 
                         ForEach(readinessIssueFamilies(for: readiness.checks)) { family in
                             ReadinessIssueFamilyCard(family: family)
                         }
+                    } else {
+                        ReadinessEmptyCard {
+                            appModel.refreshReadiness()
+                        }
                     }
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, RollCallSpacingTier.large.value)
-                } else {
-                    ReadinessEmptyCard()
-                        .padding(.horizontal, 16)
-                        .padding(.vertical, RollCallSpacingTier.large.value)
                 }
+                .padding(.horizontal, 16)
+                .padding(.top, RollCallSpacingTier.tight.value)
+                .padding(.bottom, RollCallSpacingTier.large.value)
             }
             .background(Color(uiColor: .systemGroupedBackground))
             .navigationTitle("Readiness")
-            .toolbar {
-                Button("Refresh") { appModel.refreshReadiness() }
-            }
+            .navigationBarTitleDisplayMode(.inline)
         }
     }
 
     private var teamsTab: some View {
         NavigationStack {
-            List {
-                Section("Create Team") {
-                    TextField("Team name", text: $newTeamName)
-                    Button("Create Team") {
-                        appModel.addTeam(named: newTeamName)
-                        newTeamName = ""
-                    }
-                    .disabled(newTeamName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                }
-                Section("Teams") {
-                    ForEach(appModel.state.teams) { team in
-                        Button {
-                            appModel.selectTeam(team)
-                        } label: {
-                            HStack {
-                                VStack(alignment: .leading, spacing: 4) {
-                                    Text(team.name).font(.headline)
-                                    Text("\(team.players.count) players").foregroundStyle(.secondary)
+            ScrollView {
+                VStack(alignment: .leading, spacing: RollCallSpacingTier.large.value) {
+                    TeamBanner(
+                        teamName: appModel.selectedTeam?.name,
+                        secondaryStatus: selectedTeamBannerStatus
+                    )
+
+                    if let team = appModel.selectedTeam {
+                        TeamsSectionGroup(
+                            title: "Selected Team",
+                            helperText: "Lifecycle tools stay here so they do not interrupt normal team selection."
+                        ) {
+                            VStack(alignment: .leading, spacing: RollCallSpacingTier.standard.value) {
+                                SelectedTeamSummary(team: team)
+
+                                Menu {
+                                    Button("Rename Selected Team") {
+                                        renameTeamName = appModel.selectedTeam?.name ?? ""
+                                        showRenameTeamAlert = true
+                                    }
+                                    Button("Duplicate Selected Team") { appModel.duplicateTeam() }
+                                    Button("Import Roster CSV") { csvImportPresented = true }
+                                    Button("Remove Selected Team", role: .destructive) {
+                                        showRemoveTeamConfirmation = true
+                                    }
+                                } label: {
+                                    Label("Team Actions", systemImage: "ellipsis.circle")
+                                        .frame(maxWidth: .infinity)
                                 }
-                                Spacer()
-                                if appModel.state.selectedTeamID == team.id {
-                                    Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
+                                .buttonStyle(RollCallButtonStyle(family: .secondary, surface: .standard))
+                            }
+                        }
+                    }
+
+                    TeamsSectionGroup(
+                        title: "Create Team",
+                        helperText: "Add a roster container, then choose it below."
+                    ) {
+                        VStack(alignment: .leading, spacing: RollCallSpacingTier.standard.value) {
+                            TextField("Team name", text: $newTeamName)
+                                .textFieldStyle(.roundedBorder)
+
+                            Button {
+                                appModel.addTeam(named: newTeamName)
+                                newTeamName = ""
+                            } label: {
+                                Label("Create Team", systemImage: "plus")
+                                    .frame(maxWidth: .infinity)
+                            }
+                            .rollCallButtonStyle(.primary)
+                            .disabled(newTeamName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                        }
+                    }
+
+                    TeamsSectionGroup(
+                        title: "Teams",
+                        helperText: "Choose the roster Roll Call should use for setup and game day."
+                    ) {
+                        if appModel.state.teams.isEmpty {
+                            TeamsEmptyState()
+                        } else {
+                            VStack(spacing: 0) {
+                                ForEach(Array(appModel.state.teams.enumerated()), id: \.element.id) { index, team in
+                                    if index > 0 {
+                                        Divider()
+                                            .padding(.leading, 46)
+                                    }
+
+                                    Button {
+                                        appModel.selectTeam(team)
+                                    } label: {
+                                        TeamSelectionRow(
+                                            team: team,
+                                            isSelected: appModel.state.selectedTeamID == team.id
+                                        )
+                                        .padding(.vertical, RollCallSpacingTier.tight.value)
+                                    }
+                                    .buttonStyle(.plain)
                                 }
                             }
                         }
                     }
                 }
-                if appModel.selectedTeam != nil {
-                    Section("Selected Team") {
-                        if let team = appModel.selectedTeam {
-                            LabeledContent("Current") {
-                                Text(team.name)
-                            }
-                        }
-                        Menu("More") {
-                            Button("Rename Selected Team") {
-                                renameTeamName = appModel.selectedTeam?.name ?? ""
-                                showRenameTeamAlert = true
-                            }
-                            Button("Duplicate Selected Team") { appModel.duplicateTeam() }
-                            Button("Import Roster CSV") { csvImportPresented = true }
-                            Button("Remove Selected Team", role: .destructive) {
-                                showRemoveTeamConfirmation = true
-                            }
-                        }
-                    }
-                }
+                .padding(.horizontal, 16)
+                .padding(.top, RollCallSpacingTier.tight.value)
+                .padding(.bottom, RollCallSpacingTier.large.value)
+                .padding(.bottom, 72)
             }
+            .background(Color(uiColor: .systemGroupedBackground))
             .navigationTitle("Teams")
+            .navigationBarTitleDisplayMode(.inline)
             .scrollDismissesKeyboard(.interactively)
             .dismissesKeyboardOnTap()
         }
+    }
+
+    private var selectedTeamBannerStatus: TeamBannerSecondaryStatus? {
+        guard let team = appModel.selectedTeam else {
+            return TeamBannerSecondaryStatus(text: "Choose or create a team")
+        }
+        return TeamBannerSecondaryStatus(
+            text: "\(team.players.count) players • \(team.presentPlayersInBattingOrder.count) present"
+        )
     }
 
     private var settingsTab: some View {
@@ -549,10 +624,12 @@ struct RootView: View {
                     }
                 }
                 .padding(.horizontal, 16)
-                .padding(.vertical, RollCallSpacingTier.large.value)
+                .padding(.top, RollCallSpacingTier.tight.value)
+                .padding(.bottom, RollCallSpacingTier.large.value)
             }
             .background(Color(uiColor: .systemGroupedBackground))
             .navigationTitle("Settings")
+            .navigationBarTitleDisplayMode(.inline)
             .sheet(isPresented: $packageSharePresented) {
                 if let exportURL = appModel.exportURL {
                     ActivityShareSheet(items: [exportURL])
@@ -678,6 +755,7 @@ private struct ReadinessIssueFamily: Identifiable {
 
 private struct ReadinessOverviewCard: View {
     let readiness: ReadinessStatus
+    let onRefresh: () -> Void
 
     private var readyCount: Int {
         readiness.checks.filter { $0.state == .ready }.count
@@ -701,12 +779,14 @@ private struct ReadinessOverviewCard: View {
                 HStack(alignment: .top, spacing: RollCallSpacingTier.standard.value) {
                     VStack(alignment: .leading, spacing: 4) {
                         Text("Pre-Game Checklist")
-                            .rollCallText(.screenTitle)
+                            .rollCallText(.sectionTitle)
                         Text("Updated \(readiness.generatedAt.formatted(date: .omitted, time: .shortened))")
                             .rollCallText(.helperText)
                     }
 
                     Spacer(minLength: RollCallSpacingTier.standard.value)
+
+                    ReadinessRefreshButton(action: onRefresh)
 
                     StatusChip(
                         text: summaryText,
@@ -848,17 +928,162 @@ private struct ReadinessCheckRow: View {
 }
 
 private struct ReadinessEmptyCard: View {
+    let onRefresh: () -> Void
+
     var body: some View {
         SectionCard(family: .status) {
             VStack(alignment: .leading, spacing: RollCallSpacingTier.standard.value) {
-                StatusChip(text: "Not Checked Yet", role: .neutral, systemImage: "checklist", emphasis: .subdued)
-                Text("Pre-Game Checklist")
-                    .rollCallText(.screenTitle)
+                HStack(alignment: .top, spacing: RollCallSpacingTier.standard.value) {
+                    VStack(alignment: .leading, spacing: RollCallSpacingTier.tight.value) {
+                        StatusChip(text: "Not Checked Yet", role: .neutral, systemImage: "checklist", emphasis: .subdued)
+                        Text("Pre-Game Checklist")
+                            .rollCallText(.sectionTitle)
+                    }
+
+                    Spacer(minLength: RollCallSpacingTier.standard.value)
+
+                    ReadinessRefreshButton(action: onRefresh)
+                }
+
                 Text("Tap Refresh to generate the current readiness report.")
                     .rollCallText(.helperText)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         }
+    }
+}
+
+private struct ReadinessRefreshButton: View {
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Label("Refresh", systemImage: "arrow.clockwise")
+                .font(.caption.weight(.semibold))
+        }
+        .buttonStyle(.bordered)
+        .controlSize(.small)
+        .accessibilityHint("Updates the readiness checklist.")
+    }
+}
+
+private struct TeamsSectionGroup<Content: View>: View {
+    let title: String
+    let helperText: String
+    let content: Content
+
+    init(
+        title: String,
+        helperText: String,
+        @ViewBuilder content: () -> Content
+    ) {
+        self.title = title
+        self.helperText = helperText
+        self.content = content()
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: RollCallSpacingTier.tight.value) {
+            VStack(alignment: .leading, spacing: 3) {
+                Text(title)
+                    .rollCallText(.sectionTitle)
+                Text(helperText)
+                    .rollCallText(.helperText)
+            }
+            .padding(.horizontal, 2)
+
+            SectionCard {
+                content
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+        }
+    }
+}
+
+private struct TeamSelectionRow: View {
+    let team: Team
+    let isSelected: Bool
+
+    var body: some View {
+        HStack(alignment: .center, spacing: RollCallSpacingTier.standard.value) {
+            TeamRowIcon(isSelected: isSelected)
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text(team.name)
+                    .rollCallText(.cardTitle)
+                    .lineLimit(2)
+                Text("\(team.players.count) players • \(team.presentPlayersInBattingOrder.count) present")
+                    .rollCallText(.helperText)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+
+            if isSelected {
+                StatusChip(
+                    text: "Current",
+                    role: .ready,
+                    systemImage: "checkmark.circle",
+                    emphasis: .subdued
+                )
+            }
+        }
+        .contentShape(Rectangle())
+    }
+}
+
+private struct SelectedTeamSummary: View {
+    let team: Team
+
+    var body: some View {
+        HStack(alignment: .top, spacing: RollCallSpacingTier.standard.value) {
+            TeamRowIcon(isSelected: true)
+
+            VStack(alignment: .leading, spacing: RollCallSpacingTier.tight.value) {
+                Text(team.name)
+                    .rollCallText(.primaryIdentity)
+                    .lineLimit(2)
+
+                HStack(spacing: RollCallSpacingTier.tight.value) {
+                    StatusChip(
+                        text: "\(team.players.count) players",
+                        role: .neutral,
+                        systemImage: "person.3",
+                        emphasis: .subdued
+                    )
+                    StatusChip(
+                        text: "\(team.presentPlayersInBattingOrder.count) present",
+                        role: .ready,
+                        systemImage: "checkmark.circle",
+                        emphasis: .subdued
+                    )
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+}
+
+private struct TeamRowIcon: View {
+    let isSelected: Bool
+
+    var body: some View {
+        Image(systemName: isSelected ? "person.3.fill" : "person.3")
+            .font(.system(size: 17, weight: .semibold))
+            .foregroundStyle(isSelected ? Color.rollCall(.ready) : Color.rollCall(.accent))
+            .frame(width: 34, height: 34)
+            .background((isSelected ? Color.rollCall(.ready) : Color.rollCall(.accent)).opacity(0.13))
+            .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
+            .accessibilityHidden(true)
+    }
+}
+
+private struct TeamsEmptyState: View {
+    var body: some View {
+        VStack(alignment: .leading, spacing: RollCallSpacingTier.tight.value) {
+            StatusChip(text: "No teams yet", role: .neutral, systemImage: "person.3", emphasis: .subdued)
+            Text("Create a team to start building a roster.")
+                .rollCallText(.helperText)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 
