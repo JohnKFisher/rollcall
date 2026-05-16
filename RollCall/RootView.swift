@@ -419,53 +419,12 @@ struct RootView: View {
             ZStack {
                 GameDayBackground()
                     .ignoresSafeArea()
-                VStack(spacing: 16) {
-                    if let team = appModel.selectedTeam {
-                        GameDayHeader(appModel: appModel, teamName: team.name)
-
-                        Label("Before first pitch, enable an iPhone Focus to reduce calls, texts, and notification interruptions.", systemImage: "moon.zzz.fill")
-                            .font(.footnote)
-                            .padding(.horizontal, 12)
-                            .padding(.vertical, 10)
-                            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-
-                        Picker("Intro Mode", selection: Binding(
-                            get: { team.session.gameDayAnnouncerMode },
-                            set: { appModel.setGameDayAnnouncerMode($0) }
-                        )) {
-                            Text("Cue Only").tag(GameDayAnnouncerMode.noAnnouncer)
-                            Text("Announcement Cues").tag(GameDayAnnouncerMode.announcer)
-                        }
-                        .pickerStyle(.segmented)
-
-                        GameDayPlayerGrid(appModel: appModel)
-
-                        HStack {
-                            Button("Advance Next Batter") { appModel.advanceNextBatter() }
-                                .buttonStyle(.bordered)
-                            Spacer()
-                            if let nextBatter = team.nextBatter {
-                                Text("Next: \(nextBatter.displayName)")
-                            } else {
-                                Text("No present players in the lineup")
-                            }
-                        }
-                        .foregroundStyle(.secondary)
-                    } else {
-                        ContentUnavailableView("No Team Ready", systemImage: "music.note")
-                    }
+                GameDayBoard(appModel: appModel) {
+                    showLineupEditor = true
                 }
-                .padding()
             }
             .navigationTitle("Game Day")
             .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                if appModel.selectedTeam != nil {
-                    ToolbarItem(placement: .topBarTrailing) {
-                        Button("Lineup") { showLineupEditor = true }
-                    }
-                }
-            }
             .sheet(isPresented: $showLineupEditor) {
                 LineupEditorSheet(appModel: appModel)
             }
@@ -680,7 +639,7 @@ struct RootView: View {
                         )) {
                             SettingsRowLabel(
                                 title: "Fade-Out Volume Automation",
-                                detail: "Lower cue volume during fade-out instead of hard-stopping at the end.",
+                                detail: "Allow Roll Call to set and fade cue volume during playback.",
                                 systemImage: "speaker.wave.2.fill"
                             )
                         }
@@ -1411,9 +1370,539 @@ private struct GameDayBackground: View {
 
     var body: some View {
         if colorScheme == .dark {
-            LinearGradient(colors: [Color.orange.opacity(0.18), Color.black.opacity(0.92)], startPoint: .topLeading, endPoint: .bottomTrailing)
+            LinearGradient(
+                colors: [
+                    Color(red: 0.04, green: 0.06, blue: 0.08),
+                    Color(red: 0.08, green: 0.10, blue: 0.12),
+                    Color.rollCall(.accent, surface: .live).opacity(0.16)
+                ],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
         } else {
-            LinearGradient(colors: [Color.white, Color.orange.opacity(0.20), Color.yellow.opacity(0.14)], startPoint: .topLeading, endPoint: .bottomTrailing)
+            LinearGradient(
+                colors: [
+                    Color(red: 0.08, green: 0.10, blue: 0.12),
+                    Color(red: 0.12, green: 0.13, blue: 0.14),
+                    Color.rollCall(.accent, surface: .live).opacity(0.20)
+                ],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+        }
+    }
+}
+
+private struct GameDayBoard: View {
+    @ObservedObject var appModel: AppModel
+    let onLineup: () -> Void
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 10) {
+                if let team = appModel.selectedTeam {
+                    GameDayTeamStack(appModel: appModel, team: team, onLineup: onLineup)
+                } else {
+                    GameDayNoTeamStack()
+                }
+            }
+            .padding(.horizontal, 14)
+            .padding(.top, 10)
+            .padding(.bottom, 24)
+        }
+    }
+}
+
+private struct GameDayTeamStack: View {
+    @ObservedObject var appModel: AppModel
+    @ObservedObject private var playbackEngine: CuePlaybackEngine
+    let team: Team
+    let onLineup: () -> Void
+
+    init(appModel: AppModel, team: Team, onLineup: @escaping () -> Void) {
+        self.appModel = appModel
+        self.team = team
+        self.onLineup = onLineup
+        _playbackEngine = ObservedObject(initialValue: appModel.playbackEngine)
+    }
+
+    private var presentPlayers: [Player] {
+        team.presentPlayersInBattingOrder
+    }
+
+    private var activePlayer: Player? {
+        presentPlayers.first(where: isActive)
+    }
+
+    private var nowPlayer: Player? {
+        activePlayer ?? team.nextBatter
+    }
+
+    private var onDeckPlayer: Player? {
+        nextPlayer(after: nowPlayer)
+    }
+
+    private var liveWarning: GameDayLiveWarning? {
+        if presentPlayers.isEmpty {
+            return GameDayLiveWarning(text: "No present players in the lineup", role: .warning)
+        }
+
+        if let nowPlayer, nowPlayer.cue == nil {
+            return GameDayLiveWarning(text: "Now batting will use fallback cue", role: .warning)
+        }
+
+        guard let readiness = appModel.state.lastReadiness else { return nil }
+        let issues = readiness.checks.filter(isLiveReadinessIssue)
+        guard let firstIssue = issues.first else { return nil }
+        if issues.count == 1 {
+            return GameDayLiveWarning(text: firstIssue.detail, role: role(for: firstIssue.state))
+        }
+        return GameDayLiveWarning(text: "\(issues.count) live warnings - \(firstIssue.title)", role: role(for: firstIssue.state))
+    }
+
+    private var teamBannerStatus: TeamBannerSecondaryStatus {
+        if liveWarning != nil {
+            return TeamBannerSecondaryStatus(text: "Warnings", tone: .warning)
+        }
+        return TeamBannerSecondaryStatus(text: "\(team.players.count) players - \(presentPlayers.count) present")
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            TeamBanner(
+                teamName: team.name,
+                secondaryStatus: teamBannerStatus,
+                variant: .liveSide
+            )
+
+            if let liveWarning {
+                GameDayWarningStrip(warning: liveWarning)
+            }
+
+            if let nowPlayer {
+                GameDayNowBattingHero(
+                    appModel: appModel,
+                    player: nowPlayer,
+                    isActive: isActive(nowPlayer),
+                    announcerMode: team.session.gameDayAnnouncerMode
+                )
+            } else {
+                GameDayEmptyHero(
+                    title: "No Present Players",
+                    detail: "Open the lineup and mark players present before game day."
+                )
+            }
+
+            GameDayOnDeckCard(
+                appModel: appModel,
+                player: onDeckPlayer,
+                announcerMode: team.session.gameDayAnnouncerMode
+            )
+
+            GameDayControlRow(
+                team: team,
+                appModel: appModel,
+                onLineup: onLineup
+            )
+
+            GameDayPlayerGrid(
+                appModel: appModel,
+                players: presentPlayers,
+                nowPlayerID: nowPlayer?.id,
+                onDeckPlayerID: onDeckPlayer?.id
+            )
+        }
+    }
+
+    private func isActive(_ player: Player) -> Bool {
+        if let cueID = player.cue?.id {
+            return playbackEngine.activeCueID == cueID
+        }
+        return playbackEngine.activeCueID == player.id
+    }
+
+    private func nextPlayer(after player: Player?) -> Player? {
+        guard presentPlayers.count > 1 else { return nil }
+        guard let player, let index = presentPlayers.firstIndex(where: { $0.id == player.id }) else {
+            return presentPlayers.dropFirst().first
+        }
+        return presentPlayers[(index + 1) % presentPlayers.count]
+    }
+
+    private func isLiveReadinessIssue(_ check: ReadinessCheck) -> Bool {
+        guard check.state == .warning || check.state == .failed else { return false }
+        if check.id.contains("photo") { return false }
+        if check.id.contains("custom-announcer") {
+            return team.session.gameDayAnnouncerMode == .announcer
+        }
+        if check.id.hasPrefix("player-") {
+            return presentPlayers.contains { player in
+                check.id.contains(player.id.uuidString)
+            }
+        }
+        return ["route", "volume", "network", "music-auth", "lineup"].contains(check.id)
+    }
+
+    private func role(for state: ReadinessState) -> StatusChipRole {
+        state == .failed ? .destructive : .warning
+    }
+}
+
+private struct GameDayNoTeamStack: View {
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            TeamBanner(
+                teamName: nil,
+                secondaryStatus: TeamBannerSecondaryStatus(text: "Choose or create a team", tone: .warning),
+                variant: .liveSide
+            )
+            GameDayWarningStrip(warning: GameDayLiveWarning(text: "No team selected", role: .warning))
+            GameDayEmptyHero(
+                title: "No Team Selected",
+                detail: "Choose or create a team before using live player cues."
+            )
+        }
+    }
+}
+
+private struct GameDayLiveWarning {
+    let text: String
+    let role: StatusChipRole
+}
+
+private struct GameDayWarningStrip: View {
+    let warning: GameDayLiveWarning
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Image(systemName: warning.role == .destructive ? "xmark.octagon.fill" : "exclamationmark.triangle.fill")
+            Text(warning.text)
+                .font(.footnote.weight(.semibold))
+                .lineLimit(2)
+                .fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: 0)
+        }
+        .foregroundStyle(warning.role == .destructive ? Color.rollCall(.destructive, surface: .live) : Color.rollCall(.warning, surface: .live))
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .background(Color.black.opacity(0.28), in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 9, style: .continuous)
+                .strokeBorder(Color.rollCall(.neutralStructure, surface: .live), lineWidth: 1)
+        )
+        .accessibilityElement(children: .combine)
+    }
+}
+
+private struct GameDayNowBattingHero: View {
+    @ObservedObject var appModel: AppModel
+    let player: Player
+    let isActive: Bool
+    let announcerMode: GameDayAnnouncerMode
+
+    private var cueTitle: String {
+        if let cue = player.cue {
+            return "Cue: \(cue.label)"
+        }
+        return "Fallback: Small Cheer"
+    }
+
+    private var statusText: String {
+        if isActive { return "Playing" }
+        if player.cue == nil { return "Fallback available" }
+        return "Ready"
+    }
+
+    private var actionTitle: String {
+        if isActive { return "Tap Again to Stop" }
+        if player.cue == nil { return "Play Fallback" }
+        return "Play Cue"
+    }
+
+    private var announcerSummary: String {
+        guard announcerMode == .announcer else { return "Cue only" }
+        return appModel.hasStoredCustomAnnouncer(for: player) ? "Announcement cue + song" : "Song cue only"
+    }
+
+    var body: some View {
+        Button {
+            if isCurrentlyActive {
+                appModel.stopPlayback()
+            } else {
+                Task { await appModel.play(player: player) }
+            }
+        } label: {
+            heroContent
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(accessibilityLabel)
+    }
+
+    private var heroContent: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .top, spacing: 12) {
+                PlayerPhotoThumbnail(relativePath: player.photoRelativePath, size: 72, cornerRadius: 18)
+
+                VStack(alignment: .leading, spacing: 7) {
+                    Text("Now Batting")
+                        .font(.caption.weight(.bold))
+                        .textCase(.uppercase)
+                        .foregroundStyle(Color.white.opacity(0.70))
+
+                    Text(player.displayName)
+                        .font(.system(.largeTitle, design: .rounded).weight(.bold))
+                        .foregroundStyle(.white)
+                        .lineLimit(2)
+                        .minimumScaleFactor(0.70)
+
+                    HStack(spacing: 8) {
+                        if !player.uniformNumber.isEmpty {
+                            Text("#\(player.uniformNumber)")
+                                .font(.headline.weight(.bold))
+                                .foregroundStyle(Color.rollCall(.accent, surface: .live))
+                        }
+                        GameDayStatePill(
+                            text: statusText,
+                            systemImage: isActive ? "speaker.wave.2.fill" : (player.cue == nil ? "music.note.list" : "checkmark.circle.fill"),
+                            role: isActive ? .live : (player.cue == nil ? .warning : .ready),
+                            strong: isActive
+                        )
+                    }
+                }
+
+                Spacer(minLength: 0)
+            }
+
+            VStack(alignment: .leading, spacing: 5) {
+                Text(cueTitle)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(.white)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.78)
+                Text(announcerSummary)
+                    .font(.caption.weight(.medium))
+                    .foregroundStyle(Color.white.opacity(0.72))
+                    .lineLimit(1)
+            }
+
+            HStack(spacing: 10) {
+                Image(systemName: isActive ? "stop.fill" : "play.fill")
+                Text(actionTitle)
+                    .font(.headline.weight(.bold))
+                Spacer(minLength: 0)
+                if isActive {
+                    Text("Playing")
+                        .font(.caption.weight(.bold))
+                        .textCase(.uppercase)
+                }
+            }
+            .foregroundStyle(.white)
+            .padding(.horizontal, 14)
+            .padding(.vertical, 12)
+            .background(
+                isActive ? Color.rollCall(.live, surface: .live) : Color.white.opacity(0.12),
+                in: RoundedRectangle(cornerRadius: 12, style: .continuous)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .strokeBorder(isActive ? Color.white.opacity(0.50) : Color.rollCall(.neutralStructure, surface: .live), lineWidth: 1)
+            )
+        }
+        .padding(14)
+        .background(
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .fill(isActive ? Color.rollCall(.live, surface: .live).opacity(0.24) : Color.white.opacity(0.09))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .strokeBorder(isActive ? Color.rollCall(.live, surface: .live).opacity(0.95) : Color.rollCall(.neutralStructure, surface: .live), lineWidth: isActive ? 2 : 1)
+        )
+        .shadow(color: isActive ? Color.rollCall(.live, surface: .live).opacity(0.20) : .clear, radius: 14, y: 8)
+        .accessibilityElement(children: .combine)
+    }
+
+    private var accessibilityLabel: String {
+        "Now Batting, \(player.displayName), \(statusText), \(cueTitle), \(isActive ? "tap again to stop" : actionTitle)"
+    }
+
+    private var isCurrentlyActive: Bool {
+        if let cueID = player.cue?.id {
+            return appModel.playbackEngine.activeCueID == cueID
+        }
+        return appModel.playbackEngine.activeCueID == player.id
+    }
+}
+
+private struct GameDayOnDeckCard: View {
+    @ObservedObject var appModel: AppModel
+    let player: Player?
+    let announcerMode: GameDayAnnouncerMode
+
+    var body: some View {
+        HStack(spacing: 10) {
+            if let player {
+                PlayerPhotoThumbnail(relativePath: player.photoRelativePath, size: 42, cornerRadius: 12)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("On Deck")
+                        .font(.caption.weight(.bold))
+                        .textCase(.uppercase)
+                        .foregroundStyle(Color.white.opacity(0.62))
+                    Text(player.displayName)
+                        .font(.title3.weight(.bold))
+                        .foregroundStyle(.white)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.78)
+                    Text(onDeckStatus(for: player))
+                        .font(.caption.weight(.medium))
+                        .foregroundStyle(Color.white.opacity(0.70))
+                        .lineLimit(1)
+                }
+                Spacer(minLength: 0)
+                if !player.uniformNumber.isEmpty {
+                    Text("#\(player.uniformNumber)")
+                        .font(.headline.weight(.bold))
+                        .foregroundStyle(Color.rollCall(.accent, surface: .live))
+                }
+            } else {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("On Deck")
+                        .font(.caption.weight(.bold))
+                        .textCase(.uppercase)
+                        .foregroundStyle(Color.white.opacity(0.62))
+                    Text("No on deck player")
+                        .font(.headline.weight(.bold))
+                        .foregroundStyle(.white)
+                    Text("Mark another player present to show who is next.")
+                        .font(.caption.weight(.medium))
+                        .foregroundStyle(Color.white.opacity(0.70))
+                }
+                Spacer(minLength: 0)
+            }
+        }
+        .padding(12)
+        .background(Color.white.opacity(0.07), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .strokeBorder(Color.rollCall(.neutralStructure, surface: .live), lineWidth: 1)
+        )
+        .accessibilityElement(children: .combine)
+    }
+
+    private func onDeckStatus(for player: Player) -> String {
+        if player.cue == nil {
+            return "Fallback available"
+        }
+        if announcerMode == .announcer {
+            return appModel.hasStoredCustomAnnouncer(for: player) ? "Announcement cue ready" : "Cue ready"
+        }
+        return "Ready"
+    }
+}
+
+private struct GameDayControlRow: View {
+    let team: Team
+    @ObservedObject var appModel: AppModel
+    let onLineup: () -> Void
+
+    var body: some View {
+        VStack(spacing: 8) {
+            Picker("Intro Mode", selection: Binding(
+                get: { team.session.gameDayAnnouncerMode },
+                set: { appModel.setGameDayAnnouncerMode($0) }
+            )) {
+                Text("Cue Only").tag(GameDayAnnouncerMode.noAnnouncer)
+                Text("Announcement Cues").tag(GameDayAnnouncerMode.announcer)
+            }
+            .pickerStyle(.segmented)
+
+            HStack(spacing: 8) {
+                Button {
+                    appModel.advanceNextBatter()
+                } label: {
+                    Label("Next", systemImage: "arrow.forward")
+                }
+                .rollCallButtonStyle(.secondary, surface: .live)
+
+                Button {
+                    onLineup()
+                } label: {
+                    Label("Lineup", systemImage: "list.bullet")
+                }
+                .rollCallButtonStyle(.secondary, surface: .live)
+            }
+        }
+    }
+}
+
+private struct GameDayEmptyHero: View {
+    let title: String
+    let detail: String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Now Batting")
+                .font(.caption.weight(.bold))
+                .textCase(.uppercase)
+                .foregroundStyle(Color.white.opacity(0.64))
+            Text(title)
+                .font(.title.bold())
+                .foregroundStyle(.white)
+            Text(detail)
+                .font(.subheadline.weight(.medium))
+                .foregroundStyle(Color.white.opacity(0.72))
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(14)
+        .background(Color.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .strokeBorder(Color.rollCall(.neutralStructure, surface: .live), lineWidth: 1)
+        )
+    }
+}
+
+private struct GameDayStatePill: View {
+    let text: String
+    let systemImage: String
+    let role: StatusChipRole
+    let strong: Bool
+
+    var body: some View {
+        Label(text, systemImage: systemImage)
+            .font(.caption.weight(.bold))
+            .lineLimit(1)
+            .foregroundStyle(foreground)
+            .padding(.horizontal, 9)
+            .padding(.vertical, 6)
+            .background(background, in: Capsule(style: .continuous))
+            .overlay(
+                Capsule(style: .continuous)
+                    .strokeBorder(color.opacity(strong ? 0 : 0.45), lineWidth: 1)
+            )
+    }
+
+    private var foreground: Color {
+        strong ? .white : color
+    }
+
+    private var background: Color {
+        strong ? color : color.opacity(0.16)
+    }
+
+    private var color: Color {
+        switch role {
+        case .live:
+            return Color.rollCall(.live, surface: .live)
+        case .ready:
+            return Color.rollCall(.ready, surface: .live)
+        case .warning:
+            return Color.rollCall(.warning, surface: .live)
+        case .destructive:
+            return Color.rollCall(.destructive, surface: .live)
+        case .disabled:
+            return Color.rollCall(.disabled, surface: .live)
+        case .neutral:
+            return Color.white.opacity(0.62)
         }
     }
 }
@@ -1421,97 +1910,147 @@ private struct GameDayBackground: View {
 private struct GameDayPlayerGrid: View {
     @ObservedObject var appModel: AppModel
     @ObservedObject private var playbackEngine: CuePlaybackEngine
+    let players: [Player]
+    let nowPlayerID: UUID?
+    let onDeckPlayerID: UUID?
 
-    init(appModel: AppModel) {
+    init(
+        appModel: AppModel,
+        players: [Player],
+        nowPlayerID: UUID?,
+        onDeckPlayerID: UUID?
+    ) {
         self.appModel = appModel
+        self.players = players
+        self.nowPlayerID = nowPlayerID
+        self.onDeckPlayerID = onDeckPlayerID
         _playbackEngine = ObservedObject(initialValue: appModel.playbackEngine)
     }
 
     var body: some View {
-        ScrollView {
-            LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 14) {
-                ForEach(appModel.selectedTeamPresentPlayers) { player in
-                    let isActive = if let cueID = player.cue?.id {
-                        playbackEngine.activeCueID == cueID
+        LazyVGrid(columns: columns, spacing: 8) {
+            ForEach(players) { player in
+                let isActive = isActive(player)
+                let tileState = tileState(for: player, isActive: isActive)
+                Button {
+                    if isCurrentlyActive(player) {
+                        appModel.stopPlayback()
                     } else {
-                        playbackEngine.activeCueID == player.id
-                    }
-                    let hasCustomIntro = appModel.hasStoredCustomAnnouncer(for: player)
-                    let isCustomIntroMissing = player.customAnnouncerRelativePath != nil && !hasCustomIntro
-                    let cueLabel = player.cue?.label ?? "No Cue Yet"
-                    Button {
                         Task { await appModel.play(player: player) }
-                    } label: {
-                        VStack(spacing: 10) {
-                            PlayerPhotoThumbnail(relativePath: player.photoRelativePath, size: 64, cornerRadius: 18)
+                    }
+                } label: {
+                    VStack(alignment: .leading, spacing: 7) {
+                        HStack(alignment: .center, spacing: 4) {
                             Text(player.uniformNumber.isEmpty ? "--" : "#\(player.uniformNumber)")
                                 .font(.caption.weight(.bold))
-                                .foregroundStyle(.secondary)
-                            Text(player.displayName)
-                                .font(.title3.weight(.bold))
-                                .multilineTextAlignment(.center)
-                            Text(cueLabel)
-                                .font(.footnote)
-                                .foregroundStyle(.secondary)
-                            Text(customIntroStatusText(hasCustomIntro: hasCustomIntro, isMissing: isCustomIntroMissing, readyLabel: "Announcement Cue Ready"))
-                                .font(.caption.weight(.semibold))
-                                .foregroundStyle(customIntroStatusForeground(hasCustomIntro: hasCustomIntro, isMissing: isCustomIntroMissing))
-                            if isActive {
-                                Label("Now Playing", systemImage: "speaker.wave.2.fill")
-                                    .font(.caption.weight(.semibold))
-                                    .foregroundStyle(.green)
+                                .foregroundStyle(Color.white.opacity(0.62))
+                            Spacer(minLength: 0)
+                            if let tileState {
+                                Image(systemName: tileState.systemImage)
+                                    .font(.caption.weight(.bold))
+                                    .foregroundStyle(tileState.color)
                             }
                         }
-                        .frame(maxWidth: .infinity, minHeight: 152)
-                        .padding()
-                        .background(
-                            RoundedRectangle(cornerRadius: 24, style: .continuous)
-                                .fill(isActive ? Color.green.opacity(0.22) : Color.orange.opacity(0.10))
-                        )
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 24, style: .continuous)
-                                .stroke(isActive ? Color.green.opacity(0.9) : Color.white.opacity(0.08), lineWidth: isActive ? 3 : 1)
-                        )
-                        .shadow(color: isActive ? Color.green.opacity(0.18) : .clear, radius: 16, y: 8)
-                        .scaleEffect(isActive ? 1.01 : 1.0)
+
+                        Text(tileName(for: player))
+                            .font(.headline.weight(.bold))
+                            .foregroundStyle(.white)
+                            .lineLimit(2)
+                            .minimumScaleFactor(0.74)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+
+                        if let tileState {
+                            Text(tileState.text)
+                                .font(.caption2.weight(.bold))
+                                .textCase(.uppercase)
+                                .foregroundStyle(tileState.color)
+                                .lineLimit(1)
+                                .minimumScaleFactor(0.78)
+                        } else {
+                            Text(player.cue == nil ? "Fallback" : "Ready")
+                                .font(.caption2.weight(.semibold))
+                                .textCase(.uppercase)
+                                .foregroundStyle(Color.white.opacity(0.50))
+                                .lineLimit(1)
+                        }
                     }
-                    .buttonStyle(.plain)
-                    .animation(.easeInOut(duration: 0.18), value: isActive)
+                    .padding(10)
+                    .frame(maxWidth: .infinity, minHeight: 94, alignment: .topLeading)
+                    .background(
+                        RoundedRectangle(cornerRadius: 13, style: .continuous)
+                            .fill(tileBackground(isActive: isActive))
+                    )
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 13, style: .continuous)
+                            .strokeBorder(tileBorder(isActive: isActive), lineWidth: isActive ? 2 : 1)
+                    )
                 }
+                .buttonStyle(.plain)
+                .animation(.easeInOut(duration: 0.16), value: isActive)
             }
         }
+    }
+
+    private var columns: [GridItem] {
+        Array(repeating: GridItem(.flexible(), spacing: 8), count: 3)
+    }
+
+    private func isActive(_ player: Player) -> Bool {
+        if let cueID = player.cue?.id {
+            return playbackEngine.activeCueID == cueID
+        }
+        return playbackEngine.activeCueID == player.id
+    }
+
+    private func isCurrentlyActive(_ player: Player) -> Bool {
+        if let cueID = player.cue?.id {
+            return appModel.playbackEngine.activeCueID == cueID
+        }
+        return appModel.playbackEngine.activeCueID == player.id
+    }
+
+    private func tileName(for player: Player) -> String {
+        let parts = normalizedPlayerNameParts(player.displayName)
+        let first = parts.first.isEmpty ? player.displayName : parts.first
+        let duplicateFirstNames = players.filter {
+            normalizedPlayerNameParts($0.displayName).first.localizedCaseInsensitiveCompare(first) == .orderedSame
+        }.count > 1
+
+        if duplicateFirstNames, !parts.remainder.isEmpty {
+            return player.displayName
+        }
+        return first
+    }
+
+    private func tileState(for player: Player, isActive: Bool) -> GameDayTileState? {
+        if isActive {
+            return GameDayTileState(text: "Playing", systemImage: "speaker.wave.2.fill", color: Color.rollCall(.live, surface: .live))
+        }
+        if player.id == onDeckPlayerID {
+            return GameDayTileState(text: "On Deck", systemImage: "circle.dotted", color: Color.rollCall(.accent, surface: .live))
+        }
+        if player.id == nowPlayerID {
+            return GameDayTileState(text: "Now", systemImage: "arrowtriangle.right.fill", color: Color.rollCall(.ready, surface: .live))
+        }
+        if player.cue == nil {
+            return GameDayTileState(text: "Fallback", systemImage: "music.note.list", color: Color.rollCall(.warning, surface: .live))
+        }
+        return nil
+    }
+
+    private func tileBackground(isActive: Bool) -> Color {
+        isActive ? Color.rollCall(.live, surface: .live).opacity(0.22) : Color.white.opacity(0.07)
+    }
+
+    private func tileBorder(isActive: Bool) -> Color {
+        isActive ? Color.rollCall(.live, surface: .live).opacity(0.95) : Color.rollCall(.neutralStructure, surface: .live)
     }
 }
 
-private struct GameDayHeader: View {
-    @ObservedObject var appModel: AppModel
-    @ObservedObject private var playbackEngine: CuePlaybackEngine
-    let teamName: String
-
-    init(appModel: AppModel, teamName: String) {
-        self.appModel = appModel
-        self.teamName = teamName
-        _playbackEngine = ObservedObject(initialValue: appModel.playbackEngine)
-    }
-
-    var body: some View {
-        HStack {
-            VStack(alignment: .leading, spacing: 6) {
-                Text(teamName)
-                    .font(.title.bold())
-                Text("Portrait-first game board")
-            }
-            Spacer()
-            if playbackEngine.activeCueID != nil {
-                Button("Stop Audio") {
-                    appModel.stopPlayback()
-                }
-                .buttonStyle(.borderedProminent)
-                .tint(.red)
-            }
-        }
-        .foregroundStyle(.primary)
-    }
+private struct GameDayTileState {
+    let text: String
+    let systemImage: String
+    let color: Color
 }
 
 private struct LineupEditorSheet: View {
