@@ -251,42 +251,166 @@ struct RootView: View {
 
     private var generalClipsTab: some View {
         NavigationStack {
-            List {
-                Section {
-                    TeamBanner(
-                        teamName: appModel.selectedTeam?.name,
-                        secondaryStatus: selectedTeamBannerStatus
-                    )
-                }
-                .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
-                .listRowBackground(Color.clear)
+            ZStack {
+                RollCallSurfaceVariant.live.previewBackground
+                    .ignoresSafeArea()
 
-                if appModel.selectedTeamBuiltInClips.isEmpty {
-                    ContentUnavailableView("No Clips Ready", systemImage: "speaker.wave.2", description: Text("Select a team to use the built-in crowd clip library."))
-                } else {
-                    Section("Built-In Crowd Clips") {
-                        ForEach(appModel.selectedTeamBuiltInClips) { clip in
-                            Button {
-                                Task { await appModel.play(builtInClip: clip) }
-                            } label: {
-                                HStack {
-                                    VStack(alignment: .leading, spacing: 4) {
-                                        Text(clip.title)
-                                            .font(.headline)
-                                        Text("Built-in hype audio for quick game-day reactions.")
-                                            .font(.caption)
-                                            .foregroundStyle(.secondary)
+                ScrollView {
+                    VStack(alignment: .leading, spacing: RollCallSpacingTier.standard.value) {
+                        TeamBanner(
+                            teamName: appModel.selectedTeam?.name,
+                            secondaryStatus: selectedTeamBannerStatus,
+                            variant: .liveSide
+                        )
+
+                        if appModel.selectedTeamBuiltInClips.isEmpty {
+                            ClipsEmptyStateCard()
+                        } else {
+                            ClipsHeaderCard(clipCount: appModel.selectedTeamBuiltInClips.count)
+
+                            LazyVStack(spacing: RollCallSpacingTier.tight.value) {
+                                ForEach(appModel.selectedTeamBuiltInClips) { clip in
+                                    GeneralClipCard(clip: clip) {
+                                        Task { await appModel.play(builtInClip: clip) }
                                     }
-                                    Spacer()
-                                    Image(systemName: "play.circle.fill")
-                                        .foregroundStyle(.orange)
                                 }
                             }
                         }
                     }
+                    .padding(.horizontal, 16)
+                    .padding(.top, 12)
+                    .padding(.bottom, 28)
                 }
             }
-            .navigationTitle("General Clips")
+            .navigationTitle("Clips")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbarBackground(.visible, for: .navigationBar)
+            .toolbarBackground(RollCallSurfaceVariant.live.previewBackground, for: .navigationBar)
+            .toolbarColorScheme(.dark, for: .navigationBar)
+        }
+    }
+
+    private struct ClipsHeaderCard: View {
+        let clipCount: Int
+
+        var body: some View {
+            HStack(spacing: RollCallSpacingTier.standard.value) {
+                Image(systemName: "speaker.wave.2.fill")
+                    .font(.title3.weight(.semibold))
+                    .foregroundStyle(Color.rollCall(.live, surface: .live))
+                    .frame(width: 34, height: 34)
+                    .background(Color.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("Crowd clips ready")
+                        .rollCallText(.cardTitle, surface: .live)
+                    Text("\(clipCount) built-in reactions for quick live moments")
+                        .rollCallText(.helperText, surface: .live)
+                        .lineLimit(2)
+                }
+
+                Spacer(minLength: RollCallSpacingTier.tight.value)
+
+                StatusChip(
+                    text: "Ready",
+                    role: .ready,
+                    systemImage: "checkmark.circle.fill",
+                    emphasis: .subdued
+                )
+                .accessibilityHidden(true)
+            }
+            .rollCallCard(.live, surface: .live)
+        }
+    }
+
+    private struct ClipsEmptyStateCard: View {
+        var body: some View {
+            VStack(alignment: .leading, spacing: RollCallSpacingTier.standard.value) {
+                Image(systemName: "speaker.slash.fill")
+                    .font(.title2.weight(.semibold))
+                    .foregroundStyle(Color.rollCall(.warning, surface: .live))
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("No clips ready")
+                        .rollCallText(.cardTitle, surface: .live)
+                    Text("Select a team to use the built-in crowd clip library.")
+                        .rollCallText(.helperText, surface: .live)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .rollCallCard(.live, surface: .live)
+        }
+    }
+
+    private struct GeneralClipCard: View {
+        let clip: BuiltInClip
+        let play: () -> Void
+
+        var body: some View {
+            Button(action: play) {
+                HStack(spacing: RollCallSpacingTier.standard.value) {
+                    VStack(alignment: .leading, spacing: 5) {
+                        Text(clip.title)
+                            .rollCallText(.cardTitle, surface: .live)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.82)
+
+                        HStack(spacing: RollCallSpacingTier.tight.value) {
+                            Label("Tap to play", systemImage: "hand.tap.fill")
+                            Text(clipDurationText)
+                        }
+                        .rollCallText(.helperText, surface: .live)
+                        .lineLimit(1)
+                    }
+
+                    Spacer(minLength: RollCallSpacingTier.tight.value)
+
+                    Label("Play", systemImage: "play.fill")
+                        .labelStyle(.iconOnly)
+                        .font(.headline.weight(.bold))
+                        .foregroundStyle(.white)
+                        .frame(width: 48, height: 48)
+                        .background(Color.rollCall(.accent, surface: .live), in: Circle())
+                        .overlay {
+                            Circle()
+                                .strokeBorder(Color.white.opacity(0.22), lineWidth: 1)
+                        }
+                        .accessibilityHidden(true)
+                }
+                .padding(.vertical, 12)
+                .padding(.leading, 14)
+                .padding(.trailing, 12)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(cardBackground)
+                .overlay(cardBorder)
+                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                .contentShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Play \(clip.title)")
+            .accessibilityHint("Plays this built-in crowd clip.")
+        }
+
+        private var clipDurationText: String {
+            let roundedDuration = Int(clip.cue.duration.rounded())
+            return "\(roundedDuration) sec"
+        }
+
+        private var cardBackground: some ShapeStyle {
+            LinearGradient(
+                colors: [
+                    Color.white.opacity(0.13),
+                    Color.white.opacity(0.08)
+                ],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+        }
+
+        private var cardBorder: some View {
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .strokeBorder(Color.rollCall(.neutralStructure, surface: .live).opacity(0.9), lineWidth: 1)
         }
     }
 
