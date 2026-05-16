@@ -175,7 +175,7 @@ struct RootView: View {
 
                     Section {
                         ForEach(playersTabRoster(for: team)) { player in
-                            let cueLabel = player.cue?.label
+                            let cue = player.cue
                             let hasCustomIntro = appModel.hasStoredCustomAnnouncer(for: player)
                             let isCustomIntroMissing = player.customAnnouncerRelativePath != nil && !hasCustomIntro
                             let isPresent = player.isPresent
@@ -184,8 +184,9 @@ struct RootView: View {
                             } label: {
                                 PlayerRosterRow(
                                     player: player,
-                                    cueLabel: cueLabel,
+                                    cue: cue,
                                     isPresent: isPresent,
+                                    hasCustomIntro: hasCustomIntro,
                                     isCustomIntroMissing: isCustomIntroMissing
                                 )
                             }
@@ -198,7 +199,7 @@ struct RootView: View {
                     } header: {
                         PlayersSectionHeader(
                             title: "Roster",
-                            helperText: "\(team.players.count) players sorted by name. Swipe a row to mark availability."
+                            helperText: "\(team.players.count) players sorted by name. Players marked out are hidden from Game Day."
                         )
                     }
                 } else {
@@ -1618,8 +1619,9 @@ private struct PlayersSectionHeader: View {
 
 private struct PlayerRosterRow: View {
     let player: Player
-    let cueLabel: String?
+    let cue: Cue?
     let isPresent: Bool
+    let hasCustomIntro: Bool
     let isCustomIntroMissing: Bool
 
     var body: some View {
@@ -1638,32 +1640,18 @@ private struct PlayerRosterRow: View {
                     }
                 }
 
-                HStack(alignment: .center, spacing: RollCallSpacingTier.tight.value) {
+                VStack(alignment: .leading, spacing: 4) {
                     cueSummary
 
-                    if isCustomIntroMissing {
-                        Label("Announcement missing", systemImage: "exclamationmark.triangle.fill")
-                            .rollCallText(.chipLabel)
-                            .foregroundStyle(Color.rollCall(.destructive))
-                            .lineLimit(1)
-                    }
+                    operationalSummary
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
 
-            VStack(alignment: .trailing, spacing: RollCallSpacingTier.tight.value) {
-                StatusChip(
-                    text: isPresent ? "Present" : "Out",
-                    role: isPresent ? .ready : .disabled,
-                    systemImage: isPresent ? "checkmark.circle" : "minus.circle",
-                    emphasis: .subdued
-                )
-
-                Image(systemName: "chevron.right")
-                    .font(.footnote.weight(.semibold))
-                    .foregroundStyle(Color(uiColor: .tertiaryLabel))
-                    .accessibilityHidden(true)
-            }
+            Image(systemName: "chevron.right")
+                .font(.footnote.weight(.semibold))
+                .foregroundStyle(Color(uiColor: .tertiaryLabel))
+                .accessibilityHidden(true)
         }
         .padding(.vertical, 4)
         .contentShape(Rectangle())
@@ -1673,8 +1661,8 @@ private struct PlayerRosterRow: View {
 
     @ViewBuilder
     private var cueSummary: some View {
-        if let cueLabel {
-            Label(cueLabel, systemImage: "music.note")
+        if let cue {
+            Label(cue.rosterDisplayTitle, systemImage: "music.note")
                 .rollCallText(.helperText)
                 .foregroundStyle(Color(uiColor: .secondaryLabel))
                 .lineLimit(1)
@@ -1684,6 +1672,25 @@ private struct PlayerRosterRow: View {
                 .foregroundStyle(Color.rollCall(.warning))
                 .lineLimit(1)
         }
+    }
+
+    private var operationalSummary: some View {
+        HStack(alignment: .center, spacing: RollCallSpacingTier.tight.value) {
+            if !isPresent {
+                Label("Hidden from Game Day", systemImage: "eye.slash")
+                    .foregroundStyle(Color(uiColor: .secondaryLabel))
+            }
+
+            if isCustomIntroMissing {
+                Label("Announcer missing", systemImage: "exclamationmark.triangle.fill")
+                    .foregroundStyle(Color.rollCall(.destructive))
+            } else if !hasCustomIntro {
+                Label("No announcer cue", systemImage: "mic.slash")
+                    .foregroundStyle(Color(uiColor: .tertiaryLabel))
+            }
+        }
+        .rollCallText(.chipLabel)
+        .lineLimit(1)
     }
 }
 
@@ -2410,6 +2417,34 @@ private func customIntroStatusBackground(hasCustomIntro: Bool, isMissing: Bool) 
         return Color.red.opacity(0.14)
     }
     return Color.secondary.opacity(0.14)
+}
+
+private extension Cue {
+    var rosterDisplayTitle: String {
+        switch source {
+        case .appleMusic(let source):
+            return source.title
+        case .localAudio(let source):
+            return source.displayName.songTitleWithoutArtistPrefix
+        case .builtInClip(let source):
+            return source.displayName
+        }
+    }
+}
+
+private extension String {
+    var songTitleWithoutArtistPrefix: String {
+        let trimmed = trimmingCharacters(in: .whitespacesAndNewlines)
+        let separators = [" - ", " — ", " – "]
+        for separator in separators {
+            guard let range = trimmed.range(of: separator) else { continue }
+            let candidate = trimmed[range.upperBound...].trimmingCharacters(in: .whitespacesAndNewlines)
+            if !candidate.isEmpty {
+                return candidate
+            }
+        }
+        return trimmed
+    }
 }
 
 private enum TrimSuggestionMode: String, CaseIterable, Identifiable {
