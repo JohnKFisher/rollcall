@@ -333,10 +333,31 @@ struct TeamSessionState: Codable, Equatable {
 
 struct AppSettings: Codable, Equatable {
     var hapticsEnabled: Bool
+    var fadeOutVolumeAutomationEnabled: Bool
 
     static let `default` = AppSettings(
-        hapticsEnabled: true
+        hapticsEnabled: true,
+        fadeOutVolumeAutomationEnabled: true
     )
+
+    enum CodingKeys: String, CodingKey {
+        case hapticsEnabled
+        case fadeOutVolumeAutomationEnabled
+    }
+
+    init(
+        hapticsEnabled: Bool,
+        fadeOutVolumeAutomationEnabled: Bool
+    ) {
+        self.hapticsEnabled = hapticsEnabled
+        self.fadeOutVolumeAutomationEnabled = fadeOutVolumeAutomationEnabled
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        hapticsEnabled = try container.decodeIfPresent(Bool.self, forKey: .hapticsEnabled) ?? true
+        fadeOutVolumeAutomationEnabled = try container.decodeIfPresent(Bool.self, forKey: .fadeOutVolumeAutomationEnabled) ?? true
+    }
 }
 
 struct Team: Codable, Equatable, Identifiable {

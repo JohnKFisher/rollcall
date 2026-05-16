@@ -599,7 +599,11 @@ final class AppModel: ObservableObject {
         guard let cue = cueForPlayerPlayback(player) else { return }
         do {
             let announcerRelativePath = announcerAssetRelativePath(for: player)
-            try await playbackEngine.play(cue: cue, announcerRelativePath: announcerRelativePath)
+            try await playbackEngine.play(
+                cue: cue,
+                announcerRelativePath: announcerRelativePath,
+                fadeOutVolumeAutomationEnabled: state.settings.fadeOutVolumeAutomationEnabled
+            )
             haptics.success(isEnabled: state.settings.hapticsEnabled)
         } catch {
             lastError = error.localizedDescription
@@ -609,7 +613,10 @@ final class AppModel: ObservableObject {
 
     func play(builtInClip: BuiltInClip) async {
         do {
-            try await playbackEngine.play(cue: builtInClip.cue)
+            try await playbackEngine.play(
+                cue: builtInClip.cue,
+                fadeOutVolumeAutomationEnabled: state.settings.fadeOutVolumeAutomationEnabled
+            )
             haptics.success(isEnabled: state.settings.hapticsEnabled)
         } catch {
             lastError = error.localizedDescription
@@ -623,7 +630,10 @@ final class AppModel: ObservableObject {
 
     func previewCue(_ cue: Cue) async {
         do {
-            try await playbackEngine.play(cue: cue)
+            try await playbackEngine.play(
+                cue: cue,
+                fadeOutVolumeAutomationEnabled: state.settings.fadeOutVolumeAutomationEnabled
+            )
         } catch {
             lastError = error.localizedDescription
         }
@@ -708,6 +718,11 @@ final class AppModel: ObservableObject {
 
     func setHapticsEnabled(_ isEnabled: Bool) {
         state.settings.hapticsEnabled = isEnabled
+        persist()
+    }
+
+    func setFadeOutVolumeAutomationEnabled(_ isEnabled: Bool) {
+        state.settings.fadeOutVolumeAutomationEnabled = isEnabled
         persist()
     }
 

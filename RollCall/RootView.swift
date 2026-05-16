@@ -555,6 +555,17 @@ struct RootView: View {
                                 systemImage: "iphone.radiowaves.left.and.right"
                             )
                         }
+
+                        Toggle(isOn: Binding(
+                            get: { appModel.state.settings.fadeOutVolumeAutomationEnabled },
+                            set: { appModel.setFadeOutVolumeAutomationEnabled($0) }
+                        )) {
+                            SettingsRowLabel(
+                                title: "Fade-Out Volume Automation",
+                                detail: "Lower cue volume during fade-out instead of hard-stopping at the end.",
+                                systemImage: "speaker.wave.2.fill"
+                            )
+                        }
                     }
 
                     SettingsSectionGroup(
