@@ -37,36 +37,16 @@ struct TeamBanner: View {
     }
 
     var body: some View {
-        HStack(alignment: .center, spacing: RollCallSpacingTier.tight.value) {
+        HStack(spacing: RollCallSpacingTier.tight.value) {
             Text(displayName)
                 .rollCallText(.cardTitle, surface: surface)
                 .lineLimit(1)
                 .minimumScaleFactor(0.82)
-
             Spacer(minLength: RollCallSpacingTier.tight.value)
-
-            HStack(spacing: 5) {
-                if secondaryStatus?.tone == .warning {
-                    Image(systemName: "exclamationmark.triangle.fill")
-                        .font(.caption.weight(.semibold))
-                        .accessibilityHidden(true)
-                }
-
-                Text(displayStatus)
-                    .rollCallText(.chipLabel, surface: surface)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.82)
-            }
-            .foregroundStyle(statusForeground)
-            .padding(.horizontal, 8)
-            .padding(.vertical, 5)
-            .background(statusBackground, in: Capsule(style: .continuous))
-            .accessibilityHidden(true)
         }
-        .frame(minHeight: 34)
+        .frame(height: 34)
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, 12)
-        .padding(.vertical, 3)
         .background(background)
         .overlay(alignment: .leading) {
             Rectangle()
@@ -105,28 +85,6 @@ struct TeamBanner: View {
 
     private var resolvedAccent: Color {
         accentColor ?? Color.rollCall(.accent, surface: surface)
-    }
-
-    private var statusTone: RollCallSecondaryStatusTone {
-        secondaryStatus?.tone ?? (teamName == nil ? .warning : .neutral)
-    }
-
-    private var statusForeground: Color {
-        switch statusTone {
-        case .neutral:
-            return variant == .liveSide ? Color.white.opacity(0.76) : Color(uiColor: .secondaryLabel)
-        case .warning:
-            return Color.rollCall(.warning, surface: surface)
-        }
-    }
-
-    private var statusBackground: Color {
-        switch statusTone {
-        case .neutral:
-            return variant == .liveSide ? Color.white.opacity(0.08) : Color(uiColor: .tertiarySystemGroupedBackground)
-        case .warning:
-            return Color.rollCall(.warning, surface: surface).opacity(variant == .liveSide ? 0.18 : 0.14)
-        }
     }
 
     private var background: Color {
