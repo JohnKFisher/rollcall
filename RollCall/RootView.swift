@@ -1399,7 +1399,7 @@ private struct GameDayBoard: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 10) {
+            VStack(alignment: .leading, spacing: RollCallSpacingTier.standard.value) {
                 if let team = appModel.selectedTeam {
                     GameDayTeamStack(appModel: appModel, team: team, onLineup: onLineup)
                 } else {
@@ -1468,7 +1468,7 @@ private struct GameDayTeamStack: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: RollCallSpacingTier.standard.value) {
             TeamBanner(
                 teamName: team.name,
                 secondaryStatus: teamBannerStatus,
@@ -1566,7 +1566,7 @@ private struct GameDayTeamStack: View {
 
 private struct GameDayNoTeamStack: View {
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: RollCallSpacingTier.standard.value) {
             TeamBanner(
                 teamName: nil,
                 secondaryStatus: TeamBannerSecondaryStatus(text: "Choose or create a team", tone: .warning),
@@ -1696,8 +1696,8 @@ private struct GameDayNowBattingHero: View {
                     Text(player.displayName)
                         .font(.system(.largeTitle, design: .rounded).weight(.bold))
                         .foregroundStyle(.white)
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.45)
+                        .lineLimit(2)
+                        .minimumScaleFactor(0.58)
                         .allowsTightening(true)
 
                     HStack(spacing: 8) {
@@ -1722,12 +1722,12 @@ private struct GameDayNowBattingHero: View {
                 Text(cueTitle)
                     .font(.subheadline.weight(.semibold))
                     .foregroundStyle(.white)
-                    .lineLimit(1)
+                    .lineLimit(2)
                     .minimumScaleFactor(0.78)
                 Text(announcerSummary)
                     .font(.caption.weight(.medium))
                     .foregroundStyle(Color.white.opacity(0.72))
-                    .lineLimit(1)
+                    .lineLimit(2)
             }
 
             HStack(spacing: 10) {
@@ -1795,7 +1795,7 @@ private struct GameDayOnDeckCard: View {
                     Text(player.displayName)
                         .font(.title3.weight(.bold))
                         .foregroundStyle(.white)
-                        .lineLimit(1)
+                        .lineLimit(2)
                         .minimumScaleFactor(0.78)
                     Text(onDeckStatus(for: player))
                         .font(.caption.weight(.medium))
@@ -1875,21 +1875,27 @@ private struct GameDayControlRow: View {
             Button {
                 appModel.goToPreviousBatter()
             } label: {
-                Text("<- Prev")
+                Label("Previous", systemImage: "chevron.left")
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.82)
             }
             .rollCallButtonStyle(.secondary, surface: .live)
 
             Button {
                 onLineup()
             } label: {
-                Text("Edit Lineup")
+                Label("Lineup", systemImage: "list.number")
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.82)
             }
             .rollCallButtonStyle(.secondary, surface: .live)
 
             Button {
                 appModel.advanceNextBatter()
             } label: {
-                Text("Next ->")
+                Label("Next Batter", systemImage: "chevron.right")
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.82)
             }
             .rollCallButtonStyle(.secondary, surface: .live)
         }
