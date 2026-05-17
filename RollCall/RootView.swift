@@ -307,7 +307,9 @@ struct RootView: View {
                     Text("\(clipCount) built-in reactions for quick live moments")
                         .rollCallText(.helperText, surface: .live)
                         .lineLimit(2)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
+                .layoutPriority(1)
 
                 Spacer(minLength: RollCallSpacingTier.tight.value)
 
@@ -1875,21 +1877,24 @@ private struct GameDayControlRow: View {
             Button {
                 appModel.goToPreviousBatter()
             } label: {
-                Text("<- Prev")
+                Label("Prev", systemImage: "chevron.left")
             }
             .rollCallButtonStyle(.secondary, surface: .live)
 
             Button {
                 onLineup()
             } label: {
-                Text("Edit Lineup")
+                Label("Edit Lineup", systemImage: "list.number")
             }
             .rollCallButtonStyle(.secondary, surface: .live)
 
             Button {
                 appModel.advanceNextBatter()
             } label: {
-                Text("Next ->")
+                HStack(spacing: 5) {
+                    Text("Next")
+                    Image(systemName: "chevron.right")
+                }
             }
             .rollCallButtonStyle(.secondary, surface: .live)
         }
@@ -2062,6 +2067,10 @@ private struct GameDayPlayerGrid: View {
                 }
                 .buttonStyle(.plain)
                 .animation(.easeInOut(duration: 0.16), value: isActive)
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel(tileAccessibilityLabel(for: player, tileState: tileState))
+                .accessibilityValue(tileAccessibilityValue(for: player, isActive: isActive))
+                .accessibilityHint(tileAccessibilityHint(for: player, isActive: isActive))
             }
         }
     }
@@ -2132,6 +2141,46 @@ private struct GameDayPlayerGrid: View {
         case .announcerAndSong, .songOnly:
             return player.cue == nil
         }
+    }
+
+    private func tileAccessibilityLabel(for player: Player, tileState: GameDayTileState?) -> String {
+        var parts: [String] = []
+        if !player.uniformNumber.isEmpty {
+            parts.append("Number \(player.uniformNumber)")
+        }
+        parts.append(player.displayName)
+        if let tileState {
+            parts.append(tileState.text)
+        }
+        return parts.joined(separator: ", ")
+    }
+
+    private func tileAccessibilityValue(for player: Player, isActive: Bool) -> String {
+        if isActive {
+            return "Currently playing"
+        }
+        if willUseFallback(for: player) {
+            return "Will play fallback clip"
+        }
+
+        switch announcerMode {
+        case .announcerOnly:
+            return "Will play announcement cue"
+        case .announcerAndSong:
+            return appModel.hasStoredCustomAnnouncer(for: player) ? "Will play announcement cue and song" : "Will play song"
+        case .songOnly:
+            return "Will play song"
+        }
+    }
+
+    private func tileAccessibilityHint(for player: Player, isActive: Bool) -> String {
+        if isActive {
+            return "Stops the active cue."
+        }
+        if willUseFallback(for: player) {
+            return "Plays the default fallback crowd clip."
+        }
+        return "Plays this player's cue."
     }
 
     private func tileBackground(isActive: Bool) -> Color {
@@ -3136,48 +3185,6 @@ private extension PlayerEditorSheet {
     }
 }
 
-private func cueStatusText(cueLabel: String?) -> String {
-    cueLabel ?? "Add Cue"
-}
-
-private func cueStatusBackground(cueLabel: String?) -> Color {
-    cueLabel == nil ? Color.gray.opacity(0.14) : Color.orange.opacity(0.15)
-}
-
-private func cueStatusForeground(cueLabel: String?) -> Color {
-    cueLabel == nil ? .secondary : .orange
-}
-
-private func customIntroStatusText(hasCustomIntro: Bool, isMissing: Bool, readyLabel: String = "Announcement Cue") -> String {
-    if hasCustomIntro {
-        return readyLabel
-    }
-    if isMissing {
-        return "Announcement Cue Missing"
-    }
-    return "No Announcement Cue"
-}
-
-private func customIntroStatusForeground(hasCustomIntro: Bool, isMissing: Bool) -> Color {
-    if hasCustomIntro {
-        return .green
-    }
-    if isMissing {
-        return .red
-    }
-    return .secondary
-}
-
-private func customIntroStatusBackground(hasCustomIntro: Bool, isMissing: Bool) -> Color {
-    if hasCustomIntro {
-        return Color.green.opacity(0.15)
-    }
-    if isMissing {
-        return Color.red.opacity(0.14)
-    }
-    return Color.secondary.opacity(0.14)
-}
-
 private extension Cue {
     var rosterDisplayTitle: String {
         switch source {
@@ -3397,6 +3404,8 @@ private struct AppleMusicRow: View {
                     .font(.title3)
             }
             .buttonStyle(.plain)
+            .accessibilityLabel("Preview \(title)")
+            .accessibilityHint("Plays a short preview without selecting this song.")
         }
         .padding(.vertical, 4)
     }
