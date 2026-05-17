@@ -8,6 +8,12 @@ Use this file as a concise decision log for project-specific architectural, beha
   Rationale: the app already treats `.rollcall` as the portable team handoff format, so direct file opening reduces friction without introducing live sync or changing package contents.
   Status: approved
 
+## 2026-05-16
+
+- Approved: Game Day announcer mode should become a three-way control with `Announcer Only`, `Announcer+Song`, and `Song Only`, plus a centered `Prev / Edit Lineup / Next` row above the player grid.
+  Rationale: the live board needs clearer top-down structure and explicit playback intent, while the lower controls should prioritize lineup navigation without making accidental player taps too easy.
+  Status: approved
+
 ## 2026-05-13
 
 - Approved: remove Built-in Voice from the product for now and center custom recorded intros only, with Game Day using either cue-only playback or custom-intro-plus-cue playback.

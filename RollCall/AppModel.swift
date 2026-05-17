@@ -350,7 +350,7 @@ final class AppModel: ObservableObject {
             modifiedAt: .now,
             players: [],
             builtInClips: BuiltInClip.defaults,
-            session: TeamSessionState(activeSessionDate: nil, battingOrder: [], nextBatterIndex: 0, gameDayAnnouncerMode: .noAnnouncer, battingOrderIsCustomized: false),
+            session: TeamSessionState(activeSessionDate: nil, battingOrder: [], nextBatterIndex: 0, gameDayAnnouncerMode: .songOnly, battingOrderIsCustomized: false),
             announcerProfile: .default
         )
         state.teams.append(team)
@@ -596,14 +596,21 @@ final class AppModel: ObservableObject {
     }
 
     func play(player: Player) async {
-        guard let cue = cueForPlayerPlayback(player) else { return }
         do {
-            let announcerRelativePath = announcerAssetRelativePath(for: player)
-            try await playbackEngine.play(
-                cue: cue,
-                announcerRelativePath: announcerRelativePath,
-                fadeOutVolumeAutomationEnabled: state.settings.fadeOutVolumeAutomationEnabled
-            )
+            guard let plan = playbackPlan(for: player) else { return }
+            switch plan {
+            case .cue(let cue, let announcerRelativePath):
+                try await playbackEngine.play(
+                    cue: cue,
+                    announcerRelativePath: announcerRelativePath,
+                    fadeOutVolumeAutomationEnabled: state.settings.fadeOutVolumeAutomationEnabled
+                )
+            case .assetOnly(let relativePath, let activeCueID):
+                try await playbackEngine.playAsset(
+                    relativePath: relativePath,
+                    activeCueID: activeCueID
+                )
+            }
             haptics.success(isEnabled: state.settings.hapticsEnabled)
         } catch {
             lastError = error.localizedDescription
@@ -710,6 +717,21 @@ final class AppModel: ObservableObject {
             return
         }
         state.teams[teamIndex].session.nextBatterIndex = (state.teams[teamIndex].session.nextBatterIndex + 1) % present.count
+        state.teams[teamIndex].modifiedAt = .now
+        haptics.success(isEnabled: state.settings.hapticsEnabled)
+        prewarmNextBatterCue()
+        persist()
+    }
+
+    func goToPreviousBatter() {
+        guard let teamIndex else { return }
+        let present = state.teams[teamIndex].presentPlayersInBattingOrder
+        guard !present.isEmpty else {
+            haptics.warning(isEnabled: state.settings.hapticsEnabled)
+            return
+        }
+        let count = present.count
+        state.teams[teamIndex].session.nextBatterIndex = (state.teams[teamIndex].session.nextBatterIndex - 1 + count) % count
         state.teams[teamIndex].modifiedAt = .now
         haptics.success(isEnabled: state.settings.hapticsEnabled)
         prewarmNextBatterCue()
@@ -914,19 +936,45 @@ final class AppModel: ObservableObject {
         if let cue = player.cue {
             return cue
         }
+        return fallbackCue(for: player)
+    }
 
+    private func fallbackCue(for player: Player, cueID: UUID? = nil) -> Cue? {
         let teamBuiltIns = selectedTeam?.builtInClips ?? []
         if let fallbackClip = BuiltInClip.firstMatchingSourceID(defaultNoSongFallbackBuiltInClipSourceID, in: teamBuiltIns) {
             var cue = fallbackClip.cue
-            cue.id = player.id
+            cue.id = cueID ?? player.id
             return cue
         }
         if let fallbackClip = BuiltInClip.firstMatchingSourceID(defaultNoSongFallbackBuiltInClipSourceID, in: BuiltInClip.defaults) {
             var cue = fallbackClip.cue
-            cue.id = player.id
+            cue.id = cueID ?? player.id
             return cue
         }
         return nil
+    }
+
+    private func playbackPlan(for player: Player) -> PlayerPlaybackPlan? {
+        let mode = selectedTeam?.session.gameDayAnnouncerMode ?? .songOnly
+        let announcerRelativePath = storedCustomAnnouncerRelativePath(for: player)
+        switch mode {
+        case .announcerOnly:
+            if let announcerRelativePath {
+                return .assetOnly(relativePath: announcerRelativePath, activeCueID: playbackID(for: player))
+            }
+            guard let fallbackCue = fallbackCue(for: player, cueID: playbackID(for: player)) else { return nil }
+            return .cue(cue: fallbackCue, announcerRelativePath: nil)
+        case .announcerAndSong:
+            guard let cue = cueForPlayerPlayback(player) else { return nil }
+            return .cue(cue: cue, announcerRelativePath: announcerRelativePath)
+        case .songOnly:
+            guard let cue = cueForPlayerPlayback(player) else { return nil }
+            return .cue(cue: cue, announcerRelativePath: nil)
+        }
+    }
+
+    private func playbackID(for player: Player) -> UUID {
+        player.cue?.id ?? player.id
     }
 
     private var teamIndex: Int? {
@@ -1288,13 +1336,17 @@ final class AppModel: ObservableObject {
         )
     }
 
-    private func announcerAssetRelativePath(for player: Player) -> String? {
-        guard selectedTeam?.session.gameDayAnnouncerMode == .announcer else { return nil }
+    private func storedCustomAnnouncerRelativePath(for player: Player) -> String? {
         if let custom = player.customAnnouncerRelativePath,
            audioAssetService.assetExists(relativePath: custom) {
             return custom
         }
         return nil
+    }
+
+    private enum PlayerPlaybackPlan {
+        case cue(cue: Cue, announcerRelativePath: String?)
+        case assetOnly(relativePath: String, activeCueID: UUID)
     }
 
     private func triggerAnnouncerRegeneration(for teamID: UUID, phase: String) {

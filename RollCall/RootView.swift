@@ -1447,8 +1447,8 @@ private struct GameDayTeamStack: View {
             return GameDayLiveWarning(text: "No present players in the lineup", role: .warning)
         }
 
-        if let nowPlayer, nowPlayer.cue == nil {
-            return GameDayLiveWarning(text: "Now batting will use fallback cue", role: .warning)
+        if let nowPlayer, willUseFallback(for: nowPlayer) {
+            return GameDayLiveWarning(text: "Now batting will use Small Cheer fallback", role: .warning)
         }
 
         guard let readiness = appModel.state.lastReadiness else { return nil }
@@ -1473,6 +1473,11 @@ private struct GameDayTeamStack: View {
                 teamName: team.name,
                 secondaryStatus: teamBannerStatus,
                 variant: .liveSide
+            )
+
+            GameDayAnnouncerModePicker(
+                selectedMode: team.session.gameDayAnnouncerMode,
+                onSelect: appModel.setGameDayAnnouncerMode
             )
 
             if let liveWarning {
@@ -1500,16 +1505,18 @@ private struct GameDayTeamStack: View {
             )
 
             GameDayControlRow(
-                team: team,
                 appModel: appModel,
                 onLineup: onLineup
             )
+
+            GameDayGridDivider()
 
             GameDayPlayerGrid(
                 appModel: appModel,
                 players: presentPlayers,
                 nowPlayerID: nowPlayer?.id,
-                onDeckPlayerID: onDeckPlayer?.id
+                onDeckPlayerID: onDeckPlayer?.id,
+                announcerMode: team.session.gameDayAnnouncerMode
             )
         }
     }
@@ -1533,7 +1540,7 @@ private struct GameDayTeamStack: View {
         guard check.state == .warning || check.state == .failed else { return false }
         if check.id.contains("photo") { return false }
         if check.id.contains("custom-announcer") {
-            return team.session.gameDayAnnouncerMode == .announcer
+            return team.session.gameDayAnnouncerMode.usesAnnouncer
         }
         if check.id.hasPrefix("player-") {
             return presentPlayers.contains { player in
@@ -1541,6 +1548,15 @@ private struct GameDayTeamStack: View {
             }
         }
         return ["route", "volume", "network", "music-auth", "lineup"].contains(check.id)
+    }
+
+    private func willUseFallback(for player: Player) -> Bool {
+        switch team.session.gameDayAnnouncerMode {
+        case .announcerOnly:
+            return !appModel.hasStoredCustomAnnouncer(for: player)
+        case .announcerAndSong, .songOnly:
+            return player.cue == nil
+        }
     }
 
     private func role(for state: ReadinessState) -> StatusChipRole {
@@ -1601,27 +1617,55 @@ private struct GameDayNowBattingHero: View {
     let announcerMode: GameDayAnnouncerMode
 
     private var cueTitle: String {
-        if let cue = player.cue {
-            return "Cue: \(cue.label)"
+        switch announcerMode {
+        case .announcerOnly:
+            return hasCustomAnnouncer ? "Announcement Cue Only" : "Fallback: Small Cheer"
+        case .announcerAndSong, .songOnly:
+            if let cue = player.cue {
+                return "Cue: \(cue.label)"
+            }
+            return "Fallback: Small Cheer"
         }
-        return "Fallback: Small Cheer"
+    }
+
+    private var hasCustomAnnouncer: Bool {
+        appModel.hasStoredCustomAnnouncer(for: player)
+    }
+
+    private var willUseFallback: Bool {
+        switch announcerMode {
+        case .announcerOnly:
+            return !hasCustomAnnouncer
+        case .announcerAndSong, .songOnly:
+            return player.cue == nil
+        }
     }
 
     private var statusText: String {
         if isActive { return "Playing" }
-        if player.cue == nil { return "Fallback available" }
+        if willUseFallback { return "Fallback available" }
         return "Ready"
     }
 
     private var actionTitle: String {
         if isActive { return "Tap Again to Stop" }
-        if player.cue == nil { return "Play Fallback" }
+        if willUseFallback { return "Play Fallback" }
+        if announcerMode == .announcerOnly { return "Play Announcement Cue" }
         return "Play Cue"
     }
 
     private var announcerSummary: String {
-        guard announcerMode == .announcer else { return "Cue only" }
-        return appModel.hasStoredCustomAnnouncer(for: player) ? "Announcement cue + song" : "Song cue only"
+        switch announcerMode {
+        case .announcerOnly:
+            return hasCustomAnnouncer ? "Announcement cue only" : "No announcement cue, Small Cheer fallback"
+        case .announcerAndSong:
+            if player.cue == nil {
+                return hasCustomAnnouncer ? "Announcement cue + Small Cheer" : "Small Cheer fallback"
+            }
+            return hasCustomAnnouncer ? "Announcement cue + song" : "Song only"
+        case .songOnly:
+            return player.cue == nil ? "No song cue, Small Cheer fallback" : "Song only"
+        }
     }
 
     var body: some View {
@@ -1652,8 +1696,9 @@ private struct GameDayNowBattingHero: View {
                     Text(player.displayName)
                         .font(.system(.largeTitle, design: .rounded).weight(.bold))
                         .foregroundStyle(.white)
-                        .lineLimit(2)
-                        .minimumScaleFactor(0.70)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.45)
+                        .allowsTightening(true)
 
                     HStack(spacing: 8) {
                         if !player.uniformNumber.isEmpty {
@@ -1663,8 +1708,8 @@ private struct GameDayNowBattingHero: View {
                         }
                         GameDayStatePill(
                             text: statusText,
-                            systemImage: isActive ? "speaker.wave.2.fill" : (player.cue == nil ? "music.note.list" : "checkmark.circle.fill"),
-                            role: isActive ? .live : (player.cue == nil ? .warning : .ready),
+                            systemImage: isActive ? "speaker.wave.2.fill" : (willUseFallback ? "music.note.list" : "checkmark.circle.fill"),
+                            role: isActive ? .live : (willUseFallback ? .warning : .ready),
                             strong: isActive
                         )
                     }
@@ -1789,48 +1834,75 @@ private struct GameDayOnDeckCard: View {
     }
 
     private func onDeckStatus(for player: Player) -> String {
-        if player.cue == nil {
-            return "Fallback available"
+        let hasCustomAnnouncer = appModel.hasStoredCustomAnnouncer(for: player)
+        switch announcerMode {
+        case .announcerOnly:
+            return hasCustomAnnouncer ? "Announcement cue ready" : "Small Cheer fallback"
+        case .announcerAndSong:
+            if player.cue == nil {
+                return hasCustomAnnouncer ? "Announcement cue + Small Cheer" : "Small Cheer fallback"
+            }
+            return hasCustomAnnouncer ? "Announcement cue + song" : "Song ready"
+        case .songOnly:
+            return player.cue == nil ? "Small Cheer fallback" : "Song ready"
         }
-        if announcerMode == .announcer {
-            return appModel.hasStoredCustomAnnouncer(for: player) ? "Announcement cue ready" : "Cue ready"
+    }
+}
+
+private struct GameDayAnnouncerModePicker: View {
+    let selectedMode: GameDayAnnouncerMode
+    let onSelect: (GameDayAnnouncerMode) -> Void
+
+    var body: some View {
+        Picker("Announcer Mode", selection: Binding(
+            get: { selectedMode },
+            set: onSelect
+        )) {
+            ForEach(GameDayAnnouncerMode.allCases) { mode in
+                Text(mode.title).tag(mode)
+            }
         }
-        return "Ready"
+        .pickerStyle(.segmented)
     }
 }
 
 private struct GameDayControlRow: View {
-    let team: Team
     @ObservedObject var appModel: AppModel
     let onLineup: () -> Void
 
     var body: some View {
-        VStack(spacing: 8) {
-            Picker("Intro Mode", selection: Binding(
-                get: { team.session.gameDayAnnouncerMode },
-                set: { appModel.setGameDayAnnouncerMode($0) }
-            )) {
-                Text("Cue Only").tag(GameDayAnnouncerMode.noAnnouncer)
-                Text("Announcement Cues").tag(GameDayAnnouncerMode.announcer)
+        HStack(spacing: 8) {
+            Button {
+                appModel.goToPreviousBatter()
+            } label: {
+                Text("<- Prev")
             }
-            .pickerStyle(.segmented)
+            .rollCallButtonStyle(.secondary, surface: .live)
 
-            HStack(spacing: 8) {
-                Button {
-                    appModel.advanceNextBatter()
-                } label: {
-                    Label("Next", systemImage: "arrow.forward")
-                }
-                .rollCallButtonStyle(.secondary, surface: .live)
-
-                Button {
-                    onLineup()
-                } label: {
-                    Label("Lineup", systemImage: "list.bullet")
-                }
-                .rollCallButtonStyle(.secondary, surface: .live)
+            Button {
+                onLineup()
+            } label: {
+                Text("Edit Lineup")
             }
+            .rollCallButtonStyle(.secondary, surface: .live)
+
+            Button {
+                appModel.advanceNextBatter()
+            } label: {
+                Text("Next ->")
+            }
+            .rollCallButtonStyle(.secondary, surface: .live)
         }
+        .frame(maxWidth: .infinity, alignment: .center)
+    }
+}
+
+private struct GameDayGridDivider: View {
+    var body: some View {
+        Rectangle()
+            .fill(Color.white.opacity(0.12))
+            .frame(height: 1)
+            .padding(.vertical, 4)
     }
 }
 
@@ -1913,17 +1985,20 @@ private struct GameDayPlayerGrid: View {
     let players: [Player]
     let nowPlayerID: UUID?
     let onDeckPlayerID: UUID?
+    let announcerMode: GameDayAnnouncerMode
 
     init(
         appModel: AppModel,
         players: [Player],
         nowPlayerID: UUID?,
-        onDeckPlayerID: UUID?
+        onDeckPlayerID: UUID?,
+        announcerMode: GameDayAnnouncerMode
     ) {
         self.appModel = appModel
         self.players = players
         self.nowPlayerID = nowPlayerID
         self.onDeckPlayerID = onDeckPlayerID
+        self.announcerMode = announcerMode
         _playbackEngine = ObservedObject(initialValue: appModel.playbackEngine)
     }
 
@@ -1967,7 +2042,7 @@ private struct GameDayPlayerGrid: View {
                                 .lineLimit(1)
                                 .minimumScaleFactor(0.78)
                         } else {
-                            Text(player.cue == nil ? "Fallback" : "Ready")
+                            Text(tileFooterText(for: player))
                                 .font(.caption2.weight(.semibold))
                                 .textCase(.uppercase)
                                 .foregroundStyle(Color.white.opacity(0.50))
@@ -2032,10 +2107,31 @@ private struct GameDayPlayerGrid: View {
         if player.id == nowPlayerID {
             return GameDayTileState(text: "Now", systemImage: "arrowtriangle.right.fill", color: Color.rollCall(.ready, surface: .live))
         }
-        if player.cue == nil {
+        if willUseFallback(for: player) {
             return GameDayTileState(text: "Fallback", systemImage: "music.note.list", color: Color.rollCall(.warning, surface: .live))
         }
         return nil
+    }
+
+    private func tileFooterText(for player: Player) -> String {
+        switch announcerMode {
+        case .announcerOnly:
+            return appModel.hasStoredCustomAnnouncer(for: player) ? "Announcer" : "Fallback"
+        case .announcerAndSong:
+            if player.cue == nil { return "Fallback" }
+            return appModel.hasStoredCustomAnnouncer(for: player) ? "Intro + Song" : "Song"
+        case .songOnly:
+            return player.cue == nil ? "Fallback" : "Song"
+        }
+    }
+
+    private func willUseFallback(for player: Player) -> Bool {
+        switch announcerMode {
+        case .announcerOnly:
+            return !appModel.hasStoredCustomAnnouncer(for: player)
+        case .announcerAndSong, .songOnly:
+            return player.cue == nil
+        }
     }
 
     private func tileBackground(isActive: Bool) -> Color {
@@ -2448,7 +2544,7 @@ private struct PlayerEditorSheet: View {
                 }
 
                 Section("Announcement Cue") {
-                    Text("Optional. When Game Day is set to Announcement Cues, Roll Call will play this recording before the player’s cue.")
+                    Text("Optional. In Game Day, this recording can play by itself in Announcer Only or before the player’s song in Announcer+Song.")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
 

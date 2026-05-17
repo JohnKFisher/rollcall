@@ -118,10 +118,55 @@ func alphabeticalPlayerIDs(for players: [Player]) -> [UUID] {
 }
 
 enum GameDayAnnouncerMode: String, Codable, CaseIterable, Identifiable {
-    case noAnnouncer
-    case announcer
+    case announcerOnly
+    case announcerAndSong
+    case songOnly
 
     var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .announcerOnly:
+            return "Announcer Only"
+        case .announcerAndSong:
+            return "Announcer+Song"
+        case .songOnly:
+            return "Song Only"
+        }
+    }
+
+    var usesAnnouncer: Bool {
+        switch self {
+        case .announcerOnly, .announcerAndSong:
+            return true
+        case .songOnly:
+            return false
+        }
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.singleValueContainer()
+        let rawValue = try container.decode(String.self)
+        switch rawValue {
+        case "announcerOnly":
+            self = .announcerOnly
+        case "announcerAndSong":
+            self = .announcerAndSong
+        case "songOnly":
+            self = .songOnly
+        case "announcer":
+            self = .announcerAndSong
+        case "noAnnouncer":
+            self = .songOnly
+        default:
+            self = .songOnly
+        }
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.singleValueContainer()
+        try container.encode(rawValue)
+    }
 }
 
 enum AnnouncerTemplate: String, Codable, CaseIterable, Identifiable {
@@ -326,7 +371,7 @@ struct TeamSessionState: Codable, Equatable {
         activeSessionDate = try container.decodeIfPresent(Date.self, forKey: .activeSessionDate)
         battingOrder = try container.decodeIfPresent([UUID].self, forKey: .battingOrder) ?? []
         nextBatterIndex = try container.decodeIfPresent(Int.self, forKey: .nextBatterIndex) ?? 0
-        gameDayAnnouncerMode = try container.decodeIfPresent(GameDayAnnouncerMode.self, forKey: .gameDayAnnouncerMode) ?? .noAnnouncer
+        gameDayAnnouncerMode = try container.decodeIfPresent(GameDayAnnouncerMode.self, forKey: .gameDayAnnouncerMode) ?? .songOnly
         battingOrderIsCustomized = try container.decodeIfPresent(Bool.self, forKey: .battingOrderIsCustomized) ?? false
     }
 }
@@ -409,7 +454,7 @@ struct Team: Codable, Equatable, Identifiable {
         modifiedAt = try container.decodeIfPresent(Date.self, forKey: .modifiedAt) ?? createdAt
         players = try container.decodeIfPresent([Player].self, forKey: .players) ?? []
         builtInClips = try container.decodeIfPresent([BuiltInClip].self, forKey: .builtInClips) ?? BuiltInClip.defaults
-        session = try container.decodeIfPresent(TeamSessionState.self, forKey: .session) ?? TeamSessionState(activeSessionDate: nil, battingOrder: alphabeticalPlayerIDs(for: players), nextBatterIndex: 0, gameDayAnnouncerMode: .noAnnouncer, battingOrderIsCustomized: false)
+        session = try container.decodeIfPresent(TeamSessionState.self, forKey: .session) ?? TeamSessionState(activeSessionDate: nil, battingOrder: alphabeticalPlayerIDs(for: players), nextBatterIndex: 0, gameDayAnnouncerMode: .songOnly, battingOrderIsCustomized: false)
         let legacyPlayers = (try? container.decodeIfPresent([LegacyPlayerDecoder.LegacyPlayerPayload].self, forKey: .players)) ?? []
 
         if let decodedProfile = try container.decodeIfPresent(TeamAnnouncerProfile.self, forKey: .announcerProfile) {
@@ -420,7 +465,7 @@ struct Team: Codable, Equatable, Identifiable {
 
         if try container.decodeIfPresent(TeamAnnouncerProfile.self, forKey: .announcerProfile) == nil,
            LegacyPlayerDecoder.legacyAnnouncerEnabled(in: legacyPlayers) {
-            session.gameDayAnnouncerMode = .announcer
+            session.gameDayAnnouncerMode = .announcerAndSong
         }
 
         let alphabeticalIDs = alphabeticalPlayerIDs(for: players)
@@ -695,7 +740,7 @@ extension Team {
             modifiedAt: .now,
             players: players,
             builtInClips: BuiltInClip.defaults,
-            session: TeamSessionState(activeSessionDate: nil, battingOrder: alphabeticalPlayerIDs(for: players), nextBatterIndex: 0, gameDayAnnouncerMode: .noAnnouncer, battingOrderIsCustomized: false),
+            session: TeamSessionState(activeSessionDate: nil, battingOrder: alphabeticalPlayerIDs(for: players), nextBatterIndex: 0, gameDayAnnouncerMode: .songOnly, battingOrderIsCustomized: false),
             announcerProfile: .default
         )
     }

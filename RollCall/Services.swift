@@ -629,6 +629,39 @@ final class CuePlaybackEngine: NSObject, ObservableObject {
         )
     }
 
+    func playAsset(relativePath: String, activeCueID: UUID) async throws {
+        if self.activeCueID == activeCueID {
+            stop()
+            return
+        }
+        if let lastStartDate,
+           let lastStartedCueID,
+           lastStartedCueID == activeCueID,
+           Date().timeIntervalSince(lastStartDate) < debounceWindow {
+            return
+        }
+        stop()
+        self.activeCueID = activeCueID
+        lastStartDate = Date()
+        lastStartedCueID = activeCueID
+
+        let url = try audioAssetService.assetURL(relativePath: relativePath)
+        let player = try AVAudioPlayer(contentsOf: url)
+        announcerPlayer = player
+        player.prepareToPlay()
+        guard player.play() else {
+            announcerPlayer = nil
+            self.activeCueID = nil
+            return
+        }
+
+        stopTask = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(player.duration))
+            guard let self, !Task.isCancelled else { return }
+            self.stop()
+        }
+    }
+
     func prewarm(cue: Cue) async throws {
         switch cue.source {
         case .appleMusic:
@@ -1054,7 +1087,7 @@ final class ReadinessService {
             }
         }
 
-        if team?.session.gameDayAnnouncerMode == .announcer {
+        if team?.session.gameDayAnnouncerMode.usesAnnouncer == true {
             if let customAnnouncerRelativePath = player.customAnnouncerRelativePath {
                 if !audioAssetService.assetExists(relativePath: customAnnouncerRelativePath) {
                     return ReadinessCheck(id: "player-\(player.id)-custom-announcer", title: player.displayName, detail: "Announcement Cue file is missing from app storage.", state: .failed)
@@ -1072,7 +1105,7 @@ final class ReadinessService {
 
     private func customAnnouncerChecks(for team: Team?) -> [ReadinessCheck] {
         guard let team else { return [] }
-        guard team.session.gameDayAnnouncerMode == .announcer else { return [] }
+        guard team.session.gameDayAnnouncerMode == .announcerOnly else { return [] }
         let presentPlayers = team.presentPlayersInBattingOrder
         guard !presentPlayers.isEmpty else { return [] }
 
@@ -1085,7 +1118,7 @@ final class ReadinessService {
                 ReadinessCheck(
                     id: "custom-announcers-none",
                     title: "Announcement Cues",
-                    detail: "No present players have an Announcement Cue recorded.",
+                    detail: "No present players have an Announcement Cue recorded. Game Day will fall back to Small Cheer.",
                     state: .warning
                 )
             ]
@@ -1096,7 +1129,7 @@ final class ReadinessService {
             return ReadinessCheck(
                 id: "player-\(player.id)-custom-coverage",
                 title: player.displayName,
-                detail: "This present player does not have an Announcement Cue recorded.",
+                detail: "This present player does not have an Announcement Cue recorded. Game Day will fall back to Small Cheer.",
                 state: .warning
             )
         }

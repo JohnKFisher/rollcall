@@ -4,7 +4,7 @@ Use this file as a concise project status snapshot for the current version, what
 
 ## Roll Call
 
-Current version: `0.4.9` (build `13`)
+Current version: `0.5.1` (build `16`)
 
 Status:
 - Active prototype with a buildable iPhone app target at [RollCall.xcodeproj](/Users/jkfisher/Documents/Coding/Roll%20Call/RollCall.xcodeproj).
@@ -21,7 +21,7 @@ What works now:
 - Trim-focused cue editor with song summary, suggested-hook vs start-at-beginning choices, start scrubber, preset lengths, Advanced fine tuning, and subscription-aware full-song vs preview-only Apple Music trimming
 - Cue timing preview from the editor
 - Per-player optional custom intro recording
-- Game Day mode switch for cue-only vs custom-intro-plus-cue playback
+- Game Day announcer mode picker with `Announcer Only`, `Announcer+Song`, and `Song Only`
 - Player roster and Game Day views now show custom-intro coverage alongside cue coverage
 - Game Day player taps now fall back to built-in `Small Cheer` when the player has no selected song cue
 - Apple Music cue caps, subscription-aware full-song playback, metadata hydration for full-song trim timelines, and cue prewarming hooks
@@ -30,7 +30,7 @@ What works now:
 - Settings now includes a `Fade-Out Volume Automation` switch so Roll Call can either manage cue volume for fades or leave playback volume untouched
 - Subscribed full-song Apple Music playback now routes through an internal MediaPlayer application-player path so the same Apple Music cue can attempt stepped fade-out in trim preview, cue preview, and Game Day without changing the cue model
 - Experimental Apple Music local-copy flag and one-way conversion action
-- Game Day dark live-side board with a thin TeamBar, compact live warning strip, Now Batting hero, On Deck area, control row, 3-across fallback grid, and obvious active tap-to-stop state
+- Game Day dark live-side board with a thin TeamBar, top announcer-mode picker, compact live warning strip, Now Batting hero, On Deck area, centered `Prev / Edit Lineup / Next` row, divider before the grid, and obvious active tap-to-stop state
 - General Clips tab using the shared cue engine with bundled licensed crowd clips tracked in `ATTRIBUTIONS.md`
 - Readiness dashboard with Apple Music, asset, and cue-specific checks
 - `.rollcall` package export/import with bundled local media, custom intro audio, and roster photos
@@ -49,7 +49,7 @@ Known limitations:
 - The new subscribed-song MediaPlayer backend is implemented but still unproven on a real subscribed device; until that on-device check passes, full-song Apple Music fade behavior should still be treated as provisional.
 - The new Apple Music hook suggestion is intentionally conservative and still needs an on-device feel pass to judge whether its default entrance guesses are actually helpful.
 - Roll Call now gives only lightweight Focus guidance for interruptions; it still does not have OS-level Do Not Disturb or Guided Access integration.
-- Game Day custom-intro mode now depends entirely on recorded custom intros; players without a custom intro are clearly marked and will play only their cue.
+- In `Announcer Only`, players without a recorded Announcement Cue fall back to `Small Cheer`; in `Announcer+Song`, missing announcers are skipped and missing songs fall back to `Small Cheer`.
 - The no-song Game Day fallback clip is currently code-defaulted to `Small Cheer`; a user-facing selector for changing that default is not implemented yet.
 - Local audio import still exists as a fallback path, but it has been moved behind a secondary disclosure in the player editor so Apple Music remains the obvious primary flow.
 - Startup and tap responsiveness have been tightened by deferring/coalescing some follow-up work and moving snapshot restore I/O off the main actor, but this still needs an on-device feel pass to confirm the improvement.
@@ -57,9 +57,9 @@ Known limitations:
 Verification:
 - `xcodebuild -project '/Users/jkfisher/Documents/Coding/Roll Call/RollCall.xcodeproj' -scheme RollCall -destination 'generic/platform=iOS' -derivedDataPath '/Users/jkfisher/Documents/Coding/Roll Call/.DerivedData' build`
 - `xcrun swift-frontend -typecheck -primary-file RollCall/Services.swift RollCall/Models.swift RollCall/AppModel.swift RollCall/RootView.swift RollCall/RollCallApp.swift -sdk /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS26.5.sdk -target arm64-apple-ios18.0`
-- Result in this session: the in-sandbox check was blocked by cache and CoreSimulator restrictions, but an out-of-sandbox `xcodebuild -project RollCall.xcodeproj -scheme RollCall -destination 'generic/platform=iOS' build` completed successfully for `0.4.9` (build `13`) before the Game Day visual pass. XcodeBuildMCP then completed simulator build/run verification after the Game Day redesign. The remaining verification is an on-device smoke pass for AirDrop-opened `.rollcall` imports, manual picker selection of AirDropped `.rollcall` files stored in Files, whether Files now prefers Roll Call as the open target for `.rollcall`, subscribed Apple Music MediaPlayer fade behavior with the setting on and off, repeated non-zero trim starts, preview-only fallback trimming, custom-intro playback, and bright-condition Game Day readability.
+- Result in the most recent verified build session before this version bump: the in-sandbox check was blocked by cache and CoreSimulator restrictions, but an out-of-sandbox `xcodebuild -project RollCall.xcodeproj -scheme RollCall -destination 'generic/platform=iOS' build` completed successfully for `0.4.9` (build `13`) before the Game Day visual pass. XcodeBuildMCP then completed simulator build/run verification after the Game Day redesign. The remaining verification is an on-device smoke pass for AirDrop-opened `.rollcall` imports, manual picker selection of AirDropped `.rollcall` files stored in Files, whether Files now prefers Roll Call as the open target for `.rollcall`, subscribed Apple Music MediaPlayer fade behavior with the setting on and off, repeated non-zero trim starts, preview-only fallback trimming, custom-intro playback, and bright-condition Game Day readability.
 
 Recommended next priorities:
-1. Enable the MusicKit App Service for App ID `com.jkfisher.rollcall`, refresh signing/provisioning, then launch `0.4.9` on-device and do a focused smoke pass for subscribed-device full-song trimming, repeated non-zero trim starts, MediaPlayer fade-out behavior in preview and Game Day, preview-only fallback trimming, custom-intro playback, direct AirDrop `.rollcall` opening, whether Files prefers Roll Call for `.rollcall`, and manual picker selection from Files.
+1. Enable the MusicKit App Service for App ID `com.jkfisher.rollcall`, refresh signing/provisioning, then launch `0.5.1` on-device and do a focused smoke pass for subscribed-device full-song trimming, repeated non-zero trim starts, MediaPlayer fade-out behavior in preview and Game Day, preview-only fallback trimming, custom-intro playback, direct AirDrop `.rollcall` opening, whether Files prefers Roll Call for `.rollcall`, and manual picker selection from Files.
 2. Add focused verification around package import/export round-trips, AirDrop/open-in-place imports, support-bundle contents, and backup retention behavior after repeated imports.
 3. If the MediaPlayer path is still flaky on-device, run one bounded silent-track crossfade experiment and then explicitly decide whether Apple Music field playback remains supportable without a local-only pivot.
