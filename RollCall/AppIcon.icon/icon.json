@@ -25,18 +25,6 @@
               0
             ]
           }
-        },
-        {
-          "glass" : true,
-          "image-name" : "stitches.png",
-          "name" : "Waveform stitches",
-          "position" : {
-            "scale" : 1,
-            "translation-in-points" : [
-              0,
-              0
-            ]
-          }
         }
       ],
       "shadow" : {
