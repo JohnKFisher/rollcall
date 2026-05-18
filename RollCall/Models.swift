@@ -516,6 +516,7 @@ struct SnapshotRecord: Codable, Equatable, Identifiable {
 struct ExperimentalSettings: Codable, Equatable {
     var appleMusicLocalCopyEnabled: Bool
     var acknowledgedAt: Date?
+    var appleMusicTeamPlaylistAcknowledgedAt: Date?
 }
 
 struct TrimDefaults: Codable, Equatable {
@@ -589,7 +590,7 @@ struct AppState: Codable, Equatable {
         selectedTeamID = try container.decodeIfPresent(UUID.self, forKey: .selectedTeamID)
         teams = try container.decodeIfPresent([Team].self, forKey: .teams) ?? []
         snapshots = try container.decodeIfPresent([SnapshotRecord].self, forKey: .snapshots) ?? []
-        experimental = try container.decodeIfPresent(ExperimentalSettings.self, forKey: .experimental) ?? ExperimentalSettings(appleMusicLocalCopyEnabled: false, acknowledgedAt: nil)
+        experimental = try container.decodeIfPresent(ExperimentalSettings.self, forKey: .experimental) ?? ExperimentalSettings(appleMusicLocalCopyEnabled: false, acknowledgedAt: nil, appleMusicTeamPlaylistAcknowledgedAt: nil)
         settings = try container.decodeIfPresent(AppSettings.self, forKey: .settings) ?? .default
         lastReadiness = try container.decodeIfPresent(ReadinessStatus.self, forKey: .lastReadiness)
         recentAppleMusicSelections = try container.decodeIfPresent([RecentAppleMusicSelection].self, forKey: .recentAppleMusicSelections) ?? []
@@ -603,7 +604,7 @@ struct AppState: Codable, Equatable {
         selectedTeamID: nil,
         teams: [],
         snapshots: [],
-        experimental: ExperimentalSettings(appleMusicLocalCopyEnabled: false, acknowledgedAt: nil),
+        experimental: ExperimentalSettings(appleMusicLocalCopyEnabled: false, acknowledgedAt: nil, appleMusicTeamPlaylistAcknowledgedAt: nil),
         settings: .default,
         lastReadiness: nil,
         recentAppleMusicSelections: [],

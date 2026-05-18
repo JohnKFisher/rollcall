@@ -252,6 +252,8 @@ final class AppModel: ObservableObject {
     @Published var pendingRosterImport: PendingRosterImport?
     @Published var supportBundle: SupportBundleExport?
     @Published var announcerRegenerationStatus: AnnouncerRegenerationStatus?
+    @Published private(set) var isAppleMusicPlaylistSyncing = false
+    @Published private(set) var appleMusicPlaylistSyncStatus: String?
     @Published private(set) var appleMusicPlaybackCapability: AppleMusicPlaybackCapability = .unknown
     @Published private(set) var customAnnouncerRecordingPhase: CustomAnnouncerRecordingPhase = .idle
     private var hasFinishedLaunching = false
@@ -766,6 +768,42 @@ final class AppModel: ObservableObject {
         persist()
     }
 
+    func acknowledgeExperimentalTeamPlaylistSync() {
+        state.experimental.appleMusicTeamPlaylistAcknowledgedAt = .now
+        persist()
+    }
+
+    func syncSelectedTeamAppleMusicPlaylist() async {
+        guard !isAppleMusicPlaylistSyncing else { return }
+        guard let team = selectedTeam else {
+            appleMusicPlaylistSyncStatus = AppError.noSelectedTeam.localizedDescription
+            return
+        }
+
+        let summary = appleMusicPlaylistSummary(for: team)
+        guard !summary.songIDs.isEmpty else {
+            appleMusicPlaylistSyncStatus = AppError.noAppleMusicTeamCues.localizedDescription
+            return
+        }
+
+        isAppleMusicPlaylistSyncing = true
+        appleMusicPlaylistSyncStatus = "Updating \"\(summary.playlistName)\"..."
+        defer { isAppleMusicPlaylistSyncing = false }
+
+        do {
+            try await musicCatalogService.syncTeamPlaylist(name: summary.playlistName, songIDs: summary.songIDs)
+            var message = "Updated \"\(summary.playlistName)\" with \(summary.songIDs.count) \(summary.songIDs.count == 1 ? "song" : "songs")."
+            if summary.skippedCueCount > 0 {
+                message += " Skipped \(summary.skippedCueCount) non-Apple-Music \(summary.skippedCueCount == 1 ? "cue" : "cues")."
+            }
+            appleMusicPlaylistSyncStatus = message
+            haptics.success(isEnabled: state.settings.hapticsEnabled)
+        } catch {
+            appleMusicPlaylistSyncStatus = error.localizedDescription
+            haptics.warning(isEnabled: state.settings.hapticsEnabled)
+        }
+    }
+
     func exportSelectedTeam() async {
         await busy {
             guard let team = self.selectedTeam else { return }
@@ -975,6 +1013,34 @@ final class AppModel: ObservableObject {
 
     private func playbackID(for player: Player) -> UUID {
         player.cue?.id ?? player.id
+    }
+
+    private struct AppleMusicPlaylistSummary {
+        var playlistName: String
+        var songIDs: [String]
+        var skippedCueCount: Int
+    }
+
+    private func appleMusicPlaylistSummary(for team: Team) -> AppleMusicPlaylistSummary {
+        var seenSongIDs = Set<String>()
+        var songIDs: [String] = []
+        var skippedCueCount = 0
+
+        for player in team.players {
+            guard let cue = player.cue else { continue }
+            guard case .appleMusic(let source) = cue.source, source.isCatalogBacked != false else {
+                skippedCueCount += 1
+                continue
+            }
+            guard seenSongIDs.insert(source.songID).inserted else { continue }
+            songIDs.append(source.songID)
+        }
+
+        return AppleMusicPlaylistSummary(
+            playlistName: "Roll Call - \(team.name)",
+            songIDs: songIDs,
+            skippedCueCount: skippedCueCount
+        )
     }
 
     private var teamIndex: Int? {

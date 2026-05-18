@@ -4,7 +4,7 @@ Use this file as a concise project status snapshot for the current version, what
 
 ## Roll Call
 
-Current version: `0.5.2` (build `17`)
+Current version: `0.5.3` (build `18`)
 
 Status:
 - Active prototype with a buildable iPhone app target at [RollCall.xcodeproj](/Users/jkfisher/Documents/Coding/Roll%20Call/RollCall.xcodeproj).
@@ -42,6 +42,7 @@ What works now:
 - CSV roster import with preview before apply
 - Branded launch screen based on the Music Triage splash style
 - Developer Tools screen with experimental controls and support-bundle export
+- Developer Tools now includes an experimental Apple Music team playlist sync button that updates `Roll Call - <Team Name>` from the selected team's catalog-backed Apple Music cues
 
 Known limitations:
 - Waveforms and per-cue gain remain intentionally deferred.

@@ -2411,6 +2411,7 @@ private struct RecoveryCenterView: View {
 private struct DeveloperToolsView: View {
     @ObservedObject var appModel: AppModel
     @Binding var showExperimentalWarning: Bool
+    @State private var showTeamPlaylistWarning = false
 
     var body: some View {
         List {
@@ -2426,6 +2427,38 @@ private struct DeveloperToolsView: View {
                         showExperimentalWarning = true
                     }
                     Text("Developer only: attempts to turn preview media into normal local files. This may fail and may not be App Store appropriate.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
+
+                Button {
+                    if appModel.state.experimental.appleMusicTeamPlaylistAcknowledgedAt == nil {
+                        showTeamPlaylistWarning = true
+                    } else {
+                        Task { await appModel.syncSelectedTeamAppleMusicPlaylist() }
+                    }
+                } label: {
+                    if appModel.isAppleMusicPlaylistSyncing {
+                        Label("Updating Apple Music Team Playlist", systemImage: "music.note.list")
+                    } else {
+                        Label("Update Apple Music Team Playlist", systemImage: "music.note.list")
+                    }
+                }
+                .disabled(appModel.isAppleMusicPlaylistSyncing || appModel.selectedTeam == nil)
+
+                Text("Creates or replaces \"Roll Call - <Team Name>\" in Apple Music using this team's Apple Music song cues only.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+
+                if appModel.isAppleMusicPlaylistSyncing {
+                    HStack {
+                        ProgressView()
+                        Text("Updating Apple Music playlist...")
+                            .foregroundStyle(.secondary)
+                    }
+                    .font(.footnote)
+                } else if let status = appModel.appleMusicPlaylistSyncStatus {
+                    Text(status)
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                 }
@@ -2446,6 +2479,15 @@ private struct DeveloperToolsView: View {
             }
         }
         .navigationTitle("Developer Tools")
+        .alert("Experimental Apple Music Playlist Sync", isPresented: $showTeamPlaylistWarning) {
+            Button("Update Playlist") {
+                appModel.acknowledgeExperimentalTeamPlaylistSync()
+                Task { await appModel.syncSelectedTeamAppleMusicPlaylist() }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Roll Call will create or update the exact-name Apple Music playlist for the selected team and replace that playlist's songs with the team's current Apple Music cues.")
+        }
     }
 }
 
