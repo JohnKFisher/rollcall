@@ -33,25 +33,25 @@ struct RootView: View {
 
     var body: some View {
         TabView(selection: $selectedTab) {
-            playersTab
-                .tag(RootTab.players)
-                .tabItem { Label("Players", systemImage: "person.3.fill") }
+            gameDayTab
+                .tag(RootTab.gameDay)
+                .tabItem { Label("Game Day", systemImage: "play.rectangle.fill") }
 
             generalClipsTab
                 .tag(RootTab.generalClips)
                 .tabItem { Label("Clips", systemImage: "music.note.list") }
 
-            gameDayTab
-                .tag(RootTab.gameDay)
-                .tabItem { Label("Game Day", systemImage: "play.rectangle.fill") }
-
-            readinessTab
-                .tag(RootTab.readiness)
-                .tabItem { Label("Readiness", systemImage: "checklist") }
+            playersTab
+                .tag(RootTab.players)
+                .tabItem { Label("Players", systemImage: "person.3.fill") }
 
             teamsTab
                 .tag(RootTab.teams)
                 .tabItem { Label("Teams", systemImage: "list.number") }
+
+            readinessTab
+                .tag(RootTab.readiness)
+                .tabItem { Label("Readiness", systemImage: "checklist") }
 
             settingsTab
                 .tag(RootTab.settings)
