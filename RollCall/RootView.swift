@@ -2718,20 +2718,22 @@ private struct PlayerEditorSheet: View {
             .fileImporter(isPresented: $importPresented, allowedContentTypes: [.audio, .movie], allowsMultipleSelection: false) { result in
                 if case .success(let urls) = result, let url = urls.first {
                     let currentPlayer = player
+                    let previousCueID = currentPlayer.cue?.id
                     Task {
                         await appModel.importMedia(from: url, for: currentPlayer)
-                        await MainActor.run { refreshPlayerFromModel() }
+                        await MainActor.run { refreshPlayerFromModel(enableStartTrimForCueReplacing: previousCueID) }
                     }
                 }
             }
             .sheet(isPresented: $showAppleMusicPicker) {
                 AppleMusicPickerSheet(appModel: appModel) { result in
                     let currentPlayer = player
+                    let previousCueID = currentPlayer.cue?.id
                     Task {
                         let didAssign = await appModel.assignAppleMusic(result, to: currentPlayer)
                         guard didAssign else { return }
                         await MainActor.run {
-                            refreshPlayerFromModel()
+                            refreshPlayerFromModel(enableStartTrimForCueReplacing: previousCueID)
                             trimMode = .suggestedHook
                             applyTrimSuggestion(mode: .suggestedHook)
                             showAppleMusicPicker = false
@@ -2882,6 +2884,12 @@ private struct PlayerEditorSheet: View {
     private func refreshPlayerFromModel() {
         player = appModel.selectedTeam?.players.first(where: { $0.id == player.id }) ?? player
         isStartTrimEditingEnabled = false
+        normalizeTrimModeForCurrentCue()
+    }
+
+    private func refreshPlayerFromModel(enableStartTrimForCueReplacing previousCueID: UUID?) {
+        player = appModel.selectedTeam?.players.first(where: { $0.id == player.id }) ?? player
+        isStartTrimEditingEnabled = player.cue?.id != nil && player.cue?.id != previousCueID
         normalizeTrimModeForCurrentCue()
     }
 
