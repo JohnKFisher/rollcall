@@ -2881,26 +2881,49 @@ private struct PlayerEditorSheet: View {
         return ("Song cue set", nil, .ready, "checkmark.circle")
     }
 
+    @ViewBuilder
     private var setupSummaryView: some View {
         let summary = setupSummary
 
-        return HStack(alignment: .top, spacing: 10) {
-            PlayerEditorSectionIcon(systemImage: "checklist", role: .ready)
-            VStack(alignment: .leading, spacing: 7) {
-                Text("Setup Summary")
+        if summary.nextStep == nil {
+            HStack(alignment: .center, spacing: 10) {
+                Image(systemName: "checkmark.circle.fill")
+                    .font(.headline)
+                    .foregroundStyle(Color.rollCall(.ready))
+                    .accessibilityHidden(true)
+
+                Text("Ready")
                     .rollCallText(.cardTitle)
+
                 StatusChip(
                     text: summary.status,
                     role: summary.role,
                     systemImage: summary.systemImage,
                     emphasis: .subdued
                 )
-                if let nextStep = summary.nextStep {
-                    Text(nextStep)
-                        .rollCallText(.helperText)
-                }
+
+                Spacer(minLength: 0)
             }
-            Spacer(minLength: 0)
+            .accessibilityElement(children: .combine)
+        } else {
+            HStack(alignment: .top, spacing: 10) {
+                PlayerEditorSectionIcon(systemImage: "checklist", role: .ready)
+                VStack(alignment: .leading, spacing: 7) {
+                    Text("Setup Summary")
+                        .rollCallText(.cardTitle)
+                    StatusChip(
+                        text: summary.status,
+                        role: summary.role,
+                        systemImage: summary.systemImage,
+                        emphasis: .subdued
+                    )
+                    if let nextStep = summary.nextStep {
+                        Text(nextStep)
+                            .rollCallText(.helperText)
+                    }
+                }
+                Spacer(minLength: 0)
+            }
         }
     }
 
