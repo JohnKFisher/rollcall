@@ -2788,11 +2788,11 @@ private struct PlayerEditorSheet: View {
 
     private var setupSummary: (status: String, nextStep: String?) {
         if player.cue == nil {
-            return ("Song cue needed", "Choose Song to prepare this player for Game Day audio.")
+            return ("Song cue needed", "Next need: song cue")
         }
 
         if player.customAnnouncerRelativePath != nil && !appModel.hasStoredCustomAnnouncer(for: player) {
-            return ("Song cue set", "Announcement Cue file is missing; re-record or clear it below.")
+            return ("Song cue set", "Next need: valid Announcement Cue")
         }
 
         if appModel.hasStoredCustomAnnouncer(for: player) {
@@ -2810,7 +2810,7 @@ private struct PlayerEditorSheet: View {
                 .font(.headline)
             if let nextStep = summary.nextStep {
                 Text(nextStep)
-                    .font(.footnote)
+                    .font(.caption.weight(.semibold))
                     .foregroundStyle(.secondary)
             }
         }
