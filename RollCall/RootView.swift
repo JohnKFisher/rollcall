@@ -2539,13 +2539,16 @@ private struct PlayerEditorSheet: View {
             Form {
                 Section {
                     setupSummaryView
+                        .rollCallCard(.status)
                 }
+                .playerEditorListRow()
 
-                Section("Identity") {
+                Section {
                     let photoRelativePath = player.photoRelativePath
                     HStack(alignment: .top, spacing: 14) {
                         VStack(alignment: .leading, spacing: 10) {
                             TextField("Display Name", text: $player.displayName)
+                                .rollCallText(.body)
                                 .focused($focusedField, equals: .displayName)
                                 .submitLabel(.next)
                                 .onSubmit {
@@ -2555,6 +2558,7 @@ private struct PlayerEditorSheet: View {
                             Divider()
 
                             TextField("Uniform Number", text: $player.uniformNumber)
+                                .rollCallText(.body)
                                 .focused($focusedField, equals: .uniformNumber)
                                 .submitLabel(.done)
                         }
@@ -2564,115 +2568,188 @@ private struct PlayerEditorSheet: View {
                                 PlayerPhotoThumbnail(relativePath: photoRelativePath, size: 64, cornerRadius: 18)
                                 Text(photoRelativePath == nil ? "Add Photo" : "Change")
                                     .font(.caption.weight(.semibold))
-                                    .foregroundStyle(.orange)
+                                    .foregroundStyle(Color.rollCall(.accent))
                             }
                             .frame(width: 78)
                         }
                     }
+                    .rollCallCard(.identity)
+                } header: {
+                    PlayerEditorSectionHeader("Identity")
                 }
+                .playerEditorListRow()
 
-                Section("Song Cue") {
-                    if let cue = player.cue {
-                        VStack(alignment: .leading, spacing: 10) {
-                            Text("Selected Cue")
-                                .font(.headline)
-                            selectedCueSummary(for: cue)
-                            Button("Change Song") { showAppleMusicPicker = true }
-                                .buttonStyle(.bordered)
-                        }
-                        .padding(.vertical, 4)
-                    } else {
-                        Button {
-                            showAppleMusicPicker = true
-                        } label: {
-                            Label("Choose Song", systemImage: "music.note")
-                                .frame(maxWidth: .infinity)
-                        }
-                    }
+                Section {
+                    VStack(alignment: .leading, spacing: 12) {
+                        if let cue = player.cue {
+                            VStack(alignment: .leading, spacing: 12) {
+                                HStack(alignment: .top, spacing: 10) {
+                                    PlayerEditorSectionIcon(systemImage: "music.note", role: .accent)
+                                    VStack(alignment: .leading, spacing: 5) {
+                                        Text("Selected Cue")
+                                            .rollCallText(.cardTitle)
+                                        selectedCueSummary(for: cue)
+                                    }
+                                }
 
-                    DisclosureGroup("Other Audio Options") {
-                        Button("Import Audio or Video") { importPresented = true }
+                                Button {
+                                    showAppleMusicPicker = true
+                                } label: {
+                                    Label("Change Song", systemImage: "music.note.list")
+                                }
+                                .rollCallButtonStyle(.secondary)
+                            }
+                        } else {
+                            VStack(alignment: .leading, spacing: 10) {
+                                HStack(alignment: .top, spacing: 10) {
+                                    PlayerEditorSectionIcon(systemImage: "music.note", role: .accent)
+                                    VStack(alignment: .leading, spacing: 4) {
+                                        Text("No Song Cue")
+                                            .rollCallText(.cardTitle)
+                                        Text("Choose the song this player uses in Game Day.")
+                                            .rollCallText(.helperText)
+                                    }
+                                }
+
+                                Button {
+                                    showAppleMusicPicker = true
+                                } label: {
+                                    Label("Choose Song", systemImage: "music.note")
+                                        .frame(maxWidth: .infinity)
+                                }
+                                .rollCallButtonStyle(.primary)
+                            }
+                        }
+
+                        DisclosureGroup("Other Audio Options") {
+                            Button {
+                                importPresented = true
+                            } label: {
+                                Label("Import Audio or Video", systemImage: "square.and.arrow.down")
+                            }
+                            .rollCallButtonStyle(.secondary)
                             .padding(.top, 6)
-                        Text("Use a device-owned audio or video file when Apple Music is not the right source.")
-                            .font(.footnote)
-                            .foregroundStyle(.secondary)
-                            .padding(.top, 2)
-                    }
 
-                    if player.cue != nil {
-                        Button("Clear Song") {
-                            pendingClearAction = .song
+                            Text("Use a device-owned audio or video file when Apple Music is not the right source.")
+                                .rollCallText(.helperText)
+                                .padding(.top, 2)
                         }
-                        .foregroundStyle(.secondary)
+                        .font(.subheadline.weight(.semibold))
+
+                        if player.cue != nil {
+                            Button {
+                                pendingClearAction = .song
+                            } label: {
+                                Label("Clear Song", systemImage: "xmark.circle")
+                            }
+                            .rollCallButtonStyle(.quiet)
+                            .foregroundStyle(Color.rollCall(.destructive))
+                        }
                     }
+                    .rollCallCard(.utility)
+                } header: {
+                    PlayerEditorSectionHeader("Song Cue")
                 }
+                .playerEditorListRow()
 
                 if let cue = player.cue {
-                    Section("Fine Tune Clip") {
+                    Section {
                         cueTrimSection(for: cue)
+                            .rollCallCard(.utility)
+                    } header: {
+                        PlayerEditorSectionHeader("Fine Tune Clip")
                     }
+                    .playerEditorListRow()
                 }
 
-                Section("Announcement Cue") {
-                    Text("Optional. In Game Day, this recording can play by itself in Announcer Only or before the player’s song in Announcer+Song.")
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
+                Section {
+                    VStack(alignment: .leading, spacing: 12) {
+                        HStack(alignment: .top, spacing: 10) {
+                            PlayerEditorSectionIcon(systemImage: "mic.fill", role: .live)
+                            Text("Optional. In Game Day, this recording can play by itself in Announcer Only or before the player’s song in Announcer+Song.")
+                                .rollCallText(.helperText)
+                        }
 
-                    if isCustomIntroMissing {
-                        Label("Roll Call still has an Announcement Cue reference for this player, but the audio file is missing from app storage.", systemImage: "exclamationmark.triangle.fill")
-                            .font(.footnote)
-                            .foregroundStyle(.red)
-                    }
+                        if isCustomIntroMissing {
+                            Label("Roll Call still has an Announcement Cue reference for this player, but the audio file is missing from app storage.", systemImage: "exclamationmark.triangle.fill")
+                                .rollCallText(.helperText)
+                                .foregroundStyle(Color.rollCall(.destructive))
+                        }
 
-                    if appModel.isRecordingCustomAnnouncer(for: player) {
-                        Button("Stop Recording") {
-                            let currentPlayer = player
-                            Task {
-                                await appModel.stopRecordingCustomAnnouncer(for: currentPlayer)
-                                await MainActor.run { refreshPlayerFromModel() }
+                        if appModel.isRecordingCustomAnnouncer(for: player) {
+                            Button {
+                                let currentPlayer = player
+                                Task {
+                                    await appModel.stopRecordingCustomAnnouncer(for: currentPlayer)
+                                    await MainActor.run { refreshPlayerFromModel() }
+                                }
+                            } label: {
+                                Label("Stop Recording", systemImage: "stop.circle.fill")
                             }
-                        }
-                        .buttonStyle(.borderedProminent)
-                        .tint(.red)
-                    } else {
-                        Button(appModel.customAnnouncerButtonTitle(for: player)) {
-                            let currentPlayer = player
-                            Task {
-                                await appModel.startRecordingCustomAnnouncer(for: currentPlayer)
+                            .rollCallButtonStyle(.destructive)
+                        } else {
+                            Button {
+                                let currentPlayer = player
+                                Task {
+                                    await appModel.startRecordingCustomAnnouncer(for: currentPlayer)
+                                }
+                            } label: {
+                                Label(appModel.customAnnouncerButtonTitle(for: player), systemImage: "mic.fill")
                             }
+                            .rollCallButtonStyle(.secondary)
+                            .disabled(appModel.isCustomAnnouncerTransitioning(for: player))
                         }
-                        .disabled(appModel.isCustomAnnouncerTransitioning(for: player))
-                    }
 
-                    if hasStoredCustomIntro {
-                        Button("Preview Announcement Cue") {
-                            appModel.previewCustomAnnouncer(for: player)
+                        if hasStoredCustomIntro {
+                            Button {
+                                appModel.previewCustomAnnouncer(for: player)
+                            } label: {
+                                Label("Preview Announcement Cue", systemImage: "play.fill")
+                            }
+                            .rollCallButtonStyle(.secondary)
                         }
-                    }
 
-                    if player.customAnnouncerRelativePath != nil {
-                        Button("Clear Announcement Cue") {
-                            pendingClearAction = .customAnnouncer
+                        if player.customAnnouncerRelativePath != nil {
+                            Button {
+                                pendingClearAction = .customAnnouncer
+                            } label: {
+                                Label("Clear Announcement Cue", systemImage: "xmark.circle")
+                            }
+                            .rollCallButtonStyle(.quiet)
+                            .foregroundStyle(Color.rollCall(.destructive))
                         }
-                        .foregroundStyle(.secondary)
                     }
+                    .rollCallCard(.utility)
+                } header: {
+                    PlayerEditorSectionHeader("Announcement Cue")
                 }
+                .playerEditorListRow()
 
                 if let cue = player.cue,
                    appModel.state.experimental.appleMusicLocalCopyEnabled,
                    case .appleMusic = cue.source {
-                    Section("Experimental") {
-                        Button("Make Local Copy") {
+                    Section {
+                        Button {
                             appModel.updatePlayer(player)
                             let currentPlayer = player
                             Task {
                                 await appModel.makeLocalCopy(for: currentPlayer)
                                 await MainActor.run { refreshPlayerFromModel() }
                             }
+                        } label: {
+                            Label("Make Local Copy", systemImage: "doc.on.doc")
                         }
+                        .rollCallButtonStyle(.secondary)
+                        .rollCallCard(.utility)
+                    } header: {
+                        PlayerEditorSectionHeader("Experimental")
                     }
+                    .playerEditorListRow()
                 }
             }
+            .listStyle(.insetGrouped)
+            .scrollContentBackground(.hidden)
+            .background(Color(uiColor: .systemGroupedBackground))
             .navigationTitle(player.displayName.isEmpty ? "Player" : player.displayName)
             .scrollDismissesKeyboard(.interactively)
             .dismissesKeyboardOnTap()
@@ -2788,61 +2865,73 @@ private struct PlayerEditorSheet: View {
         return appModel.cueDurationLimit(for: cue)
     }
 
-    private var setupSummary: (status: String, nextStep: String?) {
+    private var setupSummary: (status: String, nextStep: String?, role: StatusChipRole, systemImage: String) {
         if player.cue == nil {
-            return ("Song cue needed", "Next need: song cue")
+            return ("Song cue needed", "Next need: song cue", .warning, "music.note")
         }
 
         if player.customAnnouncerRelativePath != nil && !appModel.hasStoredCustomAnnouncer(for: player) {
-            return ("Song cue set", "Next need: valid Announcement Cue")
+            return ("Song cue set", "Next need: valid Announcement Cue", .warning, "exclamationmark.triangle")
         }
 
         if appModel.hasStoredCustomAnnouncer(for: player) {
-            return ("Song and Announcement Cue set", nil)
+            return ("Song and Announcement Cue set", nil, .ready, "checkmark.circle")
         }
 
-        return ("Song cue set", nil)
+        return ("Song cue set", nil, .ready, "checkmark.circle")
     }
 
     private var setupSummaryView: some View {
         let summary = setupSummary
 
-        return VStack(alignment: .leading, spacing: 6) {
-            Text(summary.status)
-                .font(.headline)
-            if let nextStep = summary.nextStep {
-                Text(nextStep)
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.secondary)
+        return HStack(alignment: .top, spacing: 10) {
+            PlayerEditorSectionIcon(systemImage: "checklist", role: .ready)
+            VStack(alignment: .leading, spacing: 7) {
+                Text("Setup Summary")
+                    .rollCallText(.cardTitle)
+                StatusChip(
+                    text: summary.status,
+                    role: summary.role,
+                    systemImage: summary.systemImage,
+                    emphasis: .subdued
+                )
+                if let nextStep = summary.nextStep {
+                    Text(nextStep)
+                        .rollCallText(.helperText)
+                }
             }
+            Spacer(minLength: 0)
         }
-        .padding(.vertical, 2)
     }
 
     @ViewBuilder
     private func selectedCueSummary(for cue: Cue) -> some View {
-        switch cue.source {
-        case .appleMusic(let source):
-            VStack(alignment: .leading, spacing: 3) {
+        VStack(alignment: .leading, spacing: 6) {
+            switch cue.source {
+            case .appleMusic(let source):
                 Text(source.title)
+                    .rollCallText(.body)
                 Text(source.artistName)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-        case .localAudio(let source):
-            VStack(alignment: .leading, spacing: 3) {
+                    .rollCallText(.helperText)
+            case .localAudio(let source):
                 Text(source.displayName.songTitleWithoutArtistPrefix)
-                Text("Imported audio")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-        case .builtInClip(let source):
-            VStack(alignment: .leading, spacing: 3) {
+                    .rollCallText(.body)
+            case .builtInClip(let source):
                 Text(source.displayName)
-                Text("Built-in clip")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .rollCallText(.body)
             }
+            cueSourceChip(for: cue)
+        }
+    }
+
+    private func cueSourceChip(for cue: Cue) -> StatusChip {
+        switch cue.source {
+        case .appleMusic:
+            return StatusChip(text: "Apple Music", role: .neutral, systemImage: "music.note", emphasis: .subdued)
+        case .localAudio:
+            return StatusChip(text: "Imported audio", role: .neutral, systemImage: "folder", emphasis: .subdued)
+        case .builtInClip:
+            return StatusChip(text: "Built-in clip", role: .neutral, systemImage: "speaker.wave.2", emphasis: .subdued)
         }
     }
 
@@ -2910,19 +2999,17 @@ private struct PlayerEditorSheet: View {
 
     @ViewBuilder
     private func cueTrimSection(for cue: Cue) -> some View {
-        VStack(alignment: .leading, spacing: 14) {
+        VStack(alignment: .leading, spacing: 12) {
             if let trimHelpText = appModel.appleMusicTrimHelpText(for: cue) {
                 Text(trimHelpText)
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-                HStack(spacing: 10) {
+                    .rollCallText(.helperText)
+                HStack(spacing: 8) {
                     ForEach(TrimSuggestionMode.allCases) { mode in
                         Button(mode.title) {
                             trimMode = mode
                             applyTrimSuggestion(mode: mode)
                         }
-                        .buttonStyle(.borderedProminent)
-                        .tint(trimMode == mode ? .orange : .gray.opacity(0.4))
+                        .buttonStyle(PlayerEditorChipButtonStyle(isSelected: trimMode == mode))
                     }
                 }
             }
@@ -2934,21 +3021,20 @@ private struct PlayerEditorSheet: View {
                 Label("Preview Clip", systemImage: "play.fill")
                     .font(.headline)
                     .frame(maxWidth: .infinity)
-                    .padding(.vertical, 8)
             }
-            .buttonStyle(.borderedProminent)
+            .rollCallButtonStyle(.primary)
 
             VStack(alignment: .leading, spacing: 8) {
                 HStack {
                     Text("Start")
-                        .font(.headline)
+                        .rollCallText(.cardTitle)
                     Spacer()
                     Button(isStartTrimEditingEnabled ? "Done" : "Enable") {
                         isStartTrimEditingEnabled.toggle()
                     }
-                    .buttonStyle(.bordered)
+                    .rollCallButtonStyle(.quiet)
                     Text(secondsText(cue.startTime))
-                        .monospacedDigit()
+                        .font(.subheadline.monospacedDigit().weight(.semibold))
                         .foregroundStyle(.secondary)
                 }
                 StartScrubControl(
@@ -2979,10 +3065,10 @@ private struct PlayerEditorSheet: View {
             VStack(alignment: .leading, spacing: 8) {
                 HStack {
                     Text("Length")
-                        .font(.headline)
+                        .rollCallText(.cardTitle)
                     Spacer()
                     Text(secondsText(cue.duration))
-                        .monospacedDigit()
+                        .font(.subheadline.monospacedDigit().weight(.semibold))
                         .foregroundStyle(.secondary)
                 }
                 FlowChipRow(options: lengthOptions, selected: cue.duration) { option in
@@ -2991,12 +3077,13 @@ private struct PlayerEditorSheet: View {
                 }
             }
 
-            Button("Advanced") {
+            Button {
                 showAdvancedTrim = true
+            } label: {
+                Label("Advanced", systemImage: "slider.horizontal.3")
             }
-            .buttonStyle(.bordered)
+            .rollCallButtonStyle(.secondary)
         }
-        .padding(.vertical, 4)
     }
 
     private func normalizeTrimModeForCurrentCue() {
@@ -3038,6 +3125,68 @@ private struct PlayerEditorSheet: View {
             guard !Task.isCancelled else { return }
             await appModel.previewCue(cue)
         }
+    }
+}
+
+private struct PlayerEditorSectionHeader: View {
+    let title: String
+
+    init(_ title: String) {
+        self.title = title
+    }
+
+    var body: some View {
+        Text(title)
+            .rollCallText(.chipLabel)
+            .textCase(.uppercase)
+            .foregroundStyle(Color(uiColor: .secondaryLabel))
+    }
+}
+
+private struct PlayerEditorSectionIcon: View {
+    let systemImage: String
+    let role: RollCallColorRole
+
+    var body: some View {
+        Image(systemName: systemImage)
+            .font(.system(size: 15, weight: .semibold))
+            .foregroundStyle(Color.rollCall(role))
+            .frame(width: 30, height: 30)
+            .background(Color.rollCall(role).opacity(0.12))
+            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .accessibilityHidden(true)
+    }
+}
+
+private struct PlayerEditorChipButtonStyle: ButtonStyle {
+    let isSelected: Bool
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(.caption.weight(.semibold))
+            .foregroundStyle(isSelected ? .white : Color(uiColor: .label))
+            .padding(.horizontal, 10)
+            .padding(.vertical, 7)
+            .background(background(isPressed: configuration.isPressed))
+            .overlay(
+                Capsule(style: .continuous)
+                    .strokeBorder(Color.rollCall(.accent).opacity(isSelected ? 0 : 0.35), lineWidth: 1)
+            )
+            .clipShape(Capsule(style: .continuous))
+            .scaleEffect(configuration.isPressed ? 0.98 : 1)
+    }
+
+    private func background(isPressed: Bool) -> Color {
+        let base = isSelected ? Color.rollCall(.accent) : Color.rollCall(.neutralSurface)
+        return isPressed ? base.opacity(0.78) : base
+    }
+}
+
+private extension View {
+    func playerEditorListRow() -> some View {
+        listRowInsets(EdgeInsets(top: 5, leading: 16, bottom: 7, trailing: 16))
+            .listRowBackground(Color.clear)
+            .listRowSeparator(.hidden)
     }
 }
 
@@ -3497,7 +3646,7 @@ private struct StartScrubControl: View {
                     .fill(Color.secondary.opacity(0.18))
                     .frame(height: 18)
                 RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .fill(Color.orange.opacity(0.8))
+                    .fill(Color.rollCall(.accent).opacity(0.82))
                     .frame(width: max(14, width * progress), height: 18)
                 if isDragging {
                     Text(currentValueText)
@@ -3509,7 +3658,7 @@ private struct StartScrubControl: View {
                         .offset(x: max(0, min(width - 72, width * progress - 36)), y: -30)
                 }
                 Circle()
-                    .fill(Color.orange)
+                    .fill(Color.rollCall(.accent))
                     .frame(width: 28, height: 28)
                     .offset(x: thumbOffset)
                     .shadow(radius: 2)
@@ -3552,8 +3701,7 @@ private struct FlowChipRow: View {
                 Button("\(Int(option))s") {
                     onSelect(option)
                 }
-                .buttonStyle(.borderedProminent)
-                .tint(abs(selected - option) < 0.01 ? .orange : .gray.opacity(0.35))
+                .buttonStyle(PlayerEditorChipButtonStyle(isSelected: abs(selected - option) < 0.01))
             }
         }
     }
