@@ -2511,7 +2511,6 @@ private struct PlayerEditorSheet: View {
     private enum Field: Hashable {
         case displayName
         case uniformNumber
-        case pronunciation
     }
 
     @Environment(\.dismiss) private var dismiss
@@ -2538,46 +2537,46 @@ private struct PlayerEditorSheet: View {
 
         NavigationStack {
             Form {
-                Section("Player") {
-                    let photoRelativePath = player.photoRelativePath
-                    PhotosPicker(selection: $photoItem, matching: .images) {
-                        VStack(spacing: 10) {
-                            PlayerPhotoThumbnail(relativePath: photoRelativePath, size: 110, cornerRadius: 28)
-                            Text(photoRelativePath == nil ? "Tap to Choose Photo" : "Tap to Replace Photo")
-                                .font(.footnote.weight(.semibold))
-                                .foregroundStyle(.orange)
-                        }
-                        .frame(maxWidth: .infinity)
-                    }
-                    .listRowBackground(Color.clear)
-                    TextField("Display Name", text: $player.displayName)
-                        .focused($focusedField, equals: .displayName)
-                        .submitLabel(.next)
-                        .onSubmit {
-                            focusedField = .uniformNumber
-                        }
-                    TextField("Uniform Number", text: $player.uniformNumber)
-                        .focused($focusedField, equals: .uniformNumber)
-                        .submitLabel(.next)
-                        .onSubmit {
-                            focusedField = .pronunciation
-                        }
-                    TextField("Pronunciation Override", text: $player.pronunciationOverride)
-                        .focused($focusedField, equals: .pronunciation)
-                    Toggle("Present Today", isOn: $player.isPresent)
+                Section {
+                    setupSummaryView
                 }
 
-                Section("Cue Source") {
-                    if case .appleMusic(let source)? = player.cue?.source {
+                Section("Identity") {
+                    let photoRelativePath = player.photoRelativePath
+                    HStack(alignment: .top, spacing: 14) {
                         VStack(alignment: .leading, spacing: 10) {
-                            Text("Selected Song")
-                                .font(.headline)
-                            VStack(alignment: .leading, spacing: 3) {
-                                Text(source.title)
-                                Text(source.artistName)
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
+                            TextField("Display Name", text: $player.displayName)
+                                .focused($focusedField, equals: .displayName)
+                                .submitLabel(.next)
+                                .onSubmit {
+                                    focusedField = .uniformNumber
+                                }
+
+                            Divider()
+
+                            TextField("Uniform Number", text: $player.uniformNumber)
+                                .focused($focusedField, equals: .uniformNumber)
+                                .submitLabel(.done)
+                        }
+
+                        PhotosPicker(selection: $photoItem, matching: .images) {
+                            VStack(spacing: 6) {
+                                PlayerPhotoThumbnail(relativePath: photoRelativePath, size: 64, cornerRadius: 18)
+                                Text(photoRelativePath == nil ? "Add Photo" : "Change")
+                                    .font(.caption.weight(.semibold))
+                                    .foregroundStyle(.orange)
                             }
+                            .frame(width: 78)
+                        }
+                    }
+                }
+
+                Section("Song Cue") {
+                    if let cue = player.cue {
+                        VStack(alignment: .leading, spacing: 10) {
+                            Text("Selected Cue")
+                                .font(.headline)
+                            selectedCueSummary(for: cue)
                             Button("Change Song") { showAppleMusicPicker = true }
                                 .buttonStyle(.bordered)
                         }
@@ -2589,6 +2588,28 @@ private struct PlayerEditorSheet: View {
                             Label("Choose Song", systemImage: "music.note")
                                 .frame(maxWidth: .infinity)
                         }
+                    }
+
+                    DisclosureGroup("Other Audio Options") {
+                        Button("Import Audio or Video") { importPresented = true }
+                            .padding(.top, 6)
+                        Text("Use a device-owned audio or video file when Apple Music is not the right source.")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                            .padding(.top, 2)
+                    }
+
+                    if player.cue != nil {
+                        Button("Clear Song") {
+                            pendingClearAction = .song
+                        }
+                        .foregroundStyle(.secondary)
+                    }
+                }
+
+                if let cue = player.cue {
+                    Section("Fine Tune Clip") {
+                        cueTrimSection(for: cue)
                     }
                 }
 
@@ -2628,48 +2649,28 @@ private struct PlayerEditorSheet: View {
                             appModel.previewCustomAnnouncer(for: player)
                         }
                     }
-                }
 
-                Section("More Audio Options") {
-                    DisclosureGroup("Import from Device") {
-                        Button("Import Audio or Video") { importPresented = true }
-                            .padding(.top, 6)
-                        Text("Fallback path for device-owned audio when Apple Music is not the right source for this cue.")
-                            .font(.footnote)
-                            .foregroundStyle(.secondary)
-                            .padding(.top, 2)
+                    if player.customAnnouncerRelativePath != nil {
+                        Button("Clear Announcement Cue") {
+                            pendingClearAction = .customAnnouncer
+                        }
+                        .foregroundStyle(.secondary)
                     }
                 }
 
-                if let cue = player.cue {
-                    Section("Clip Trim") {
-                        cueTrimSection(for: cue)
-                    }
-
-                    if appModel.state.experimental.appleMusicLocalCopyEnabled, case .appleMusic = cue.source {
-                        Section("Experimental") {
-                            Button("Make Local Copy") {
-                                appModel.updatePlayer(player)
-                                let currentPlayer = player
-                                Task {
-                                    await appModel.makeLocalCopy(for: currentPlayer)
-                                    await MainActor.run { refreshPlayerFromModel() }
-                                }
+                if let cue = player.cue,
+                   appModel.state.experimental.appleMusicLocalCopyEnabled,
+                   case .appleMusic = cue.source {
+                    Section("Experimental") {
+                        Button("Make Local Copy") {
+                            appModel.updatePlayer(player)
+                            let currentPlayer = player
+                            Task {
+                                await appModel.makeLocalCopy(for: currentPlayer)
+                                await MainActor.run { refreshPlayerFromModel() }
                             }
                         }
                     }
-                }
-
-                Section("Clear Audio") {
-                    Button("Clear Song") {
-                        pendingClearAction = .song
-                    }
-                    .disabled(player.cue == nil)
-
-                    Button("Clear Custom Announcer") {
-                        pendingClearAction = .customAnnouncer
-                    }
-                    .disabled(player.customAnnouncerRelativePath == nil)
                 }
             }
             .navigationTitle(player.displayName.isEmpty ? "Player" : player.displayName)
@@ -2783,6 +2784,64 @@ private struct PlayerEditorSheet: View {
     private var cueDurationLimit: Double {
         guard let cue = player.cue else { return 30 }
         return appModel.cueDurationLimit(for: cue)
+    }
+
+    private var setupSummary: (status: String, nextStep: String?) {
+        if player.cue == nil {
+            return ("Song cue needed", "Choose Song to prepare this player for Game Day audio.")
+        }
+
+        if player.customAnnouncerRelativePath != nil && !appModel.hasStoredCustomAnnouncer(for: player) {
+            return ("Song cue set", "Announcement Cue file is missing; re-record or clear it below.")
+        }
+
+        if appModel.hasStoredCustomAnnouncer(for: player) {
+            return ("Song and Announcement Cue set", nil)
+        }
+
+        return ("Song cue set", nil)
+    }
+
+    private var setupSummaryView: some View {
+        let summary = setupSummary
+
+        return VStack(alignment: .leading, spacing: 6) {
+            Text(summary.status)
+                .font(.headline)
+            if let nextStep = summary.nextStep {
+                Text(nextStep)
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .padding(.vertical, 2)
+    }
+
+    @ViewBuilder
+    private func selectedCueSummary(for cue: Cue) -> some View {
+        switch cue.source {
+        case .appleMusic(let source):
+            VStack(alignment: .leading, spacing: 3) {
+                Text(source.title)
+                Text(source.artistName)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        case .localAudio(let source):
+            VStack(alignment: .leading, spacing: 3) {
+                Text(source.displayName.songTitleWithoutArtistPrefix)
+                Text("Imported audio")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        case .builtInClip(let source):
+            VStack(alignment: .leading, spacing: 3) {
+                Text(source.displayName)
+                Text("Built-in clip")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
     }
 
     private func importPhoto() async {
@@ -3170,7 +3229,7 @@ private extension PlayerEditorSheet {
             case .song:
                 return "Clear Song"
             case .customAnnouncer:
-                return "Clear Custom Announcer"
+                return "Clear Announcement Cue"
             }
         }
 
