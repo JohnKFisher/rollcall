@@ -1,8 +1,14 @@
 # Roll Call Attributions
 
-This file tracks bundled third-party audio assets that ship with Roll Call.
+This file tracks bundled third-party audio assets and software libraries that ship with Roll Call.
 
-## License Summary
+## Software Libraries
+
+| Name | Version | Source | License | Attribution Requirement |
+| --- | --- | --- | --- | --- |
+| ZIPFoundation | 0.9.20 | https://github.com/weichsel/ZIPFoundation | MIT License | Include copyright/license acknowledgment for Thomas Zoechling and contributors |
+
+## Audio License Summary
 
 - Provider: Mixkit
 - License page: https://mixkit.co/license/

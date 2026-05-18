@@ -694,6 +694,17 @@ struct RootView: View {
                                 )
                             }
                             .buttonStyle(.plain)
+
+                            NavigationLink {
+                                AttributionsView()
+                            } label: {
+                                SettingsNavigationLabel(
+                                    title: "Attributions & Licenses",
+                                    detail: "Credits for bundled clips and third-party software.",
+                                    systemImage: "doc.text.fill"
+                                )
+                            }
+                            .buttonStyle(.plain)
                         }
                     }
 
@@ -1256,6 +1267,101 @@ private struct SettingsSectionGroup<Content: View>: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
         }
+    }
+}
+
+private struct AttributionsView: View {
+    private let generalClips = [
+        "Small Cheer",
+        "Victory Roar",
+        "Stadium Burst",
+        "Rhythmic Clap",
+        "Whistle Pop",
+        "Crowd Laugh"
+    ]
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: RollCallSpacingTier.large.value) {
+                SettingsSectionGroup(title: "Roll Call") {
+                    VStack(alignment: .leading, spacing: RollCallSpacingTier.standard.value) {
+                        Text("Copyright 2026 John Kenneth Fisher")
+                            .rollCallText(.body)
+
+                        Link(destination: URL(string: "https://github.com/JohnKFisher/roll-call")!) {
+                            SettingsRowLabel(
+                                title: "Public GitHub Project",
+                                detail: "github.com/JohnKFisher/roll-call",
+                                systemImage: "link"
+                            )
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+
+                SettingsSectionGroup(
+                    title: "Bundled General Clips",
+                    helperText: "Roll Call includes crowd and applause sound effects from Mixkit."
+                ) {
+                    VStack(alignment: .leading, spacing: RollCallSpacingTier.standard.value) {
+                        SettingsRowLabel(
+                            title: "Mixkit Sound Effects",
+                            detail: "Licensed under the Mixkit Sound Effects Free License. The reviewed Mixkit pages say attribution is not required, but Roll Call credits Mixkit here.",
+                            systemImage: "waveform"
+                        )
+
+                        Text(generalClips.joined(separator: ", "))
+                            .rollCallText(.helperText)
+
+                        Link(destination: URL(string: "https://mixkit.co/free-sound-effects/")!) {
+                            SettingsRowLabel(
+                                title: "Mixkit Sound Effects Catalog",
+                                detail: "Source catalog for the bundled clip set.",
+                                systemImage: "link"
+                            )
+                        }
+                        .buttonStyle(.plain)
+
+                        Link(destination: URL(string: "https://mixkit.co/license/")!) {
+                            SettingsRowLabel(
+                                title: "Mixkit License",
+                                detail: "License terms for Mixkit sound effects.",
+                                systemImage: "doc.text.fill"
+                            )
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+
+                SettingsSectionGroup(
+                    title: "Third-Party Software",
+                    helperText: "Roll Call uses ZIPFoundation to read and write .rollcall packages."
+                ) {
+                    VStack(alignment: .leading, spacing: RollCallSpacingTier.standard.value) {
+                        SettingsRowLabel(
+                            title: "ZIPFoundation 0.9.20",
+                            detail: "MIT License. Copyright Thomas Zoechling and contributors.",
+                            systemImage: "shippingbox.fill"
+                        )
+
+                        Link(destination: URL(string: "https://github.com/weichsel/ZIPFoundation")!) {
+                            SettingsRowLabel(
+                                title: "ZIPFoundation Project",
+                                detail: "github.com/weichsel/ZIPFoundation",
+                                systemImage: "link"
+                            )
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+            }
+            .padding(.horizontal, 16)
+            .padding(.top, RollCallSpacingTier.tight.value)
+            .padding(.bottom, RollCallSpacingTier.large.value)
+        }
+        .background(Color(uiColor: .systemGroupedBackground))
+        .navigationTitle("Attributions")
+        .navigationBarTitleDisplayMode(.inline)
     }
 }
 
