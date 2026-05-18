@@ -15,7 +15,6 @@
 		A10000000000000000000006 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000106 /* Assets.xcassets */; };
 		A10000000000000000000007 /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000108 /* LaunchScreen.storyboard */; };
 		A10000000000000000000008 /* BuiltInAudio in Resources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000109 /* BuiltInAudio */; };
-		A10000000000000000000009 /* AppIcon.icon in Resources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000110 /* AppIcon.icon */; };
 		A20000000000000000000001 /* ZIPFoundation in Frameworks */ = {isa = PBXBuildFile; productRef = A20000000000000000000002 /* ZIPFoundation */; };
 		A30000000000000000000001 /* RollCallDesignSystem.swift in Sources */ = {isa = PBXBuildFile; fileRef = A30000000000000000000101 /* RollCallDesignSystem.swift */; };
 		A30000000000000000000002 /* RollCallColors.swift in Sources */ = {isa = PBXBuildFile; fileRef = A30000000000000000000102 /* RollCallColors.swift */; };
@@ -37,7 +36,6 @@
 		A10000000000000000000107 /* RollCall.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = RollCall.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		A10000000000000000000108 /* LaunchScreen.storyboard */ = {isa = PBXFileReference; lastKnownFileType = file.storyboard; path = LaunchScreen.storyboard; sourceTree = "<group>"; };
 		A10000000000000000000109 /* BuiltInAudio */ = {isa = PBXFileReference; lastKnownFileType = folder; path = BuiltInAudio; sourceTree = "<group>"; };
-		A10000000000000000000110 /* AppIcon.icon */ = {isa = PBXFileReference; lastKnownFileType = folder.iconcomposer.icon; path = AppIcon.icon; sourceTree = "<group>"; };
 		A30000000000000000000101 /* RollCallDesignSystem.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RollCallDesignSystem.swift; sourceTree = "<group>"; };
 		A30000000000000000000102 /* RollCallColors.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RollCallColors.swift; sourceTree = "<group>"; };
 		A30000000000000000000103 /* RollCallTypography.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RollCallTypography.swift; sourceTree = "<group>"; };
@@ -78,7 +76,6 @@
 				A10000000000000000000105 /* RootView.swift */,
 				A30000000000000000000142 /* DesignSystem */,
 				A10000000000000000000106 /* Assets.xcassets */,
-				A10000000000000000000110 /* AppIcon.icon */,
 				A10000000000000000000108 /* LaunchScreen.storyboard */,
 				A10000000000000000000109 /* BuiltInAudio */,
 			);
@@ -173,7 +170,6 @@
 			buildActionMask = 2147483647;
 			files = (
 				A10000000000000000000006 /* Assets.xcassets in Resources */,
-				A10000000000000000000009 /* AppIcon.icon in Resources */,
 				A10000000000000000000007 /* LaunchScreen.storyboard in Resources */,
 				A10000000000000000000008 /* BuiltInAudio in Resources */,
 			);
