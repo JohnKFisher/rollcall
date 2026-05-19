@@ -273,7 +273,12 @@ final class AppModel: ObservableObject {
     let playbackEngine: CuePlaybackEngine
     let customAnnouncerRecorder = CustomAnnouncerRecorder()
 
+    var featureFlags: FeatureFlags {
+        FeatureFlags(environment: .current, experimental: state.experimental)
+    }
+
     init() {
+        FeatureFlags.assertReleaseSafety()
         self.playbackEngine = CuePlaybackEngine(audioAssetService: audioAssetService, musicCatalogService: musicCatalogService)
         self.readinessService = ReadinessService(audioAssetService: audioAssetService)
         self.state = (try? Self.load()) ?? {
@@ -286,6 +291,7 @@ final class AppModel: ObservableObject {
         }()
         self.state.appVersion = AppMetadata.appVersion
         self.state.schemaVersion = max(self.state.schemaVersion, AppState.empty.schemaVersion)
+        FeatureFlags.assertReleaseSafety(featureFlags)
         normalizeSelectedTeamIfNeeded()
         normalizeAllTeams()
         persist()
@@ -588,7 +594,7 @@ final class AppModel: ObservableObject {
 
     func makeLocalCopy(for player: Player) async {
         await busy {
-            guard self.state.experimental.appleMusicLocalCopyEnabled else { throw AppError.featureDisabled }
+            guard self.featureFlags.appleMusicLocalCopyEnabled else { throw AppError.featureDisabled }
             guard let cue = player.cue, case .appleMusic(let source) = cue.source, let previewURL = source.previewURL else { throw AppError.missingPreview }
             let local = try await self.audioAssetService.importRemotePreview(from: previewURL, displayName: "\(source.artistName) - \(source.title)", hiddenOrigin: HiddenOriginNote(importedAt: .now, originSummary: "appleMusicPreview:\(source.songID)"))
             var updated = player
@@ -768,6 +774,29 @@ final class AppModel: ObservableObject {
         persist()
     }
 
+    func setShowExperimentalFeatures(_ isEnabled: Bool) {
+        state.experimental.showExperimentalFeatures = isEnabled
+        persist()
+    }
+
+    func setUnlockPremiumForTesting(_ isEnabled: Bool) {
+        state.experimental.unlockPremiumForTesting = isEnabled
+        persist()
+    }
+
+    func setAppleMusicLocalCopyEnabled(_ isEnabled: Bool) {
+        state.experimental.appleMusicLocalCopyEnabled = isEnabled
+        if isEnabled, state.experimental.acknowledgedAt == nil {
+            state.experimental.acknowledgedAt = .now
+        }
+        persist()
+    }
+
+    func setAppleMusicTeamPlaylistSyncEnabled(_ isEnabled: Bool) {
+        state.experimental.appleMusicTeamPlaylistSyncEnabled = isEnabled
+        persist()
+    }
+
     func acknowledgeExperimentalTeamPlaylistSync() {
         state.experimental.appleMusicTeamPlaylistAcknowledgedAt = .now
         persist()
@@ -775,6 +804,10 @@ final class AppModel: ObservableObject {
 
     func syncSelectedTeamAppleMusicPlaylist() async {
         guard !isAppleMusicPlaylistSyncing else { return }
+        guard featureFlags.appleMusicTeamPlaylistSyncEnabled else {
+            appleMusicPlaylistSyncStatus = AppError.featureDisabled.localizedDescription
+            return
+        }
         guard let team = selectedTeam else {
             appleMusicPlaylistSyncStatus = AppError.noSelectedTeam.localizedDescription
             return

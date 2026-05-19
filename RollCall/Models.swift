@@ -514,9 +514,56 @@ struct SnapshotRecord: Codable, Equatable, Identifiable {
 }
 
 struct ExperimentalSettings: Codable, Equatable {
+    var showExperimentalFeatures: Bool
+    var unlockPremiumForTesting: Bool
     var appleMusicLocalCopyEnabled: Bool
+    var appleMusicTeamPlaylistSyncEnabled: Bool
     var acknowledgedAt: Date?
     var appleMusicTeamPlaylistAcknowledgedAt: Date?
+
+    static let `default` = ExperimentalSettings(
+        showExperimentalFeatures: false,
+        unlockPremiumForTesting: false,
+        appleMusicLocalCopyEnabled: false,
+        appleMusicTeamPlaylistSyncEnabled: false,
+        acknowledgedAt: nil,
+        appleMusicTeamPlaylistAcknowledgedAt: nil
+    )
+
+    enum CodingKeys: String, CodingKey {
+        case showExperimentalFeatures
+        case unlockPremiumForTesting
+        case appleMusicLocalCopyEnabled
+        case appleMusicTeamPlaylistSyncEnabled
+        case acknowledgedAt
+        case appleMusicTeamPlaylistAcknowledgedAt
+    }
+
+    init(
+        showExperimentalFeatures: Bool,
+        unlockPremiumForTesting: Bool,
+        appleMusicLocalCopyEnabled: Bool,
+        appleMusicTeamPlaylistSyncEnabled: Bool,
+        acknowledgedAt: Date?,
+        appleMusicTeamPlaylistAcknowledgedAt: Date?
+    ) {
+        self.showExperimentalFeatures = showExperimentalFeatures
+        self.unlockPremiumForTesting = unlockPremiumForTesting
+        self.appleMusicLocalCopyEnabled = appleMusicLocalCopyEnabled
+        self.appleMusicTeamPlaylistSyncEnabled = appleMusicTeamPlaylistSyncEnabled
+        self.acknowledgedAt = acknowledgedAt
+        self.appleMusicTeamPlaylistAcknowledgedAt = appleMusicTeamPlaylistAcknowledgedAt
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        showExperimentalFeatures = try container.decodeIfPresent(Bool.self, forKey: .showExperimentalFeatures) ?? false
+        unlockPremiumForTesting = try container.decodeIfPresent(Bool.self, forKey: .unlockPremiumForTesting) ?? false
+        appleMusicLocalCopyEnabled = try container.decodeIfPresent(Bool.self, forKey: .appleMusicLocalCopyEnabled) ?? false
+        appleMusicTeamPlaylistSyncEnabled = try container.decodeIfPresent(Bool.self, forKey: .appleMusicTeamPlaylistSyncEnabled) ?? false
+        acknowledgedAt = try container.decodeIfPresent(Date.self, forKey: .acknowledgedAt)
+        appleMusicTeamPlaylistAcknowledgedAt = try container.decodeIfPresent(Date.self, forKey: .appleMusicTeamPlaylistAcknowledgedAt)
+    }
 }
 
 struct TrimDefaults: Codable, Equatable {
@@ -590,7 +637,7 @@ struct AppState: Codable, Equatable {
         selectedTeamID = try container.decodeIfPresent(UUID.self, forKey: .selectedTeamID)
         teams = try container.decodeIfPresent([Team].self, forKey: .teams) ?? []
         snapshots = try container.decodeIfPresent([SnapshotRecord].self, forKey: .snapshots) ?? []
-        experimental = try container.decodeIfPresent(ExperimentalSettings.self, forKey: .experimental) ?? ExperimentalSettings(appleMusicLocalCopyEnabled: false, acknowledgedAt: nil, appleMusicTeamPlaylistAcknowledgedAt: nil)
+        experimental = try container.decodeIfPresent(ExperimentalSettings.self, forKey: .experimental) ?? .default
         settings = try container.decodeIfPresent(AppSettings.self, forKey: .settings) ?? .default
         lastReadiness = try container.decodeIfPresent(ReadinessStatus.self, forKey: .lastReadiness)
         recentAppleMusicSelections = try container.decodeIfPresent([RecentAppleMusicSelection].self, forKey: .recentAppleMusicSelections) ?? []
@@ -604,7 +651,7 @@ struct AppState: Codable, Equatable {
         selectedTeamID: nil,
         teams: [],
         snapshots: [],
-        experimental: ExperimentalSettings(appleMusicLocalCopyEnabled: false, acknowledgedAt: nil, appleMusicTeamPlaylistAcknowledgedAt: nil),
+        experimental: .default,
         settings: .default,
         lastReadiness: nil,
         recentAppleMusicSelections: [],

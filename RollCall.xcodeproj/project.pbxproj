@@ -12,6 +12,7 @@
 		A10000000000000000000003 /* Services.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000103 /* Services.swift */; };
 		A10000000000000000000004 /* AppModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000104 /* AppModel.swift */; };
 		A10000000000000000000005 /* RootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000105 /* RootView.swift */; };
+		A10000000000000000000009 /* BuildEnvironment.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000110 /* BuildEnvironment.swift */; };
 		A10000000000000000000006 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000106 /* Assets.xcassets */; };
 		A10000000000000000000007 /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000108 /* LaunchScreen.storyboard */; };
 		A10000000000000000000008 /* BuiltInAudio in Resources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000109 /* BuiltInAudio */; };
@@ -32,6 +33,7 @@
 		A10000000000000000000103 /* Services.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Services.swift; sourceTree = "<group>"; };
 		A10000000000000000000104 /* AppModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppModel.swift; sourceTree = "<group>"; };
 		A10000000000000000000105 /* RootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RootView.swift; sourceTree = "<group>"; };
+		A10000000000000000000110 /* BuildEnvironment.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BuildEnvironment.swift; sourceTree = "<group>"; };
 		A10000000000000000000106 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		A10000000000000000000107 /* RollCall.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = RollCall.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		A10000000000000000000108 /* LaunchScreen.storyboard */ = {isa = PBXFileReference; lastKnownFileType = file.storyboard; path = LaunchScreen.storyboard; sourceTree = "<group>"; };
@@ -74,6 +76,7 @@
 				A10000000000000000000103 /* Services.swift */,
 				A10000000000000000000104 /* AppModel.swift */,
 				A10000000000000000000105 /* RootView.swift */,
+				A10000000000000000000110 /* BuildEnvironment.swift */,
 				A30000000000000000000142 /* DesignSystem */,
 				A10000000000000000000106 /* Assets.xcassets */,
 				A10000000000000000000108 /* LaunchScreen.storyboard */,
@@ -187,6 +190,7 @@
 				A10000000000000000000003 /* Services.swift in Sources */,
 				A10000000000000000000004 /* AppModel.swift in Sources */,
 				A10000000000000000000005 /* RootView.swift in Sources */,
+				A10000000000000000000009 /* BuildEnvironment.swift in Sources */,
 				A30000000000000000000001 /* RollCallDesignSystem.swift in Sources */,
 				A30000000000000000000002 /* RollCallColors.swift in Sources */,
 				A30000000000000000000003 /* RollCallTypography.swift in Sources */,
@@ -294,6 +298,53 @@
 			};
 			name = Release;
 		};
+		A10000000000000000000253 /* Internal */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				DEVELOPMENT_TEAM = 5Y9T5WZ4J3;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				ONLY_ACTIVE_ARCH = YES;
+				SDKROOT = iphoneos;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SUPPORTED_PLATFORMS = "iphonesimulator iphoneos";
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = INTERNAL;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+			};
+			name = Internal;
+		};
 		A10000000000000000000261 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -366,6 +417,43 @@
 			};
 			name = Release;
 		};
+		A10000000000000000000263 /* Internal */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = YES;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 19;
+				DEVELOPMENT_TEAM = 5Y9T5WZ4J3;
+				ENABLE_DEBUG_DYLIB = NO;
+				ENABLE_PREVIEWS = NO;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = "Roll Call";
+				INFOPLIST_KEY_CFBundleDocumentTypes = "<array><dict><key>CFBundleTypeName</key><string>Roll Call Package</string><key>CFBundleTypeRole</key><string>Editor</string><key>LSHandlerRank</key><string>Owner</string><key>LSItemContentTypes</key><array><string>com.jkfisher.rollcall.package</string></array></dict></array>";
+				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.sports";
+				INFOPLIST_KEY_LSSupportsOpeningDocumentsInPlace = YES;
+				INFOPLIST_KEY_NSAppleMusicUsageDescription = "Roll Call can search Apple Music songs, play full tracks when your subscription allows it, and fall back to preview clips when it does not.";
+				INFOPLIST_KEY_NSMediaLibraryUsageDescription = "Roll Call can search Apple Music songs, play full tracks when your subscription allows it, and fall back to preview clips when it does not.";
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Roll Call can record custom announcer intros for players.";
+				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "Roll Call can import roster photos.";
+				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
+				INFOPLIST_KEY_UILaunchScreen_Generation = NO;
+				INFOPLIST_KEY_UILaunchStoryboardName = LaunchScreen;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = UIInterfaceOrientationPortrait;
+				INFOPLIST_KEY_UTExportedTypeDeclarations = "<array><dict><key>UTTypeIdentifier</key><string>com.jkfisher.rollcall.package</string><key>UTTypeDescription</key><string>Roll Call Package</string><key>UTTypeConformsTo</key><array><string>public.zip-archive</string></array><key>UTTypeTagSpecification</key><dict><key>public.filename-extension</key><array><string>rollcall</string></array></dict></dict></array>";
+				MARKETING_VERSION = 0.6.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.jkfisher.rollcall;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SUPPORTED_PLATFORMS = "iphonesimulator iphoneos";
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = INTERNAL;
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Internal;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -373,6 +461,7 @@
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				A10000000000000000000251 /* Debug */,
+				A10000000000000000000253 /* Internal */,
 				A10000000000000000000252 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
@@ -382,6 +471,7 @@
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				A10000000000000000000261 /* Debug */,
+				A10000000000000000000263 /* Internal */,
 				A10000000000000000000262 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;

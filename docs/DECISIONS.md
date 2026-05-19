@@ -10,6 +10,10 @@ Use this file as a concise decision log for project-specific architectural, beha
 
 ## 2026-05-18
 
+- Approved: Roll Call uses one bundle identifier, `com.jkfisher.rollcall`, across Debug, Internal, and Release build environments while centralizing production-safety gates in `BuildEnvironment` and `FeatureFlags`.
+  Rationale: one app identity keeps App Store Connect, MusicKit, signing, and `.rollcall` document ownership aligned; Internal TestFlight replaces the installed app rather than creating a side-by-side build.
+  Status: approved
+
 - Approved: Developer Tools may include an experimental Apple Music team playlist sync button that creates or fully replaces the exact-name playlist `Roll Call - <Team Name>` for the selected team.
   Rationale: the feature should stay out of normal app flows while giving coaches a quick Apple Music playlist mirror of the selected team's catalog-backed song cues; local, built-in, missing, preview-only, and duplicate cues are skipped.
   Status: approved

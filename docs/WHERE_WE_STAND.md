@@ -44,6 +44,8 @@ What works now:
 - Branded launch screen based on the Music Triage splash style
 - Developer Tools screen with experimental controls and support-bundle export
 - Developer Tools now includes an experimental Apple Music team playlist sync button that updates `Roll Call - <Team Name>` from the selected team's catalog-backed Apple Music cues
+- Build-environment support now separates `Debug`, `Internal`, and `Release` configurations/schemes, with centralized `BuildEnvironment` / `FeatureFlags` guardrails so Release hides Developer Tools and experimental testing surfaces
+- Settings > About now shows app version, build number, and build environment
 - Field-use checklist for the `0.6.0` pause at [FIELD_USE_CHECKLIST.md](/Users/jkfisher/Documents/Coding/Roll%20Call/docs/FIELD_USE_CHECKLIST.md)
 
 Known limitations:
@@ -70,6 +72,9 @@ Verification:
 - Result in the most recent verified build session before this version bump: the in-sandbox check was blocked by cache and CoreSimulator restrictions, but an out-of-sandbox `xcodebuild -project RollCall.xcodeproj -scheme RollCall -destination 'generic/platform=iOS' build` completed successfully for `0.4.9` (build `13`) before the Game Day visual pass. XcodeBuildMCP then completed simulator build/run verification after the Game Day redesign. The remaining verification is an on-device smoke pass for AirDrop-opened `.rollcall` imports, manual picker selection of AirDropped `.rollcall` files stored in Files, whether Files now prefers Roll Call as the open target for `.rollcall`, subscribed Apple Music MediaPlayer fade behavior with the setting on and off, repeated non-zero trim starts, preview-only fallback trimming, custom-intro playback, and bright-condition Game Day readability.
 
 Recommended next priorities:
-1. Enable the MusicKit App Service for App ID `com.jkfisher.rollcall`, refresh signing/provisioning, then launch `0.5.2` on-device and do a focused smoke pass for subscribed-device full-song trimming, repeated non-zero trim starts, MediaPlayer fade-out behavior in preview and Game Day, preview-only fallback trimming, custom-intro playback, direct AirDrop `.rollcall` opening, whether Files prefers Roll Call for `.rollcall`, and manual picker selection from Files.
+1. Enable the MusicKit App Service for App ID `com.jkfisher.rollcall`, refresh signing/provisioning, then launch `0.6.0` on-device and do a focused smoke pass for subscribed-device full-song trimming, repeated non-zero trim starts, MediaPlayer fade-out behavior in preview and Game Day, preview-only fallback trimming, custom-intro playback, direct AirDrop `.rollcall` opening, whether Files prefers Roll Call for `.rollcall`, and manual picker selection from Files.
 2. Add focused verification around package import/export round-trips, AirDrop/open-in-place imports, support-bundle contents, and backup retention behavior after repeated imports.
 3. If the MediaPlayer path is still flaky on-device, run one bounded silent-track crossfade experiment and then explicitly decide whether Apple Music field playback remains supportable without a local-only pivot.
+
+Build environment docs:
+- [BUILD_ENVIRONMENTS.md](/Users/jkfisher/Documents/Coding/Roll%20Call/docs/BUILD_ENVIRONMENTS.md)

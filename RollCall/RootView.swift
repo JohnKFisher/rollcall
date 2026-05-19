@@ -74,7 +74,10 @@ struct RootView: View {
             }
         }
         .alert("Experimental Apple Music Local Copies", isPresented: $showExperimentalWarning) {
-            Button("Enable") { appModel.enableExperimentalCopies() }
+            Button("Enable") {
+                appModel.setShowExperimentalFeatures(true)
+                appModel.enableExperimentalCopies()
+            }
             Button("Cancel", role: .cancel) {}
         } message: {
             Text("This feature is off by default. It attempts to turn Apple Music preview media into a regular local file. It may fail, and it is intentionally separate from the normal Apple Music path.")
@@ -679,6 +682,11 @@ struct RootView: View {
                                     role: .neutral,
                                     emphasis: .subdued
                                 )
+                                StatusChip(
+                                    text: BuildEnvironment.current.rawValue,
+                                    role: .neutral,
+                                    emphasis: .subdued
+                                )
                             }
 
                             Divider()
@@ -708,20 +716,22 @@ struct RootView: View {
                         }
                     }
 
-                    SettingsSectionGroup(
-                        title: "Advanced / Developer Tools",
-                        helperText: "Experimental and diagnostic features stay out of normal user flows."
-                    ) {
-                        NavigationLink {
-                            DeveloperToolsView(appModel: appModel, showExperimentalWarning: $showExperimentalWarning)
-                        } label: {
-                            SettingsNavigationLabel(
-                                title: "Developer Tools",
-                                detail: "Open experimental settings and support utilities.",
-                                systemImage: "wrench.and.screwdriver.fill"
-                            )
+                    if appModel.featureFlags.showDeveloperSettings {
+                        SettingsSectionGroup(
+                            title: "Advanced / Developer Tools",
+                            helperText: "Experimental and diagnostic features stay out of normal user flows."
+                        ) {
+                            NavigationLink {
+                                DeveloperToolsView(appModel: appModel, showExperimentalWarning: $showExperimentalWarning)
+                            } label: {
+                                SettingsNavigationLabel(
+                                    title: "Developer Tools",
+                                    detail: "Open experimental settings and support utilities.",
+                                    systemImage: "wrench.and.screwdriver.fill"
+                                )
+                            }
+                            .buttonStyle(.plain)
                         }
-                        .buttonStyle(.plain)
                     }
                 }
                 .padding(.horizontal, 16)
@@ -2413,69 +2423,149 @@ private struct DeveloperToolsView: View {
     @Binding var showExperimentalWarning: Bool
     @State private var showTeamPlaylistWarning = false
 
+    private var flags: FeatureFlags {
+        appModel.featureFlags
+    }
+
     var body: some View {
-        List {
-            Section("Experimental Features") {
-                if appModel.state.experimental.appleMusicLocalCopyEnabled {
-                    Label("Apple Music local copies enabled", systemImage: "exclamationmark.triangle.fill")
-                        .foregroundStyle(.orange)
-                    Text("This remains a developer-facing experiment and is not the primary product path.")
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
-                } else {
-                    Button("Enable Experimental Apple Music Local Copies") {
-                        showExperimentalWarning = true
+        Group {
+            if flags.isReleaseBuild {
+                ContentUnavailableView(
+                    "Developer Tools Unavailable",
+                    systemImage: "lock.fill",
+                    description: Text("Release builds do not expose developer settings or experimental features.")
+                )
+            } else {
+                List {
+                    Section("Build Environment") {
+                        LabeledContent("Environment", value: flags.environment.rawValue)
+                        LabeledContent("App Version", value: "\(AppMetadata.appVersion) (\(AppMetadata.buildNumber))")
                     }
-                    Text("Developer only: attempts to turn preview media into normal local files. This may fail and may not be App Store appropriate.")
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
-                }
 
-                Button {
-                    if appModel.state.experimental.appleMusicTeamPlaylistAcknowledgedAt == nil {
-                        showTeamPlaylistWarning = true
-                    } else {
-                        Task { await appModel.syncSelectedTeamAppleMusicPlaylist() }
+                    Section("Environment Gates") {
+                        FlagStatusRow(
+                            title: "Developer Settings",
+                            detail: "Shows this internal settings surface outside production releases.",
+                            isEnabled: flags.showDeveloperSettings
+                        )
+                        FlagStatusRow(
+                            title: "Experimental Features",
+                            detail: "Allows unfinished or provisional tools to appear for trusted testing.",
+                            isEnabled: flags.showExperimentalFeatures
+                        )
+                        FlagStatusRow(
+                            title: "Premium Testing Unlock",
+                            detail: "Reserved for purchase-related testing. Roll Call does not currently sell premium features.",
+                            isEnabled: flags.unlockPremiumForTesting
+                        )
                     }
-                } label: {
-                    if appModel.isAppleMusicPlaylistSyncing {
-                        Label("Updating Apple Music Team Playlist", systemImage: "music.note.list")
-                    } else {
-                        Label("Update Apple Music Team Playlist", systemImage: "music.note.list")
+
+                    Section("Runtime Testing Flags") {
+                        Toggle(isOn: Binding(
+                            get: { appModel.state.experimental.showExperimentalFeatures },
+                            set: { appModel.setShowExperimentalFeatures($0) }
+                        )) {
+                            SettingsRowLabel(
+                                title: "Show Experimental Features",
+                                detail: flags.isDebugBuild ? "Debug builds force experimental visibility on; this stored value mainly affects Internal builds." : "Internal builds only show experiments when this is enabled.",
+                                systemImage: "testtube.2"
+                            )
+                        }
+                        .disabled(flags.isDebugBuild)
+
+                        Toggle(isOn: Binding(
+                            get: { appModel.state.experimental.unlockPremiumForTesting },
+                            set: { appModel.setUnlockPremiumForTesting($0) }
+                        )) {
+                            SettingsRowLabel(
+                                title: "Unlock Premium for Testing",
+                                detail: flags.isDebugBuild ? "Debug builds force this on for future purchase testing." : "Allows trusted internal testers to exercise future premium-only paths.",
+                                systemImage: "key.fill"
+                            )
+                        }
+                        .disabled(flags.isDebugBuild)
+
+                        Toggle(isOn: Binding(
+                            get: { appModel.state.experimental.appleMusicLocalCopyEnabled },
+                            set: { isEnabled in
+                                if isEnabled {
+                                    showExperimentalWarning = true
+                                } else {
+                                    appModel.setAppleMusicLocalCopyEnabled(false)
+                                }
+                            }
+                        )) {
+                            SettingsRowLabel(
+                                title: "Apple Music Local Copies",
+                                detail: "Shows the Make Local Copy action for Apple Music cues. This remains experimental and outside the primary product path.",
+                                systemImage: "doc.on.doc"
+                            )
+                        }
+                        .disabled(!flags.showExperimentalFeatures)
+
+                        Toggle(isOn: Binding(
+                            get: { appModel.state.experimental.appleMusicTeamPlaylistSyncEnabled },
+                            set: { appModel.setAppleMusicTeamPlaylistSyncEnabled($0) }
+                        )) {
+                            SettingsRowLabel(
+                                title: "Apple Music Team Playlist Sync",
+                                detail: "Allows a selected team to update the exact-name Apple Music playlist Roll Call - <Team Name>.",
+                                systemImage: "music.note.list"
+                            )
+                        }
+                        .disabled(!flags.showExperimentalFeatures)
                     }
-                }
-                .disabled(appModel.isAppleMusicPlaylistSyncing || appModel.selectedTeam == nil)
 
-                Text("Creates or replaces \"Roll Call - <Team Name>\" in Apple Music using this team's Apple Music song cues only.")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
+                    if flags.appleMusicTeamPlaylistSyncEnabled {
+                        Section("Experimental Actions") {
+                            Button {
+                                if appModel.state.experimental.appleMusicTeamPlaylistAcknowledgedAt == nil {
+                                    showTeamPlaylistWarning = true
+                                } else {
+                                    Task { await appModel.syncSelectedTeamAppleMusicPlaylist() }
+                                }
+                            } label: {
+                                if appModel.isAppleMusicPlaylistSyncing {
+                                    Label("Updating Apple Music Team Playlist", systemImage: "music.note.list")
+                                } else {
+                                    Label("Update Apple Music Team Playlist", systemImage: "music.note.list")
+                                }
+                            }
+                            .disabled(appModel.isAppleMusicPlaylistSyncing || appModel.selectedTeam == nil)
 
-                if appModel.isAppleMusicPlaylistSyncing {
-                    HStack {
-                        ProgressView()
-                        Text("Updating Apple Music playlist...")
+                            Text("Creates or replaces \"Roll Call - <Team Name>\" in Apple Music using this team's Apple Music song cues only.")
+                                .font(.footnote)
+                                .foregroundStyle(.secondary)
+
+                            if appModel.isAppleMusicPlaylistSyncing {
+                                HStack {
+                                    ProgressView()
+                                    Text("Updating Apple Music playlist...")
+                                        .foregroundStyle(.secondary)
+                                }
+                                .font(.footnote)
+                            } else if let status = appModel.appleMusicPlaylistSyncStatus {
+                                Text(status)
+                                    .font(.footnote)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                    }
+
+                    Section("Diagnostics") {
+                        Button("Generate Support Bundle") {
+                            Task { await appModel.exportSupportBundle() }
+                        }
+                        if let supportBundle = appModel.supportBundle {
+                            ShareLink(item: supportBundle.url) {
+                                Label("Share Latest Support Bundle", systemImage: "square.and.arrow.up")
+                            }
+                        }
+                        Text("Support bundles include app version, schema version, feature flags, readiness results, and playback diagnostics. Imported media and other user content are excluded.")
+                            .font(.footnote)
                             .foregroundStyle(.secondary)
                     }
-                    .font(.footnote)
-                } else if let status = appModel.appleMusicPlaylistSyncStatus {
-                    Text(status)
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
                 }
-            }
-
-            Section("Diagnostics") {
-                Button("Generate Support Bundle") {
-                    Task { await appModel.exportSupportBundle() }
-                }
-                if let supportBundle = appModel.supportBundle {
-                    ShareLink(item: supportBundle.url) {
-                        Label("Share Latest Support Bundle", systemImage: "square.and.arrow.up")
-                    }
-                }
-                Text("Support bundles include app version, schema version, feature flags, readiness results, and playback diagnostics. Imported media and other user content are excluded.")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
             }
         }
         .navigationTitle("Developer Tools")
@@ -2487,6 +2577,27 @@ private struct DeveloperToolsView: View {
             Button("Cancel", role: .cancel) {}
         } message: {
             Text("Roll Call will create or update the exact-name Apple Music playlist for the selected team and replace that playlist's songs with the team's current Apple Music cues.")
+        }
+    }
+}
+
+private struct FlagStatusRow: View {
+    let title: String
+    let detail: String
+    let isEnabled: Bool
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 12) {
+            Image(systemName: isEnabled ? "checkmark.circle.fill" : "xmark.circle.fill")
+                .foregroundStyle(isEnabled ? .green : .secondary)
+                .padding(.top, 2)
+            VStack(alignment: .leading, spacing: 4) {
+                Text(title)
+                Text(detail)
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            }
+            Spacer()
         }
     }
 }
@@ -2874,7 +2985,7 @@ private struct PlayerEditorSheet: View {
                 .playerEditorListRow()
 
                 if let cue = player.cue,
-                   appModel.state.experimental.appleMusicLocalCopyEnabled,
+                   appModel.featureFlags.appleMusicLocalCopyEnabled,
                    case .appleMusic = cue.source {
                     Section {
                         Button {
