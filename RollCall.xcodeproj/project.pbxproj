@@ -308,6 +308,7 @@
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_CFBundleDisplayName = "Roll Call";
 				INFOPLIST_KEY_CFBundleDocumentTypes = "<array><dict><key>CFBundleTypeName</key><string>Roll Call Package</string><key>CFBundleTypeRole</key><string>Editor</string><key>LSHandlerRank</key><string>Owner</string><key>LSItemContentTypes</key><array><string>com.jkfisher.rollcall.package</string></array></dict></array>";
+				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.sports";
 				INFOPLIST_KEY_LSSupportsOpeningDocumentsInPlace = YES;
 				INFOPLIST_KEY_NSAppleMusicUsageDescription = "Roll Call can search Apple Music songs, play full tracks when your subscription allows it, and fall back to preview clips when it does not.";
@@ -343,6 +344,7 @@
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_CFBundleDisplayName = "Roll Call";
 				INFOPLIST_KEY_CFBundleDocumentTypes = "<array><dict><key>CFBundleTypeName</key><string>Roll Call Package</string><key>CFBundleTypeRole</key><string>Editor</string><key>LSHandlerRank</key><string>Owner</string><key>LSItemContentTypes</key><array><string>com.jkfisher.rollcall.package</string></array></dict></array>";
+				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.sports";
 				INFOPLIST_KEY_LSSupportsOpeningDocumentsInPlace = YES;
 				INFOPLIST_KEY_NSAppleMusicUsageDescription = "Roll Call can search Apple Music songs, play full tracks when your subscription allows it, and fall back to preview clips when it does not.";
