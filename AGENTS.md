@@ -88,7 +88,7 @@ Especially ask before:
 - or major/minor version changes,
 - or scope expansion beyond the request.
 
-If approval is needed, present 2 to 3 options with pros/cons and recommend one.
+If approval is needed, present options when meaningful with pros/cons and recommend one.
 
 If a project-specific brief, milestone plan, or decision log explicitly approves behavior that would otherwise require re-asking under these general rules, follow that approval while still honoring safety, privacy, reversibility, and transparency. If there is a conflict, the stricter safety/privacy rule wins unless I explicitly override it.
 
@@ -97,6 +97,7 @@ Later sections may mention specific examples, but this section is the controllin
 ## Working With Me
 
 - Ask clarifying questions freely when they will improve the result, expose a tradeoff, or reduce the chance of a wrong turn.
+- Prefer asking one question at a time and waiting for an answer before asking the next question.
 - Offer concise, high-signal suggestions when they are likely to materially improve safety, usability, maintainability, or fit. Avoid speculative or low-value suggestion sprawl.
 - Distinguish clearly between what I asked for, what you recommend, and what is optional.
 - Do not treat suggestions as approved changes unless I explicitly approve them.
@@ -119,131 +120,16 @@ Later sections may mention specific examples, but this section is the controllin
 - Update docs when behavior, setup, architecture, or operational expectations materially change.
 - For risky or user-visible work, prefer opt-in or isolated rollout paths unless already approved.
 
-## Patch Discipline
+## Execution Discipline
 
-Default to the smallest safe change, but do not endlessly patch a broken implementation when the implementation itself is the problem.
-
-A larger refactor or rewrite may be appropriate when:
-- the user explicitly asks for bigger-picture thinking,
-- repeated small fixes are failing,
-- the current implementation blocks the fix,
-- another patch would increase fragility,
-- or replacement is clearly smaller/safer than continued patching.
-
-Before a larger change, explain what will be replaced, what behavior must be preserved, risks/tradeoffs, and whether approval is needed.
-
-Prefer targeted patches over rewrites.
-
-- Edit the smallest practical region that solves the problem.
-- Do not rewrite whole files, components, or modules unless the task requires it.
-- Preserve existing structure, naming, formatting, and ordering when practical.
-- If a rewrite is cleaner, explain why and ask before doing it unless already approved.
-
-## Scope Escalation Control
-
-Do not escalate a localized task into a broad refactor without approval.
-
-Pause and ask before:
-- touching many unrelated files,
-- restructuring architecture,
-- changing shared patterns project-wide,
-- replacing existing approaches that already work,
-- or expanding the task primarily for cleanup, consistency, or elegance.
-
-Prefer solving the requested problem locally unless broader change is clearly justified.
-
-## Completion Discipline
-
-Once the requested task is successfully completed and verified, stop.
-
-- Do not continue exploring, refactoring, optimizing, or expanding scope unless:
-  - the user requested it,
-  - a meaningful unresolved risk remains,
-  - or a brief high-signal suggestion is warranted.
-- Avoid "while I'm here" changes after successful completion.
-- Prefer finishing cleanly over opportunistic additional work.
-
-## Context and Command Output Discipline
-
-### Token-Efficient Shell Output
-
-When shell access exists and `rtk` is available on PATH, prefer RTK wrappers for commands that would otherwise produce large or noisy output.
-
-Examples:
-- use `rtk ls` instead of raw `ls` when directory output may be large,
-- use `rtk tree` instead of raw `tree` when structure output may be large.
-
-Do not use RTK when exact raw output matters, the command output is already small and deterministic, RTK is unavailable, or the task is debugging RTK itself. Do not install or configure RTK unless explicitly asked.
-
-Protect the context window aggressively.
-
-- Inspect the smallest useful scope first: targeted files, symbols, nearby call sites, focused diffs, and relevant log tails.
-- Avoid dumping full files, full logs, broad search results, generated files, minified files, binary files, databases, build artifacts, or large JSON/JSONL unless clearly required.
-- Any command with unknown or potentially large output must be byte-capped, not only line-capped.
-- Prefer:
-  - `COMMAND 2>&1 | head -c 4000`
-  - `COMMAND 2>&1 | tail -c 4000`
-- For failure logs, prefer recent output with `tail -c`.
-- If capped output is insufficient, narrow the command before increasing the cap.
-- Do not byte-cap instruction files, agent rule files, project briefs, decision logs, or status docs when they are directly relevant; read the whole relevant file unless it is unexpectedly huge.
-
-## Tool Usage Discipline
-
-Treat tool calls, searches, file reads, and command executions as expensive operations.
-
-- Before using a tool, ask whether existing context is already sufficient.
-- Avoid repeating searches, file reads, or commands whose results are still valid.
-- Prefer acting on strong local evidence over gathering excessive additional context.
-- If a previous step already established the answer with high confidence, continue execution instead of re-verifying unnecessarily.
-
-## Communication Token Discipline
-
-Do not provide a transcript of the work.
-
-- Report decisions, risks, blockers, changes, and verification results.
-- Do not narrate routine file reads, searches, command attempts, or obvious next steps unless they affect the plan or outcome.
-- Avoid repeating the same rationale in the plan, implementation notes, and final summary.
-- Prefer concise status over exhaustive explanation.
-- If nothing unusual happened, keep the summary short.
-
-## Summary Deduplication
-
-Do not repeat the same information in multiple places.
-
-- If something was already clearly stated in the plan, do not restate it unless the outcome changed.
-- Final summaries should focus on what changed, what was verified, and what remains.
-- Avoid repeating unchanged constraints, obvious context, or previously approved decisions.
-- Keep status/document updates factual and non-duplicative.
-
-## Large Output Discipline
-
-Do not print large generated content inline unless the user asks.
-
-- Prefer editing files directly over pasting full file contents into the response.
-- For large diffs, summarize the change and reference changed files.
-- Do not paste full logs, generated JSON, lockfiles, manifests, snapshots, or build output unless needed for review.
-- If the user needs copy/paste output, provide the smallest complete block that solves the need.
-
-## Repository Context Discipline
-
-Use minimal context first.
-
-- Do not scan the whole repo unless the task requires broad understanding.
-- Prefer targeted reads: relevant files, nearby tests, related symbols, recent errors, and known project docs.
-- Before broad searches, state what uncertainty the search is meant to resolve.
-- Stop reading once enough context exists to make a safe, bounded change.
-- Do not repeatedly re-read unchanged instruction files, status docs, or decision logs in the same session unless new information suggests they matter.
-- For tiny / low-risk tasks, read only the project docs and conditional rule files that are clearly relevant.
-- For normal / risky tasks, follow the full startup and conditional-rule workflow.
-
-## Search Discipline
-
-Prefer targeted search over broad discovery.
-
-- Search for specific symbols, filenames, error strings, config keys, or user-facing text before broad keywords.
-- Avoid broad repo-wide searches unless the task requires cross-cutting understanding.
-- When search results are large, refine the query instead of reading many matches.
-- Do not inspect generated, vendored, dependency, cache, build, or archive directories unless directly relevant.
+- Prefer smallest practical edit.
+- Preserve structure/naming unless task requires change.
+- Escalate to larger refactors only when:
+    - repeated fixes fail,
+    - implementation blocks progress,
+    - replacement is clearly safer or materially simpler.
+- Ask before broad refactors.
+- Stop after completion.
 
 ## Task Workflow
 
@@ -306,42 +192,56 @@ Match verification scope to change scope.
   - or localized verification is insufficient.
 - If broader verification was intentionally skipped, say so briefly.
 
-### Change Summary
+## Context and Execution Efficiency
 
-Always summarize:
-- files changed,
-- what changed,
-- verification performed,
-- known limitations or follow-ups if any,
-- final build/test status.
+Use the minimum context, output, and verification needed to make a safe change.
 
+### Context Discipline
 
-## Planning Discipline
+- Read only the files, symbols, tests, logs, and nearby code needed for the current task.
+- Prefer targeted search over broad discovery.
+- Stop gathering context once enough evidence exists to make a safe bounded change.
+- Do not repeatedly re-read unchanged docs unless new information suggests they matter.
 
-Do enough planning to make a safe, bounded change, then execute.
+### Command and Output Discipline
 
-- Avoid repeated re-planning unless new information materially changes the task or risk profile.
-- Do not repeatedly revisit settled decisions during the same task.
-- Prefer one coherent plan plus execution over recursive planning loops.
-- If uncertainty is low and the task is localized, act instead of continuing analysis.
+When shell access exists and `rtk` is available on PATH, prefer RTK wrappers for commands that would otherwise produce large or noisy output.
 
-## Debugging Discipline
+Examples:
+- `rtk ls`
+- `rtk tree`
+
+Do not use RTK when exact raw output matters, output is already small, RTK is unavailable, or RTK itself is being debugged.
+
+For potentially large output:
+- prefer byte-capped output (`head -c`, `tail -c`)
+- narrow commands before increasing output size
+- avoid dumping logs, generated files, build artifacts, or large JSON unless needed
+
+### Tool Discipline
+
+Treat searches, file reads, and commands as expensive.
+
+- Reuse existing context when sufficient.
+- Avoid repeating searches or verification unnecessarily.
+- Prefer acting on strong evidence over gathering excessive context.
+
+### Debugging Discipline
 
 Prefer the smallest plausible fix first.
 
-- For localized failures with an obvious likely cause, make one targeted fix before broad investigation.
-- Do not inspect unrelated systems until the local hypothesis fails.
-- If the first fix fails, use the failure output to narrow the next step.
-- Escalate to broader investigation only after local fixes are exhausted or the failure suggests systemic risk.
+- Try one focused fix before broad investigation.
+- Use failures to narrow the next hypothesis.
+- After 2 failed attempts at the same problem, stop and reassess before continuing.
+- Report blockers instead of continuing to guess.
 
-## Failure Loop Discipline
+### Communication Discipline
 
-Do not repeat similar failed attempts.
-
-- After 2 failed attempts at the same problem, stop and reassess before trying again.
-- Summarize what failed, what the failure suggests, and the next most likely cause.
-- Do not keep rerunning the same command/test without a changed hypothesis or changed code.
-- If the issue appears blocked by missing context, tooling, credentials, or environment state, report that clearly instead of continuing to guess.
+- Report decisions, verification, blockers, and outcomes.
+- Do not provide transcripts of routine work.
+- Prefer concise summaries over repeated rationale.
+- Prefer editing files over pasting large generated content inline.
+- Avoid repeating rationale across plan, implementation notes, and summaries.
 
 ## Decision Log
 
@@ -384,8 +284,7 @@ For projects with meaningful versioning, milestone releases, or durable rollback
 
 ## Versioning
 
-- Use an ever-increasing build number for every build across the life of the project.
-- Increment the patch version automatically for each build by default.
+- Use an ever-increasing build number for every commit across the life of the project.
 - Do not bump the minor or major version without my explicit approval. Bumps can be suggested with brief reasoning, but not applied automatically.
 - App marketing version and build number must come from source-controlled files, not from local caches, `.build/`, DerivedData, or other untracked machine-specific state. Before any release build, report the exact version that will be produced and stop if local state could alter it. Update versioning files in the same commit as the build change.
 - Prefer deterministic versioning that reproduces the same app version/build from the same committed source.
@@ -438,38 +337,20 @@ If the project already has users, saved data, config files, scripts, documented 
 
 ## Conditional Rule Triggers
 
-Use progressive disclosure for conditional rules.
+- Use progressive disclosure. Load rule files only when directly relevant or risk increases. 
+- At planning time identify candidate rule files; load only those required.
 
-At planning time, identify every conditional rule file that may apply, but only read the full file immediately when:
-- the task directly changes behavior covered by that file,
-- the task is medium/high risk,
-- the task affects user data, security, privacy, permissions, migrations, distribution, external tools, media assets, or destructive/bulk operations,
-- the task is ambiguous and the rule file may change the plan,
-- or the user explicitly asks for maximum caution.
-
-For tiny / low-risk tasks, mention likely relevant conditional files but do not load them unless they affect the edit. If uncertainty increases during implementation, stop and read the relevant conditional file before continuing.
-
-Product/context docs:
-- `docs/product/NORTH_STAR.md` — read for product philosophy, major UX/product tradeoffs, navigation/workflow changes, or new feature direction.
-- `docs/product/UX_RULEBOOK.md` — read for UI work, interaction changes, screen hierarchy, visual language, or preserving the completed redesign direction.
-- `docs/product/PRODUCT_SCOPE.md` — read for release scope, premium/free boundaries, 1.0 vs later decisions, or intentional exclusions.
-- `docs/product/ARCHITECTURE_GUARDRAILS.md` — read for product architecture boundaries such as team/session semantics, sharing, cloud, premium safety, and core app scope.
-- `docs/WHERE_WE_STAND.md` — read when resuming work, choosing next actions, or updating the project save file.
-- `docs/development/BUILD_ENVIRONMENTS.md` — read when touching Xcode schemes, build environments, feature flags, release safety gates, TestFlight/App Store builds, or build configuration.
-- `docs/DECISIONS.md` — read before reopening prior product, UX, architecture, tooling, or behavior debates.
-
-Active agent rule files:
-- `docs/agent-rules/user-data-permissions.md` — read when touching user data, photos, media library access, app-owned/user-owned paths, permissions, destructive operations, or anything that reads/writes/moves/renames/deletes user content.
-- `docs/agent-rules/apple.md` — read when touching iOS, Swift, SwiftUI, Xcode, bundle IDs, entitlements, signing, sandboxing, PhotoKit, MusicKit/MediaPlayer, or Apple platform APIs.
-- `docs/agent-rules/long-running-work.md` — read when touching imports/exports, ZIPs, audio preparation, rendering, encoding, indexing, downloads/uploads, migrations, background work, progress/liveness, cancellation, cleanup, or temp artifacts.
-- `docs/agent-rules/untrusted-input-tools.md` — read when touching imported files, filenames, paths, URLs, command output, clipboard data, environment variables, parsing, shell commands, subprocesses, external binaries, bundled tools, or optional system capabilities.
-- `docs/agent-rules/migration-format-safety.md` — read when touching data migrations, format conversions, irreversible transformations, compatibility of stored data, import/export formats, or copy-forward vs in-place upgrades.
-- `docs/agent-rules/ai-inference.md` — read when adding or changing inferential, ranking, classification, summarization, recommendation, or other AI-assisted behavior.
-- `docs/agent-rules/diagnostics-privacy.md` — read when touching diagnostics, logging, crash handling, support bundles, persistent logs, redaction, or user-sensitive debug output.
-- `docs/agent-rules/about-distribution.md` — read when touching distribution notes, About screen, copyright, licensing text, or public attribution.
-- `docs/agent-rules/readme-rules.md` — read when touching README, installation instructions, distribution notes, or end-user run instructions.
-- `docs/agent-rules/third-party-dependencies-media-assets.md` — read when touching third-party dependencies, media assets, Apple Music/audio handling, generated assets, attribution, asset export/import, or bundled content.
-
-Historical docs:
-- `docs/historical/` explains prior direction, pre-redesign baseline, redesign rationale, inactive rules, and idea history. Do not load historical docs for ordinary implementation. Load them only to understand prior reasoning, investigate drift, or revisit a completed design decision.
-
+| Trigger | Load |
+|---|---|
+| Product/UX/scope | product docs |
+| Resume work | WHERE_WE_STAND, DECISIONS |
+| Build/release | BUILD_ENVIRONMENTS |
+| Data/permissions | user-data-permissions |
+| Apple APIs | apple |
+| Long-running work | long-running-work |
+| External input | untrusted-input-tools |
+| Migrations | migration-format-safety |
+| AI | ai-inference |
+| Diagnostics | diagnostics-privacy |
+| Distribution/assets | about-distribution, readme, third-party-assets |
+| Historical context | docs/historical |
