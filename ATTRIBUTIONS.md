@@ -2,6 +2,11 @@
 
 This file tracks bundled third-party audio assets and software libraries that ship with Roll Call.
 
+Roll Call's project license does not relicense third-party materials. These
+items remain under their own licenses and terms. Fork authors are responsible
+for confirming that their use of bundled third-party materials is allowed by the
+applicable third-party license.
+
 ## Software Libraries
 
 | Name | Version | Source | License | Attribution Requirement |

@@ -87,9 +87,13 @@ Useful context:
 
 ## Reuse And Licensing
 
-Roll Call is moving toward a noncommercial source-available license posture:
-free for personal, educational, nonprofit, public agency, volunteer, youth, and
-community sports use; commercial use requires separate written permission.
+Roll Call is source-available for noncommercial use under the
+[PolyForm Noncommercial License 1.0.0](LICENSE), with project-specific terms in
+[ROLL-CALL-LICENSE-NOTICE.md](ROLL-CALL-LICENSE-NOTICE.md).
+
+It is free for personal, educational, nonprofit, public agency, volunteer,
+youth, and community sports use. Commercial use, including internal use by
+for-profit businesses, requires separate written permission.
 
 Public noncommercial forks and modified builds are welcome when they:
 
@@ -102,10 +106,6 @@ Public noncommercial forks and modified builds are welcome when they:
 
 Small standalone code snippets may be reused commercially. Attribution is
 appreciated but not required for those snippets.
-
-The current license files are still being updated to match this policy. Until
-that is complete, check [LICENSE](LICENSE) and this README together rather than
-assuming every bundled file has the same terms.
 
 Third-party materials remain under their own licenses. See
 [ATTRIBUTIONS.md](ATTRIBUTIONS.md) for ZIPFoundation and bundled Mixkit sound
@@ -128,6 +128,8 @@ permission may be available.
   later-release direction
 - [docs/product/ARCHITECTURE_GUARDRAILS.md](docs/product/ARCHITECTURE_GUARDRAILS.md):
   boundaries for future implementation work
+- [ROLL-CALL-LICENSE-NOTICE.md](ROLL-CALL-LICENSE-NOTICE.md): noncommercial
+  reuse, fork, attribution, and asset-boundary terms
 - [docs/historical/](docs/historical/): older planning and design rationale
 
 ## Credits

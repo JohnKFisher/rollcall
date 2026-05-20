@@ -2,6 +2,12 @@
 
 Use this file as a concise decision log for project-specific architectural, behavioral, tooling, and scope decisions.
 
+## 2026-05-20
+
+- Approved: license Roll Call as noncommercial source-available software using PolyForm Noncommercial 1.0.0 as the base license, with separate Roll Call-specific attribution, source-sharing, commercial-use, small-snippet, and asset-boundary terms.
+  Rationale: the project should remain very free for personal, educational, nonprofit, school, public agency, volunteer, youth, and community sports use while keeping commercial use permission-only and protecting Roll Call branding, personal materials, and third-party assets.
+  Status: approved
+
 ## 2026-05-15
 
 - Approved: AirDropped or shared `.rollcall` files should open directly into Roll Call's existing import flow, while preserving the current backup-first import semantics.

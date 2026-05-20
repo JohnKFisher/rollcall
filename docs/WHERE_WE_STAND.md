@@ -10,6 +10,7 @@ Status:
 - Active prototype with a buildable iPhone app target at [RollCall.xcodeproj](/Users/jkfisher/Documents/Coding/Roll%20Call/RollCall.xcodeproj).
 - The repository has been cleaned up so the working source of truth is back on the intended `RollCall/` and `RollCall.xcodeproj/` names.
 - `0.6.0` build `19` is the real-use pause build. The intended next step is to use it in the field for a week or two and collect only practical, field-relevant issues.
+- The repository is now licensed for noncommercial source-available use with Roll Call-specific attribution, source-sharing, commercial-use, and asset-boundary terms.
 
 What works now:
 - Team selection, duplication, and confirmed removal
@@ -46,7 +47,7 @@ What works now:
 - Developer Tools now includes an experimental Apple Music team playlist sync button that updates `Roll Call - <Team Name>` from the selected team's catalog-backed Apple Music cues
 - Build-environment support now separates `Debug`, `Internal`, and `Release` configurations/schemes, with centralized `BuildEnvironment` / `FeatureFlags` guardrails so Release hides Developer Tools and experimental testing surfaces
 - Settings > About now shows app version, build number, and build environment
-- Field-use checklist for the `0.6.0` pause at [FIELD_USE_CHECKLIST.md](/Users/jkfisher/Documents/Coding/Roll%20Call/product/FIELD_USE_CHECKLIST.md)
+- Repo README and license notice now describe the public noncommercial fork policy, commercial-permission boundary, small-snippet exception, and third-party asset attributions.
 
 Known limitations:
 - Waveforms and per-cue gain remain intentionally deferred.
