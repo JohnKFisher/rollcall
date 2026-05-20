@@ -6,19 +6,19 @@ Status:
 - No screen redesign is included in this phase
 
 Purpose:
-- translate `docs/ui-redesign/VISUAL_LANGUAGE_SYSTEM.md` into a safe, concrete Phase 1 implementation plan
+- translate `historical/ux/redesign-rationale/VISUAL_LANGUAGE_SYSTEM.md` into a safe, concrete Phase 1 implementation plan
 - establish a reusable design-system foundation before any screen-level redesign work begins
 - keep all work view-layer-only
 
 Primary source documents:
-- `docs/current-state/`
-- `docs/ui-redesign/TARGET_UI_DIRECTION.md`
-- `docs/ui-redesign/VISUAL_LANGUAGE_SYSTEM.md`
+- `historical/ux/pre-redesign-baseline/`
+- `historical/ux/redesign-rationale/TARGET_UI_DIRECTION.md`
+- `historical/ux/redesign-rationale/VISUAL_LANGUAGE_SYSTEM.md`
 
 Constraint inputs reviewed for this plan:
-- `docs/current-state/SAFE_REDESIGN_STRATEGY.md`
-- `docs/current-state/FUNCTIONALITY_PROTECTION_ZONES.md`
-- `docs/current-state/COMPONENT_CATALOG.md`
+- `historical/ux/pre-redesign-baseline/SAFE_REDESIGN_STRATEGY.md`
+- `historical/ux/pre-redesign-baseline/FUNCTIONALITY_PROTECTION_ZONES.md`
+- `historical/ux/pre-redesign-baseline/COMPONENT_CATALOG.md`
 - `docs/agent-rules/apple.md`
 
 ## Scope
@@ -773,10 +773,10 @@ Use this exact prompt next:
 
 ```text
 Using these documents:
-- /docs/current-state/
-- /docs/ui-redesign/TARGET_UI_DIRECTION.md
-- /docs/ui-redesign/VISUAL_LANGUAGE_SYSTEM.md
-- /docs/ui-redesign/PHASE_1_UI_FOUNDATION_PLAN.md
+- /historical/ux/pre-redesign-baseline/
+- /historical/ux/redesign-rationale/TARGET_UI_DIRECTION.md
+- /historical/ux/redesign-rationale/VISUAL_LANGUAGE_SYSTEM.md
+- /historical/ux/redesign-rationale/PHASE_1_UI_FOUNDATION_PLAN.md
 
 Implement Phase 1 only.
 

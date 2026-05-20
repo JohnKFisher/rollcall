@@ -4,7 +4,6 @@ Read this file when the task touches installation instructions, distribution not
 
 ## Distribution
 
-- Default to MIT license unless I specify otherwise.
 - When packaging apps, prefer portable builds that run across supported machine architectures when practical, such as universal macOS binaries. Do not lower deployment targets, broaden compatibility claims, or change minimum supported OS versions without explicit approval. If a build remains host-specific or requires external third-party files, say so clearly in the README or release notes.
 
 ## About Screen

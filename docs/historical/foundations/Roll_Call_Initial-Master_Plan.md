@@ -1,3 +1,9 @@
+<!--
+Historical document.
+Purpose: original product direction / founding plan.
+Not current implementation; use product/NORTH_STAR.md, product/PRODUCT_SCOPE.md, and docs/WHERE_WE_STAND.md for current truth.
+-->
+
 # Roll Call — iPhone Walk-Up Music App Master Plan
 
 ## Overview

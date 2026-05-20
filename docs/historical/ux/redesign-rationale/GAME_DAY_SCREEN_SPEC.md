@@ -6,9 +6,9 @@ Status:
 - No playback-engine, queue, lineup, Apple Music, persistence, model, or `PlayerEditorSheet` changes are authorized by this document
 
 Source context:
-- `docs/current-state/`
-- `docs/ui-redesign/TARGET_UI_DIRECTION.md`
-- `docs/ui-redesign/VISUAL_LANGUAGE_SYSTEM.md`
+- `historical/ux/pre-redesign-baseline/`
+- `historical/ux/redesign-rationale/TARGET_UI_DIRECTION.md`
+- `historical/ux/redesign-rationale/VISUAL_LANGUAGE_SYSTEM.md`
 - current implemented UI direction from `Settings`, `Readiness`, `Teams`, `Players`, and `Clips`
 
 ## 1. Screen Purpose

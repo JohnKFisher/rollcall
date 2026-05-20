@@ -1,3 +1,9 @@
+<!--
+Historical document.
+Purpose: earlier general project philosophy.
+Not an active rule file; durable principles should live in AGENTS.md, product/NORTH_STAR.md, product/UX_RULEBOOK.md, or active agent rules.
+-->
+
 # Project Philosophy
 
 Read this file when making UX, product, or architecture tradeoffs, proposing significant behavioral changes, evaluating multiple valid approaches, or when broader project philosophy materially affects the decision.

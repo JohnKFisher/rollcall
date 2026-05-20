@@ -6,10 +6,10 @@ Status:
 - No code changes are authorized by this document by itself
 
 Source context:
-- `docs/current-state/`
-- `docs/ui-redesign/VISUAL_LANGUAGE_SYSTEM.md`
-- `docs/ui-redesign/PLAYER_EDITOR_SCREEN_SPEC.md`
-- `docs/ui-redesign/PLAYER_EDITOR_DECISION_REVIEW.md`
+- `historical/ux/pre-redesign-baseline/`
+- `historical/ux/redesign-rationale/VISUAL_LANGUAGE_SYSTEM.md`
+- `historical/ux/redesign-rationale/PLAYER_EDITOR_SCREEN_SPEC.md`
+- `historical/ux/redesign-rationale/PLAYER_EDITOR_DECISION_REVIEW.md`
 - current implemented `PlayerEditorSheet` in `RollCall/RootView.swift`
 
 ## 1. Final Screen Purpose
@@ -340,11 +340,11 @@ Use this prompt for PE-1:
 
 ```text
 Using:
-- /docs/current-state/
-- /docs/ui-redesign/VISUAL_LANGUAGE_SYSTEM.md
-- /docs/ui-redesign/PLAYER_EDITOR_SCREEN_SPEC.md
-- /docs/ui-redesign/PLAYER_EDITOR_DECISION_REVIEW.md
-- /docs/ui-redesign/PLAYER_EDITOR_FINAL_DIRECTION.md
+- /historical/ux/pre-redesign-baseline/
+- /historical/ux/redesign-rationale/VISUAL_LANGUAGE_SYSTEM.md
+- /historical/ux/redesign-rationale/PLAYER_EDITOR_SCREEN_SPEC.md
+- /historical/ux/redesign-rationale/PLAYER_EDITOR_DECISION_REVIEW.md
+- /historical/ux/redesign-rationale/PLAYER_EDITOR_FINAL_DIRECTION.md
 - the current implemented app UI
 
 Implement PE-1 for Player Editor only.
@@ -386,8 +386,8 @@ Use this prompt for PE-2 only after PE-1 is stable:
 
 ```text
 Using:
-- /docs/current-state/
-- /docs/ui-redesign/PLAYER_EDITOR_FINAL_DIRECTION.md
+- /historical/ux/pre-redesign-baseline/
+- /historical/ux/redesign-rationale/PLAYER_EDITOR_FINAL_DIRECTION.md
 - the current implemented PlayerEditorSheet after PE-1
 
 Implement PE-2 only if it can be done safely and locally: refine the Trim Enable behavior so initial cue setup can adjust trim without requiring an extra Enable tap, while returning to edit an existing player/cue preserves the existing Enable/Done protection.

@@ -6,14 +6,14 @@ Status:
 - Focused on post-redesign navigation, grouping, and obvious smoke-level UX friction
 
 Reviewed sources:
-- `docs/DECISIONS.md`
+- `decisions/DECISIONS.md`
 - `docs/WHERE_WE_STAND.md`
-- `docs/roll_call_dev_notes.md`
-- `docs/ui-redesign/TARGET_UI_DIRECTION.md`
-- `docs/ui-redesign/VISUAL_LANGUAGE_SYSTEM.md`
-- `docs/ui-redesign/GAME_DAY_SCREEN_SPEC.md`
-- `docs/ui-redesign/PLAYER_EDITOR_FINAL_DIRECTION.md`
-- `docs/ui-redesign/STABILIZATION_AUDIT.md`
+- `historical/ideas/roll_call_dev_notes.md`
+- `historical/ux/redesign-rationale/TARGET_UI_DIRECTION.md`
+- `historical/ux/redesign-rationale/VISUAL_LANGUAGE_SYSTEM.md`
+- `historical/ux/redesign-rationale/GAME_DAY_SCREEN_SPEC.md`
+- `historical/ux/redesign-rationale/PLAYER_EDITOR_FINAL_DIRECTION.md`
+- `historical/ux/redesign-rationale/STABILIZATION_AUDIT.md`
 - `RollCall/RootView.swift`
 - `RollCall/DesignSystem/TeamBanner.swift`
 
@@ -82,7 +82,7 @@ Severity:
 
 Likely file(s) touched:
 - `RollCall/RootView.swift`
-- Possibly `docs/DECISIONS.md` if the owner approves a durable navigation decision
+- Possibly `decisions/DECISIONS.md` if the owner approves a durable navigation decision
 
 Owner approval needed:
 - Yes. Tab order and default selected tab are user-visible product behavior.

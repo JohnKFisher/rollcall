@@ -6,11 +6,11 @@ Status:
 - Intended as a stabilization queue, not a redesign plan
 
 Reviewed sources:
-- `docs/DECISIONS.md`
+- `decisions/DECISIONS.md`
 - `docs/WHERE_WE_STAND.md`
-- `docs/ui-redesign/TARGET_UI_DIRECTION.md`
-- `docs/ui-redesign/VISUAL_LANGUAGE_SYSTEM.md`
-- `docs/ui-redesign/GAME_DAY_SCREEN_SPEC.md`
+- `historical/ux/redesign-rationale/TARGET_UI_DIRECTION.md`
+- `historical/ux/redesign-rationale/VISUAL_LANGUAGE_SYSTEM.md`
+- `historical/ux/redesign-rationale/GAME_DAY_SCREEN_SPEC.md`
 - `RollCall/RootView.swift`
 - `RollCall/DesignSystem/TeamBanner.swift`
 - `RollCall/DesignSystem/StatusChip.swift`
@@ -331,7 +331,7 @@ Risk level:
 
 Exact files likely touched:
 - `RollCall/RootView.swift`
-- `docs/ui-redesign/VISUAL_LANGUAGE_SYSTEM.md` or another decision/status doc if the current order is intentionally retained.
+- `historical/ux/redesign-rationale/VISUAL_LANGUAGE_SYSTEM.md` or another decision/status doc if the current order is intentionally retained.
 
 Owner approval required:
 - Yes for any tab order or launch destination change.

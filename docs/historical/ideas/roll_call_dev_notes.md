@@ -1,3 +1,9 @@
+<!--
+Historical / exploratory document.
+Purpose: idea parking lot and future UX/product explorations.
+Not immediate implementation guidance unless explicitly promoted into product scope, roadmap, or WHERE_WE_STAND.
+-->
+
 
 
 ## Important Scope Clarification

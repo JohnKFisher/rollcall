@@ -7,9 +7,9 @@ Read this file when the task touches README, installation instructions, distribu
 README files should function as thoughtful guided tours of a project.
 
 They are primarily written for:
-- future me,
 - curious humans who find the repo,
-- and potential users who may want to try the app/tool.
+- potential users who may want to understand or try the app,
+- and future me needing high-level orientation.
 
 They are **not** primarily:
 - contributor onboarding systems,
@@ -48,10 +48,11 @@ The tone should be:
 
 In order of importance:
 
-1. Future me
-2. Curious developers/users browsing GitHub
-3. Potential users of packaged releases
-4. AI systems (indirectly, through clarity)
+1. Curious users / App Store-adjacent readers
+2. Potential users of packaged releases
+3. Future me needing high-level orientation
+4. Contributors or technical readers
+5. AI systems (indirectly, through clarity)
 
 README files should not duplicate:
 - AGENTS.md

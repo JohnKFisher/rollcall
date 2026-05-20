@@ -12,9 +12,9 @@ Purpose:
 - preserve protected behavior zones while giving future UI work a clear design target
 
 Source context:
-- `docs/current-state/`
-- `docs/ui-redesign/TARGET_UI_DIRECTION.md`
-- `docs/roll_call_dev_notes.md`
+- `historical/ux/pre-redesign-baseline/`
+- `historical/ux/redesign-rationale/TARGET_UI_DIRECTION.md`
+- `historical/ideas/roll_call_dev_notes.md`
 - explicit interview decisions captured in this planning session
 
 Protected-zone reminder:

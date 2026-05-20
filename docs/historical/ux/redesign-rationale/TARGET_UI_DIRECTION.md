@@ -7,25 +7,25 @@ It is intentionally a planning document only.
 ## Source Basis
 
 Reviewed inputs:
-- `docs/current-state/README.md`
-- `docs/current-state/APP_OVERVIEW.md`
-- `docs/current-state/SCREEN_INVENTORY.md`
-- `docs/current-state/NAVIGATION_FLOW.md`
-- `docs/current-state/DATA_AND_STATE.md`
-- `docs/current-state/FUNCTIONALITY_PROTECTION_ZONES.md`
-- `docs/current-state/UI_STYLE_AUDIT.md`
-- `docs/current-state/SAFE_REDESIGN_STRATEGY.md`
-- `docs/current-state/COMPONENT_CATALOG.md`
-- `docs/current-state/VISUAL_REFERENCES.md`
-- `docs/current-state/KNOWN_BUGS_AND_TECH_DEBT.md`
-- `docs/roll_call_dev_notes.md`
-- `docs/DECISIONS.md`
+- `historical/ux/pre-redesign-baseline/README.md`
+- `historical/ux/pre-redesign-baseline/APP_OVERVIEW.md`
+- `historical/ux/pre-redesign-baseline/SCREEN_INVENTORY.md`
+- `historical/ux/pre-redesign-baseline/NAVIGATION_FLOW.md`
+- `historical/ux/pre-redesign-baseline/DATA_AND_STATE.md`
+- `historical/ux/pre-redesign-baseline/FUNCTIONALITY_PROTECTION_ZONES.md`
+- `historical/ux/pre-redesign-baseline/UI_STYLE_AUDIT.md`
+- `historical/ux/pre-redesign-baseline/SAFE_REDESIGN_STRATEGY.md`
+- `historical/ux/pre-redesign-baseline/COMPONENT_CATALOG.md`
+- `historical/ux/pre-redesign-baseline/VISUAL_REFERENCES.md`
+- `historical/ux/pre-redesign-baseline/KNOWN_BUGS_AND_TECH_DEBT.md`
+- `historical/ideas/roll_call_dev_notes.md`
+- `decisions/DECISIONS.md`
 - `docs/WHERE_WE_STAND.md`
 
 Important visual-documentation limitation:
 - live screenshots were not captured in the current-state package; the existing visual references are code-derived because simulator capture was blocked by the `ZIPFoundation` build issue.
 
-Important interpretation note from `docs/roll_call_dev_notes.md`:
+Important interpretation note from `historical/ideas/roll_call_dev_notes.md`:
 - those notes are directional concepts and structural thoughts
 - they are not finalized designs, immediate implementation requirements, or pixel-perfect specs
 - they explicitly say major redesign work should not outrank stability, correct behavior, responsiveness, usability, or reliable playback flow

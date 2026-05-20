@@ -46,7 +46,7 @@ What works now:
 - Developer Tools now includes an experimental Apple Music team playlist sync button that updates `Roll Call - <Team Name>` from the selected team's catalog-backed Apple Music cues
 - Build-environment support now separates `Debug`, `Internal`, and `Release` configurations/schemes, with centralized `BuildEnvironment` / `FeatureFlags` guardrails so Release hides Developer Tools and experimental testing surfaces
 - Settings > About now shows app version, build number, and build environment
-- Field-use checklist for the `0.6.0` pause at [FIELD_USE_CHECKLIST.md](/Users/jkfisher/Documents/Coding/Roll%20Call/docs/FIELD_USE_CHECKLIST.md)
+- Field-use checklist for the `0.6.0` pause at [FIELD_USE_CHECKLIST.md](/Users/jkfisher/Documents/Coding/Roll%20Call/product/FIELD_USE_CHECKLIST.md)
 
 Known limitations:
 - Waveforms and per-cue gain remain intentionally deferred.
@@ -77,4 +77,4 @@ Recommended next priorities:
 3. If the MediaPlayer path is still flaky on-device, run one bounded silent-track crossfade experiment and then explicitly decide whether Apple Music field playback remains supportable without a local-only pivot.
 
 Build environment docs:
-- [BUILD_ENVIRONMENTS.md](/Users/jkfisher/Documents/Coding/Roll%20Call/docs/BUILD_ENVIRONMENTS.md)
+- [BUILD_ENVIRONMENTS.md](/Users/jkfisher/Documents/Coding/Roll%20Call/docs/development/BUILD_ENVIRONMENTS.md)

@@ -6,8 +6,8 @@ Status:
 - No Apple Music, trim, playback, persistence, modal-flow, readiness-calculation, or model changes are authorized by this document
 
 Source context:
-- `docs/current-state/`
-- `docs/ui-redesign/VISUAL_LANGUAGE_SYSTEM.md`
+- `historical/ux/pre-redesign-baseline/`
+- `historical/ux/redesign-rationale/VISUAL_LANGUAGE_SYSTEM.md`
 - current implemented UI direction from `Settings`, `Readiness`, `Teams`, `Players`, `Clips`, and `Game Day`
 
 ## 1. Screen Purpose

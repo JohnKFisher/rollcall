@@ -6,15 +6,21 @@ Assume I may not deeply review code and may not notice hidden risks in my reques
 If a change is destructive, user-visible, security-sensitive, privacy-sensitive, materially worse for the app’s core job, materially slower/heavier, architecturally surprising, or meaningfully expands scope, stop and ask first.
 Follow everything in this file regardless of which agent is running. Conditional rule files apply when their triggers match the task.
 
-## Project Philosophy
+## Roll Call Product Operating Principles
 
-Read `docs/agent-rules/project_philosophy.md` when:
-- making UX, product, or architecture tradeoffs,
-- proposing significant behavioral changes,
-- evaluating multiple valid approaches,
-- or when broader project philosophy materially affects the decision.
+This is a compact summary for everyday work. Full product philosophy lives in `product/NORTH_STAR.md`; current UX guidance lives in `product/UX_RULEBOOK.md`; release and premium boundaries live in `product/PRODUCT_SCOPE.md`.
 
-For localized, low-risk implementation tasks, do not load it unless needed.
+Default product bias:
+- Roll Call is an iPhone-first walk-up cue app for game-day delight with nearly invisible operation.
+- Game Day should feel ready when opened: coach taps the player, the right thing happens, kids and parents enjoy it.
+- Prefer native iOS behavior and Apple conventions over custom UI unless there is a clear product benefit.
+- Prefer speed, clarity, reliability, and field usability over feature count or configurability.
+- Customization must earn its existence by adding real delight, reducing work, or protecting user investment.
+- Preserve existing setup work and user-created content; do not make users redo meaningful customization without strong reason.
+- Premium features may enhance delight or save time, but must never affect Game Day reliability or core success.
+- Avoid accounts, cloud sync, social features, backend infrastructure, scoreboard systems, and broad sports-management scope unless explicitly approved.
+
+Load the full product docs only when the task changes product behavior, navigation, workflow, scope, monetization, or meaningful UX tradeoffs. Do not load them for tiny/local implementation tasks unless needed.
 
 ## Rule Hierarchy
 
@@ -27,6 +33,16 @@ Apply instructions in this order:
 
 If there is a conflict, the higher-priority rule wins unless I explicitly override it.
 
+### Documentation and Implementation Conflict Rule
+
+Current implementation is authoritative for what the app actually does. If implementation appears to conflict with docs, redesign rationale, product scope, or historical notes:
+1. surface the conflict,
+2. explain the likely tradeoff or possible drift,
+3. do not silently rewrite the app to match old docs,
+4. ask whether the drift is intentional unless the safe fix is obvious and local.
+
+Historical docs explain how we got here. They do not override the current app, current scope, or explicit user instructions.
+
 ## Session Startup
 
 Use minimal startup context.
@@ -36,7 +52,7 @@ For tiny / low-risk tasks:
 - do not automatically load project status, decision logs, or philosophy docs unless clearly relevant.
 
 For normal / risky tasks, read relevant startup docs if they exist:
-- `docs/DECISIONS.md`
+- `decisions/DECISIONS.md`
 - `docs/WHERE_WE_STAND.md`
 - current project brief or milestone plan
 
@@ -57,7 +73,7 @@ Use these docs to avoid contradicting approved decisions, current state, known r
 
 ## Ask-First Gate
 
-Stop and ask first unless the behavior is already clearly approved by the project brief, the decision log (`docs/DECISIONS.md`), the current milestone plan, or an explicit user instruction.
+Stop and ask first unless the behavior is already clearly approved by the project brief, the decision log (`decisions/DECISIONS.md`), the current milestone plan, or an explicit user instruction.
 
 Especially ask before:
 - destructive actions or irreversible outputs,
@@ -105,6 +121,17 @@ Later sections may mention specific examples, but this section is the controllin
 
 ## Patch Discipline
 
+Default to the smallest safe change, but do not endlessly patch a broken implementation when the implementation itself is the problem.
+
+A larger refactor or rewrite may be appropriate when:
+- the user explicitly asks for bigger-picture thinking,
+- repeated small fixes are failing,
+- the current implementation blocks the fix,
+- another patch would increase fragility,
+- or replacement is clearly smaller/safer than continued patching.
+
+Before a larger change, explain what will be replaced, what behavior must be preserved, risks/tradeoffs, and whether approval is needed.
+
 Prefer targeted patches over rewrites.
 
 - Edit the smallest practical region that solves the problem.
@@ -137,6 +164,16 @@ Once the requested task is successfully completed and verified, stop.
 - Prefer finishing cleanly over opportunistic additional work.
 
 ## Context and Command Output Discipline
+
+### Token-Efficient Shell Output
+
+When shell access exists and `rtk` is available on PATH, prefer RTK wrappers for commands that would otherwise produce large or noisy output.
+
+Examples:
+- use `rtk ls` instead of raw `ls` when directory output may be large,
+- use `rtk tree` instead of raw `tree` when structure output may be large.
+
+Do not use RTK when exact raw output matters, the command output is already small and deterministic, RTK is unavailable, or the task is debugging RTK itself. Do not install or configure RTK unless explicitly asked.
 
 Protect the context window aggressively.
 
@@ -241,7 +278,7 @@ For anything non-trivial, risky, ambiguous, broad, user-visible, or behavior-cha
 Also:
 - call out meaningful uncertainty or hidden risk,
 - note likely impact on performance, reliability, compatibility, output quality, or user data,
-- check `docs/DECISIONS.md` for relevant prior decisions before proposing something that may have already been decided,
+- check `decisions/DECISIONS.md` for relevant prior decisions before proposing something that may have already been decided,
 - state which conditional rule files were reviewed and why. If none, say "none."
 
 ### Verification Output
@@ -308,7 +345,7 @@ Do not repeat similar failed attempts.
 
 ## Decision Log
 
-Maintain `docs/DECISIONS.md` as a living decision log for the project.
+Maintain `decisions/DECISIONS.md` as a living decision log for the project.
 
 **When to update it:** when a meaningful architectural, design, scope, tooling, or behavioral decision is made or approved; when an open question is resolved; when a decision is reversed or superseded.
 
@@ -406,57 +443,33 @@ Use progressive disclosure for conditional rules.
 At planning time, identify every conditional rule file that may apply, but only read the full file immediately when:
 - the task directly changes behavior covered by that file,
 - the task is medium/high risk,
-- the task affects user data, security, privacy, permissions, migrations, CI/release, external tools, or destructive/bulk operations,
+- the task affects user data, security, privacy, permissions, migrations, distribution, external tools, media assets, or destructive/bulk operations,
 - the task is ambiguous and the rule file may change the plan,
 - or the user explicitly asks for maximum caution.
 
-For tiny / low-risk tasks, mention likely relevant conditional files but do not load them unless they affect the edit.
+For tiny / low-risk tasks, mention likely relevant conditional files but do not load them unless they affect the edit. If uncertainty increases during implementation, stop and read the relevant conditional file before continuing.
 
-If uncertainty increases during implementation, stop and read the relevant conditional file before continuing.
+Product/context docs:
+- `docs/product/NORTH_STAR.md` — read for product philosophy, major UX/product tradeoffs, navigation/workflow changes, or new feature direction.
+- `docs/product/UX_RULEBOOK.md` — read for UI work, interaction changes, screen hierarchy, visual language, or preserving the completed redesign direction.
+- `docs/product/PRODUCT_SCOPE.md` — read for release scope, premium/free boundaries, 1.0 vs later decisions, or intentional exclusions.
+- `docs/product/ARCHITECTURE_GUARDRAILS.md` — read for product architecture boundaries such as team/session semantics, sharing, cloud, premium safety, and core app scope.
+- `docs/WHERE_WE_STAND.md` — read when resuming work, choosing next actions, or updating the project save file.
+- `docs/development/BUILD_ENVIRONMENTS.md` — read when touching Xcode schemes, build environments, feature flags, release safety gates, TestFlight/App Store builds, or build configuration.
+- `docs/DECISIONS.md` — read before reopening prior product, UX, architecture, tooling, or behavior debates.
 
-When in doubt on safety, privacy, data integrity, destructive operations, permissions, or releases, read the file.
+Active agent rule files:
+- `docs/agent-rules/user-data-permissions.md` — read when touching user data, photos, media library access, app-owned/user-owned paths, permissions, destructive operations, or anything that reads/writes/moves/renames/deletes user content.
+- `docs/agent-rules/apple.md` — read when touching iOS, Swift, SwiftUI, Xcode, bundle IDs, entitlements, signing, sandboxing, PhotoKit, MusicKit/MediaPlayer, or Apple platform APIs.
+- `docs/agent-rules/long-running-work.md` — read when touching imports/exports, ZIPs, audio preparation, rendering, encoding, indexing, downloads/uploads, migrations, background work, progress/liveness, cancellation, cleanup, or temp artifacts.
+- `docs/agent-rules/untrusted-input-tools.md` — read when touching imported files, filenames, paths, URLs, command output, clipboard data, environment variables, parsing, shell commands, subprocesses, external binaries, bundled tools, or optional system capabilities.
+- `docs/agent-rules/migration-format-safety.md` — read when touching data migrations, format conversions, irreversible transformations, compatibility of stored data, import/export formats, or copy-forward vs in-place upgrades.
+- `docs/agent-rules/ai-inference.md` — read when adding or changing inferential, ranking, classification, summarization, recommendation, or other AI-assisted behavior.
+- `docs/agent-rules/diagnostics-privacy.md` — read when touching diagnostics, logging, crash handling, support bundles, persistent logs, redaction, or user-sensitive debug output.
+- `docs/agent-rules/about-distribution.md` — read when touching distribution notes, About screen, copyright, licensing text, or public attribution.
+- `docs/agent-rules/readme-rules.md` — read when touching README, installation instructions, distribution notes, or end-user run instructions.
+- `docs/agent-rules/third-party-dependencies-media-assets.md` — read when touching third-party dependencies, media assets, Apple Music/audio handling, generated assets, attribution, asset export/import, or bundled content.
 
-- `docs/agent-rules/user-data-permissions.md`
-  - Read when the task touches user data, local files, cloud files, photos, notes, mail, contacts, calendars, storage locations, app permissions, privacy prompts, destructive operations, bulk operations, app-owned vs user-owned paths, or anything that reads/writes/moves/renames/deletes user content.
+Historical docs:
+- `docs/historical/` explains prior direction, pre-redesign baseline, redesign rationale, inactive rules, and idea history. Do not load historical docs for ordinary implementation. Load them only to understand prior reasoning, investigate drift, or revisit a completed design decision.
 
-- `docs/agent-rules/apple.md`
-  - Read when the task touches Apple platforms, Swift, SwiftUI, AppKit, UIKit, Xcode, bundle IDs, entitlements, signing, notarization, hardened runtime, sandboxing, PhotoKit, macOS/iOS distribution, or Apple platform APIs.
-
-- `docs/agent-rules/windows.md`
-  - Read when the task touches Windows builds, installers, PowerShell, path handling, WinUI/Fluent conventions, Windows packaging, SmartScreen, or Windows signing/resources.
-
-- `docs/agent-rules/tauri-web.md`
-  - Read when the task touches Tauri, Rust + WebView architecture, frontend frameworks inside Tauri, IPC bridges, or desktop web UI code.
-
-- `docs/agent-rules/cross-platform.md`
-  - Read when the task affects behavior, packaging, UX, storage, rendering, or build/release logic across more than one platform.
-
-- `docs/agent-rules/long-running-work.md`
-  - Read when the task touches rendering, encoding, syncing, indexing, scanning, imports/exports, downloads/uploads, migrations, subprocess orchestration, background work, progress/liveness, cancellation, cleanup, or temp artifacts.
-
-- `docs/agent-rules/untrusted-input-tools.md`
-  - Read when the task touches imported files, filenames, paths, URLs, command output, clipboard data, environment variables, parsing, shell commands, subprocesses, external binaries, bundled tools, codecs, GPU paths, or optional system capabilities.
-
-- `docs/agent-rules/migration-format-safety.md`
-  - Read when the task touches data migrations, format conversions, irreversible transformations, compatibility of stored data, or copy-forward vs in-place upgrades.
-
-- `docs/agent-rules/ai-inference.md`
-  - Read when the task adds or changes inferential, ranking, classification, summarization, recommendation, or other AI-assisted behavior.
-
-- `docs/agent-rules/diagnostics-privacy.md`
-  - Read when the task touches diagnostics, logging, crash handling, persistent logs, redaction, or user-sensitive debug output.
-
-- `docs/agent-rules/ci-release.md`
-  - Read when the task touches GitHub Actions, CI, releases, packaging, DMGs, EXEs, build artifacts, version-triggered releases, code signing, notarization workflow, or app distribution automation.
-
-- `docs/agent-rules/about-distribution.md`
-  - Read this file when the task touches distribution notes, About screen, or licensing text
-  
-- `docs/agent-rules/readme-rules.md`
-  - Read this file when the task touches README, installation instructions, distribution notes, or end-user run instructions.
-  
-- `docs/agent-rules/local-rtk.md`
-  - Read only when `rtk` is available on PATH or the user asks about RTK/token-compressed command output.
-  
-- `docs/agent-rules/third-party-dependencies-media-assets.md`
-  - Read this file when the task touches Third-Party dependencies, media and assets.

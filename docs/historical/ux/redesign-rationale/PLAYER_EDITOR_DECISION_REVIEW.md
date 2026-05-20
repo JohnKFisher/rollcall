@@ -6,9 +6,9 @@ Status:
 - No code changes are authorized by this document
 
 Source context:
-- `docs/current-state/`
-- `docs/ui-redesign/VISUAL_LANGUAGE_SYSTEM.md`
-- `docs/ui-redesign/PLAYER_EDITOR_SCREEN_SPEC.md`
+- `historical/ux/pre-redesign-baseline/`
+- `historical/ux/redesign-rationale/VISUAL_LANGUAGE_SYSTEM.md`
+- `historical/ux/redesign-rationale/PLAYER_EDITOR_SCREEN_SPEC.md`
 - currently implemented `PlayerEditorSheet` in `RollCall/RootView.swift`
 
 Purpose:
