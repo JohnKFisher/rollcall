@@ -4,12 +4,12 @@ Use this file as a concise project status snapshot for the current version, what
 
 ## Roll Call
 
-Current version: `0.6.0` (build `19`)
+Current version: `0.6.0` (build `20`)
 
 Status:
 - Active prototype with a buildable iPhone app target at [RollCall.xcodeproj](/Users/jkfisher/Documents/Coding/Roll%20Call/RollCall.xcodeproj).
 - The repository has been cleaned up so the working source of truth is back on the intended `RollCall/` and `RollCall.xcodeproj/` names.
-- `0.6.0` build `19` is the real-use pause build. The intended next step is to use it in the field for a week or two and collect only practical, field-relevant issues.
+- `0.6.0` build `20` is the real-use pause build. The intended next step is to use it in the field for a week or two and collect only practical, field-relevant issues.
 - The repository is now licensed for noncommercial source-available use with Roll Call-specific attribution, source-sharing, commercial-use, and asset-boundary terms.
 
 What works now:
@@ -47,6 +47,7 @@ What works now:
 - Developer Tools now includes an experimental Apple Music team playlist sync button that updates `Roll Call - <Team Name>` from the selected team's catalog-backed Apple Music cues
 - Build-environment support now separates `Debug`, `Internal`, and `Release` configurations/schemes, with centralized `BuildEnvironment` / `FeatureFlags` guardrails so Release hides Developer Tools and experimental testing surfaces
 - Settings > About now shows app version, build number, and build environment
+- Settings > About > Attributions & Licenses now includes a Special Thanks section for the girls of the Piscataway Thunder Softball Team
 - Repo README and license notice now describe the public noncommercial fork policy, commercial-permission boundary, small-snippet exception, and third-party asset attributions.
 
 Known limitations:
@@ -66,7 +67,7 @@ Verification:
 - `xcrun swift-frontend -typecheck -module-cache-path /private/tmp/rollcall-module-cache -primary-file RollCall/RootView.swift RollCall/Services.swift RollCall/Models.swift RollCall/AppModel.swift RollCall/RollCallApp.swift -sdk /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS26.5.sdk -target arm64-apple-ios18.0`
 - `xcodebuild -project '/Users/jkfisher/Documents/Coding/Roll Call/RollCall.xcodeproj' -scheme RollCall -destination 'generic/platform=iOS' -derivedDataPath '/Users/jkfisher/Documents/Coding/Roll Call/.DerivedData' build`
 - `xcodebuild -project '/Users/jkfisher/Documents/Coding/Roll Call/RollCall.xcodeproj' -scheme RollCall -destination 'generic/platform=iOS' -derivedDataPath '/Users/jkfisher/Documents/Coding/Roll Call/.DerivedData' CODE_SIGNING_ALLOWED=NO build`
-- Result in this `0.6.0` build `19` real-use pause bump: an out-of-sandbox `xcodebuild -project RollCall.xcodeproj -scheme RollCall -destination 'generic/platform=iOS' -derivedDataPath .DerivedData CODE_SIGNING_ALLOWED=NO build` succeeded, and the built app reported `CFBundleShortVersionString = 0.6.0` and `CFBundleVersion = 19`.
+- Result in this `0.6.0` build `20` attribution update: an out-of-sandbox `xcodebuild -project RollCall.xcodeproj -scheme RollCall -destination 'generic/platform=iOS Simulator' -derivedDataPath .DerivedData/Verification CODE_SIGNING_ALLOWED=NO build` succeeded. The sandboxed attempt failed before compile because it could not reach GitHub to resolve `ZIPFoundation`.
 - `xcrun swift-frontend -typecheck -primary-file RollCall/Services.swift RollCall/Models.swift RollCall/AppModel.swift RollCall/RootView.swift RollCall/RollCallApp.swift -sdk /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS26.5.sdk -target arm64-apple-ios18.0`
 - Result in this `0.5.2` build bump: source build succeeded with signing disabled. A normal signed build reached codesign, then failed on stale extended-attribute detritus in the existing workspace `.DerivedData` app product; a fresh temp DerivedData build could not resolve `ZIPFoundation` because sandboxed network access to GitHub was unavailable.
 - Result in the most recent Player Editor visual pass: `RootView.swift` parsed successfully, but standalone typecheck could not load `ZIPFoundation`, and sandboxed `xcodebuild` could not complete because Xcode/SwiftPM tried to write diagnostics under `/Users/jkfisher/Library/Caches/org.swift.swiftpm` while the approval path for an out-of-sandbox build was unavailable. Simulator screenshots were also blocked in this pass by the same build/run limitation. The remaining verification is a full local Xcode build plus Player Editor simulator/on-device smoke screenshots for no-cue, configured cue, trim-visible, and Announcement Cue states.

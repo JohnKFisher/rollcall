@@ -1364,6 +1364,14 @@ private struct AttributionsView: View {
                         .buttonStyle(.plain)
                     }
                 }
+
+                SettingsSectionGroup(title: "Special Thanks") {
+                    SettingsRowLabel(
+                        title: "Piscataway Thunder Softball Team",
+                        detail: "Special thanks to the girls of the Piscataway Thunder Softball Team.",
+                        systemImage: "heart.fill"
+                    )
+                }
             }
             .padding(.horizontal, 16)
             .padding(.top, RollCallSpacingTier.tight.value)
