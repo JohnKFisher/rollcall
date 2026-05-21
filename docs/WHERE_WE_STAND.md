@@ -4,11 +4,12 @@ Use this file as a concise project status snapshot for the current version, what
 
 ## Roll Call
 
-Current version: `0.6.6` (build `23`)
+Current version: `0.6.7` (build `24`)
 
 Status:
 - Active prototype with a buildable iPhone app target at [RollCall.xcodeproj](/Users/jkfisher/Documents/Coding/Roll%20Call/RollCall.xcodeproj).
 - The repository has been cleaned up so the working source of truth is back on the intended `RollCall/` and `RollCall.xcodeproj/` names.
+- `0.6.7` build `24` collects the live-screen appearance setting, shared Game Day/Clips gradient background, Readiness check polish, and the latest live playback/backup safety fixes.
 - `0.6.6` build `23` tightens live playback volume automation, adds an automatic pre-restore backup before backup restores, fixes the Game Day announcer mode Sendable warning, and keeps recent Readiness/roster copy and status polish together.
 - `0.6.5` build `22` collects the latest live-surface UI copy and icon cleanup: Game Day player-tile labels/icons, fallback wording, Readiness announcement wording, Players row song/announcement states, Clips header treatment, and the local dark rendering for the Game Day announcer mode picker.
 - `0.6.0` build `21` aligns the Readiness experience with the accepted product model: readiness now answers whether today’s lineup can confidently run Game Day, not whether setup is “complete.”
@@ -34,11 +35,11 @@ What works now:
 - Apple Music full-song playback now forces the current cue trim start when replaying catalog songs, to avoid stale start-position behavior on reused selections
 - Cue fade-out timing now runs inside the requested clip length for local audio and preview-based Apple Music playback
 - Settings now includes a `Fade-Out Volume Automation` switch so Roll Call can either manage cue volume for fades or leave playback volume untouched
-- Settings now includes a default-on `Always Use Dark Live Screens` switch that keeps `Game Day` and `Clips` pinned to dark mode for field visibility while the rest of the app follows the user's Light/Dark appearance.
+- Settings now includes a default-on `Always Use Dark Live Screens` switch that keeps `Game Day` and `Clips` pinned to dark mode for field visibility while the rest of the app follows the user's Light/Dark appearance; both live screens share the same reusable gradient background with a centralized accent tint for future editability.
 - Subscribed full-song Apple Music playback now routes through an internal MediaPlayer application-player path so the same Apple Music cue can attempt stepped fade-out in trim preview, cue preview, and Game Day without changing the cue model
 - Experimental Apple Music local-copy flag and one-way conversion action
 - Main tab roots now use a pinned, full-width TeamBar at the top of the screen instead of repeating panel-name headers; Game Day keeps its dark live-side board with a top announcer-mode picker, compact live warning strip, Now Batting hero, On Deck area, centered `Prev / Edit Lineup / Next` row, divider before the grid, and obvious active tap-to-stop state
-- General Clips tab using the shared cue engine with bundled licensed crowd clips tracked in `ATTRIBUTIONS.md`
+- General Clips tab using the shared cue engine with bundled licensed crowd clips tracked in `ATTRIBUTIONS.md`, now visually aligned with Game Day through the same live-side gradient background.
 - Readiness confidence dashboard with player-specific audio as Ready, Announcement Cues as Enhanced, missing player audio as a non-blocking need, optional polish separated from readiness, direct player repair routing, and before-start device checks kept separate from player status
 - `.rollcall` package export/import with bundled local media, custom intro audio, and roster photos
 - `.rollcall` export now produces a zipped single-file archive (with backward-compatible import support for older directory-style packages)
@@ -67,6 +68,8 @@ Known limitations:
 - Startup and tap responsiveness have been tightened by deferring/coalescing some follow-up work and moving snapshot restore I/O off the main actor, but this still needs an on-device feel pass to confirm the improvement.
 
 Verification:
+- Result in this `0.6.7` build `24` patch bump: `xcrun swiftc -parse RollCall/Models.swift RollCall/Services.swift RollCall/AppModel.swift RollCall/RootView.swift` succeeded; `xcodebuild -project RollCall.xcodeproj -scheme RollCall -destination 'generic/platform=iOS' -derivedDataPath .DerivedData CODE_SIGNING_ALLOWED=NO build` succeeded out of sandbox. Xcode still emits the unrelated AppIntents metadata note because no AppIntents framework dependency is present.
+- Result in this shared live-background follow-up: `xcrun swiftc -parse RollCall/RootView.swift` succeeded.
 - Result in this `0.6.6` build `23` safety/playback pass: `xcrun swiftc -parse RollCall/Models.swift RollCall/Services.swift RollCall/AppModel.swift RollCall/RootView.swift` succeeded; an out-of-sandbox `xcodebuild -project RollCall.xcodeproj -scheme RollCall -destination 'generic/platform=iOS' -derivedDataPath .DerivedData CODE_SIGNING_ALLOWED=NO build` succeeded. The previous `GameDayAnnouncerModePicker` Sendable warning is fixed; Xcode still emits the unrelated AppIntents metadata note because no AppIntents framework dependency is present.
 - Result in this live-screen appearance setting pass: `xcrun swiftc -parse RollCall/Models.swift RollCall/AppModel.swift RollCall/RootView.swift` succeeded; sandboxed `xcodebuild -project RollCall.xcodeproj -scheme RollCall -destination generic/platform=iOS -derivedDataPath .DerivedData CODE_SIGNING_ALLOWED=NO build` was blocked by SwiftPM/Xcode cache permissions; the same signing-disabled build succeeded out of sandbox. The build still reports the pre-existing `GameDayAnnouncerModePicker` Sendable warning.
 - Result in this `0.6.5` build `22` UI copy/icon pass: `xcrun swiftc -parse RollCall/Models.swift RollCall/Services.swift RollCall/RootView.swift` succeeded; `git diff --check` succeeded. Full Xcode build and simulator visual verification were not run in this pass.
@@ -83,7 +86,7 @@ Verification:
 - Result in the most recent verified build session before this version bump: the in-sandbox check was blocked by cache and CoreSimulator restrictions, but an out-of-sandbox `xcodebuild -project RollCall.xcodeproj -scheme RollCall -destination 'generic/platform=iOS' build` completed successfully for `0.4.9` (build `13`) before the Game Day visual pass. XcodeBuildMCP then completed simulator build/run verification after the Game Day redesign. The remaining verification is an on-device smoke pass for AirDrop-opened `.rollcall` imports, manual picker selection of AirDropped `.rollcall` files stored in Files, whether Files now prefers Roll Call as the open target for `.rollcall`, subscribed Apple Music MediaPlayer fade behavior with the setting on and off, repeated non-zero trim starts, preview-only fallback trimming, custom-intro playback, and bright-condition Game Day readability.
 
 Recommended next priorities:
-1. Enable the MusicKit App Service for App ID `com.jkfisher.rollcall`, refresh signing/provisioning, then launch `0.6.5` on-device and do a focused smoke pass for subscribed-device full-song trimming, repeated non-zero trim starts, MediaPlayer fade-out behavior in preview and Game Day, preview-only fallback trimming, custom-intro playback, direct AirDrop `.rollcall` opening, whether Files prefers Roll Call for `.rollcall`, and manual picker selection from Files.
+1. Enable the MusicKit App Service for App ID `com.jkfisher.rollcall`, refresh signing/provisioning, then launch `0.6.7` on-device and do a focused smoke pass for subscribed-device full-song trimming, repeated non-zero trim starts, MediaPlayer fade-out behavior in preview and Game Day, preview-only fallback trimming, custom-intro playback, direct AirDrop `.rollcall` opening, whether Files prefers Roll Call for `.rollcall`, manual picker selection from Files, and bright-field readability with `Always Use Dark Live Screens` on and off.
 2. Add focused verification around package import/export round-trips, AirDrop/open-in-place imports, support-bundle contents, and backup retention behavior after repeated imports.
 3. If the MediaPlayer path is still flaky on-device, run one bounded silent-track crossfade experiment and then explicitly decide whether Apple Music field playback remains supportable without a local-only pivot.
 

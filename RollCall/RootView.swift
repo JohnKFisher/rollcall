@@ -63,7 +63,6 @@ private extension View {
 }
 
 struct RootView: View {
-    @Environment(\.colorScheme) private var colorScheme
     @ObservedObject var appModel: AppModel
     @State private var newTeamName = ""
     @State private var selectedPlayer: Player?
@@ -86,11 +85,11 @@ struct RootView: View {
     }
 
     private var clipsSurface: RollCallSurfaceVariant {
-        appModel.state.settings.alwaysUseDarkLiveMode || colorScheme == .dark ? .live : .standard
+        .live
     }
 
     private var clipsTeamBannerVariant: TeamBannerVariant {
-        clipsSurface == .live ? .liveSide : .standard
+        .liveSide
     }
 
     var body: some View {
@@ -329,22 +328,25 @@ struct RootView: View {
         .padding(.top, 6)
         .padding(.bottom, 6)
         .frame(maxWidth: .infinity)
-        .background(rootTeamBannerBackground(for: variant))
+        .background {
+            rootTeamBannerBackground(for: variant)
+        }
     }
 
-    private func rootTeamBannerBackground(for variant: TeamBannerVariant) -> Color {
+    @ViewBuilder
+    private func rootTeamBannerBackground(for variant: TeamBannerVariant) -> some View {
         switch variant {
         case .standard:
-            return Color(uiColor: .systemGroupedBackground)
+            Color(uiColor: .systemGroupedBackground)
         case .liveSide:
-            return RollCallSurfaceVariant.live.previewBackground
+            LiveSurfaceBackground()
         }
     }
 
     private var generalClipsTab: some View {
         NavigationStack {
             ZStack {
-                clipsSurface.previewBackground
+                LiveSurfaceBackground()
                     .ignoresSafeArea()
 
                 ScrollView {
@@ -565,6 +567,7 @@ struct RootView: View {
 
                         ReadinessEnhancementsCard(
                             checks: announcementReadinessChecks(from: readiness.checks),
+                            playerAudioChecks: playerAudioReadinessChecks(from: readiness.checks),
                             playerForCheck: playerForReadinessCheck,
                             onEditPlayer: { selectedPlayer = $0 }
                         )
@@ -575,7 +578,12 @@ struct RootView: View {
                             onEditPlayer: { selectedPlayer = $0 }
                         )
 
-                        ReadinessGameDayChecksCard(checks: gameDayReadinessChecks(from: readiness.checks))
+                        ReadinessGameDayChecksCard(
+                            checks: gameDayReadinessChecks(from: readiness.checks),
+                            onRequestAppleMusicAccess: {
+                                Task { await appModel.requestAppleMusicAccess() }
+                            }
+                        )
                     } else {
                         ReadinessEmptyCard {
                             appModel.refreshReadiness()
@@ -922,6 +930,7 @@ struct RootView: View {
                 }
             }
         }
+        .tint(Color(uiColor: .label))
     }
 
     private func playerAudioReadinessChecks(from checks: [ReadinessCheck]) -> [ReadinessCheck] {
@@ -1111,6 +1120,7 @@ private struct ReadinessPlayerAudioCard: View {
 
 private struct ReadinessEnhancementsCard: View {
     let checks: [ReadinessCheck]
+    let playerAudioChecks: [ReadinessCheck]
     let playerForCheck: (ReadinessCheck) -> Player?
     let onEditPlayer: (Player) -> Void
 
@@ -1119,10 +1129,20 @@ private struct ReadinessEnhancementsCard: View {
             title: "Announcements",
             helperText: "This list shows players who have songs selected but do not have announcements recorded yet.",
             checks: checks,
-            emptyText: "Add player audio first, then Roll Call can suggest announcement upgrades.",
+            emptyText: emptyText,
             playerForCheck: playerForCheck,
             onEditPlayer: onEditPlayer
         )
+    }
+
+    private var emptyText: String {
+        let playersWithAudio = playerAudioChecks.filter { check in
+            check.state == .ready || check.state == .enhanced
+        }
+        guard !playersWithAudio.isEmpty else {
+            return "Add player audio first, then Roll Call can suggest announcement upgrades."
+        }
+        return "Every player with audio already has an Announcement Cue."
     }
 }
 
@@ -1145,6 +1165,7 @@ private struct ReadinessOptionalUpgradesCard: View {
 
 private struct ReadinessGameDayChecksCard: View {
     let checks: [ReadinessCheck]
+    let onRequestAppleMusicAccess: () -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: RollCallSpacingTier.tight.value) {
@@ -1163,11 +1184,172 @@ private struct ReadinessGameDayChecksCard: View {
                             Divider()
                                 .padding(.leading, 42)
                         }
-                        ReadinessCheckDisplayRow(check: check)
-                            .padding(.vertical, RollCallSpacingTier.tight.value)
+                        ReadinessGameDayCheckRow(
+                            check: check,
+                            onRequestAppleMusicAccess: onRequestAppleMusicAccess
+                        )
                     }
                 }
             }
+        }
+    }
+}
+
+private struct ReadinessGameDayCheckRow: View {
+    let check: ReadinessCheck
+    let onRequestAppleMusicAccess: () -> Void
+
+    var body: some View {
+        Group {
+            if canRequestAppleMusicAccess {
+                Button(action: onRequestAppleMusicAccess) {
+                    content(showsChevron: true)
+                }
+                .buttonStyle(.plain)
+                .accessibilityHint("Requests Apple Music access.")
+            } else {
+                content(showsChevron: false)
+            }
+        }
+        .accessibilityElement(children: .combine)
+    }
+
+    private func content(showsChevron: Bool) -> some View {
+        HStack(alignment: .top, spacing: RollCallSpacingTier.standard.value) {
+            Image(systemName: status.systemImage)
+                .font(.system(size: 18, weight: .semibold))
+                .foregroundStyle(status.color)
+                .frame(width: 30, height: 30)
+                .background(status.color.opacity(0.13))
+                .clipShape(Circle())
+                .accessibilityHidden(true)
+
+            VStack(alignment: .leading, spacing: 5) {
+                HStack(alignment: .firstTextBaseline, spacing: RollCallSpacingTier.tight.value) {
+                    Text(check.title)
+                        .rollCallText(.cardTitle)
+                    Spacer(minLength: RollCallSpacingTier.tight.value)
+                    StatusChip(
+                        text: canRequestAppleMusicAccess ? status.actionLabel : status.label,
+                        role: status.chipRole,
+                        emphasis: .subdued
+                    )
+                }
+
+                Text(detail)
+                    .rollCallText(.helperText)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            if showsChevron {
+                Image(systemName: "chevron.right")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(Color(uiColor: .tertiaryLabel))
+                    .padding(.top, 8)
+                    .accessibilityHidden(true)
+            }
+        }
+        .padding(.vertical, RollCallSpacingTier.tight.value)
+    }
+
+    private var status: GameDayCheckStatus {
+        if check.state == .issue {
+            return .needsAttention
+        }
+
+        switch check.id {
+        case "route":
+            return .checkManually
+        case "network", "music-auth":
+            return check.detail.hasPrefix("No Apple Music") ? .notNeeded : .looksGood
+        default:
+            return .looksGood
+        }
+    }
+
+    private var detail: String {
+        if check.state == .issue {
+            switch check.id {
+            case "route":
+                return "Roll Call cannot identify the current output. Connect your speaker and play a quick test before starting."
+            case "volume":
+                return "Device volume is \(check.detail). Turn it up and test it on the speaker you will use."
+            case "music-auth" where canRequestAppleMusicAccess:
+                return "Apple Music cues need approval. Tap Grant Access to let Roll Call use Apple Music."
+            case "music-auth":
+                return "\(check.detail) Check iOS Settings if you need Apple Music cues today."
+            default:
+                return check.detail
+            }
+        }
+
+        switch check.id {
+        case "route":
+            return "Detected: \(check.detail). This may be right or wrong; confirm the sound is coming from the speaker you want."
+        case "volume":
+            return "Device volume is \(check.detail). This looks usable, but confirm it is loud enough on the field."
+        case "network" where check.detail.hasPrefix("No Apple Music"):
+            return "No Apple Music cues are in today's lineup, so network access is not needed for those cues."
+        case "music-auth" where check.detail.hasPrefix("No Apple Music"):
+            return "No Apple Music cues are assigned, so Apple Music access is not needed right now."
+        case "lineup":
+            return "\(check.detail). This is the lineup Roll Call will use in Game Day."
+        default:
+            return check.detail
+        }
+    }
+
+    private var canRequestAppleMusicAccess: Bool {
+        check.id == "music-auth" && check.detail == "Music authorization has not been requested yet."
+    }
+}
+
+private enum GameDayCheckStatus {
+    case looksGood
+    case checkManually
+    case notNeeded
+    case needsAttention
+
+    var label: String {
+        switch self {
+        case .looksGood: return "Looks Good"
+        case .checkManually: return "Check This"
+        case .notNeeded: return "Not Needed"
+        case .needsAttention: return "Needs Attention"
+        }
+    }
+
+    var actionLabel: String {
+        switch self {
+        case .needsAttention: return "Grant Access"
+        case .checkManually: return "Check This"
+        case .notNeeded: return "Not Needed"
+        case .looksGood: return "Looks Good"
+        }
+    }
+
+    var chipRole: StatusChipRole {
+        switch self {
+        case .looksGood, .notNeeded: return .ready
+        case .checkManually: return .warning
+        case .needsAttention: return .destructive
+        }
+    }
+
+    var systemImage: String {
+        switch self {
+        case .looksGood: return "checkmark.circle.fill"
+        case .checkManually: return "questionmark.circle.fill"
+        case .notNeeded: return "minus.circle.fill"
+        case .needsAttention: return "exclamationmark.triangle.fill"
+        }
+    }
+
+    var color: Color {
+        switch self {
+        case .looksGood, .notNeeded: return Color.rollCall(.ready)
+        case .checkManually: return Color.rollCall(.warning)
+        case .needsAttention: return Color.rollCall(.destructive)
         }
     }
 }
@@ -1732,7 +1914,18 @@ private struct RollCallPackageImportSheet: UIViewControllerRepresentable {
 }
 
 private struct GameDayBackground: View {
+    var body: some View {
+        LiveSurfaceBackground()
+    }
+}
+
+private enum LiveSurfaceStyle {
+    static let backgroundAccentTint = Color.rollCall(.accent, surface: .live)
+}
+
+private struct LiveSurfaceBackground: View {
     @Environment(\.colorScheme) private var colorScheme
+    var accentTint: Color = LiveSurfaceStyle.backgroundAccentTint
 
     var body: some View {
         if colorScheme == .dark {
@@ -1740,7 +1933,7 @@ private struct GameDayBackground: View {
                 colors: [
                     Color(red: 0.04, green: 0.06, blue: 0.08),
                     Color(red: 0.08, green: 0.10, blue: 0.12),
-                    Color.rollCall(.accent, surface: .live).opacity(0.16)
+                    accentTint.opacity(0.16)
                 ],
                 startPoint: .topLeading,
                 endPoint: .bottomTrailing
@@ -1750,7 +1943,7 @@ private struct GameDayBackground: View {
                 colors: [
                     Color(red: 0.08, green: 0.10, blue: 0.12),
                     Color(red: 0.12, green: 0.13, blue: 0.14),
-                    Color.rollCall(.accent, surface: .live).opacity(0.20)
+                    accentTint.opacity(0.20)
                 ],
                 startPoint: .topLeading,
                 endPoint: .bottomTrailing
@@ -3014,13 +3207,13 @@ private struct PlayerRosterRow: View {
         if let cue {
             Label(cue.rosterDisplayTitle, systemImage: "music.note")
                 .rollCallText(.helperText)
-                .foregroundStyle(Color.rollCall(.ready))
                 .lineLimit(1)
+                .foregroundStyle(Color.rollCall(.ready))
         } else {
             Label("Song not selected", systemImage: "music.note")
                 .rollCallText(.helperText)
-                .foregroundStyle(Color.rollCall(.warning))
                 .lineLimit(1)
+                .foregroundStyle(Color.rollCall(.warning))
         }
     }
 

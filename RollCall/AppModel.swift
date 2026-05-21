@@ -2,6 +2,7 @@ import AVFoundation
 @preconcurrency import AVFAudio
 import Combine
 import Foundation
+import MusicKit
 import UIKit
 import UniformTypeIdentifiers
 
@@ -910,6 +911,11 @@ final class AppModel: ObservableObject {
 
     func refreshReadiness() {
         state.lastReadiness = readinessService.snapshot(for: selectedTeam)
+    }
+
+    func requestAppleMusicAccess() async {
+        _ = await MusicAuthorization.request()
+        refreshReadiness()
     }
 
     func createBackup(reason: String) {
