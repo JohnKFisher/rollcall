@@ -379,29 +379,35 @@ struct TeamSessionState: Codable, Equatable {
 struct AppSettings: Codable, Equatable {
     var hapticsEnabled: Bool
     var fadeOutVolumeAutomationEnabled: Bool
+    var alwaysUseDarkLiveMode: Bool
 
     static let `default` = AppSettings(
         hapticsEnabled: true,
-        fadeOutVolumeAutomationEnabled: true
+        fadeOutVolumeAutomationEnabled: true,
+        alwaysUseDarkLiveMode: true
     )
 
     enum CodingKeys: String, CodingKey {
         case hapticsEnabled
         case fadeOutVolumeAutomationEnabled
+        case alwaysUseDarkLiveMode
     }
 
     init(
         hapticsEnabled: Bool,
-        fadeOutVolumeAutomationEnabled: Bool
+        fadeOutVolumeAutomationEnabled: Bool,
+        alwaysUseDarkLiveMode: Bool
     ) {
         self.hapticsEnabled = hapticsEnabled
         self.fadeOutVolumeAutomationEnabled = fadeOutVolumeAutomationEnabled
+        self.alwaysUseDarkLiveMode = alwaysUseDarkLiveMode
     }
 
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         hapticsEnabled = try container.decodeIfPresent(Bool.self, forKey: .hapticsEnabled) ?? true
         fadeOutVolumeAutomationEnabled = try container.decodeIfPresent(Bool.self, forKey: .fadeOutVolumeAutomationEnabled) ?? true
+        alwaysUseDarkLiveMode = try container.decodeIfPresent(Bool.self, forKey: .alwaysUseDarkLiveMode) ?? true
     }
 }
 

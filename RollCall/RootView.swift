@@ -19,11 +19,25 @@ private struct PlayingSpeakerSymbol: View {
     @State private var isPulsing = false
 
     var body: some View {
-        Image(systemName: resolvedSystemImage)
-            .modifier(PlayingSpeakerSymbolEffect(color: color, isPulsing: isPulsing))
-            .onAppear {
-                isPulsing = true
+        if #available(iOS 26.0, *) {
+            ZStack {
+                Image(systemName: resolvedSystemImage)
+                    .optionalForegroundStyle(color)
+                    .opacity(0.68)
+                Image(systemName: resolvedSystemImage)
+                    .optionalForegroundStyle(color)
+                    .symbolEffect(.drawOn.individually, options: .repeat(.periodic(delay: 3.0)))
             }
+        } else {
+            Image(systemName: resolvedSystemImage)
+                .optionalForegroundStyle(color)
+                .scaleEffect(isPulsing ? 1.16 : 0.92)
+                .opacity(isPulsing ? 1.0 : 0.62)
+                .animation(.easeInOut(duration: 0.85).repeatForever(autoreverses: true), value: isPulsing)
+                .onAppear {
+                    isPulsing = true
+                }
+        }
     }
 
     private var resolvedSystemImage: String {
@@ -34,26 +48,6 @@ private struct PlayingSpeakerSymbol: View {
             return "speaker.wave.3"
         }
         return "speaker.wave.2.fill"
-    }
-}
-
-private struct PlayingSpeakerSymbolEffect: ViewModifier {
-    let color: Color?
-    let isPulsing: Bool
-
-    @ViewBuilder
-    func body(content: Content) -> some View {
-        if #available(iOS 26.0, *) {
-            content
-                .optionalForegroundStyle(color)
-                .symbolEffect(.drawOn.individually, options: .repeat(.periodic(delay: 3.0)))
-        } else {
-            content
-                .optionalForegroundStyle(color)
-                .scaleEffect(isPulsing ? 1.16 : 0.92)
-                .opacity(isPulsing ? 1.0 : 0.62)
-                .animation(.easeInOut(duration: 0.85).repeatForever(autoreverses: true), value: isPulsing)
-        }
     }
 }
 
@@ -69,6 +63,7 @@ private extension View {
 }
 
 struct RootView: View {
+    @Environment(\.colorScheme) private var colorScheme
     @ObservedObject var appModel: AppModel
     @State private var newTeamName = ""
     @State private var selectedPlayer: Player?
@@ -84,6 +79,18 @@ struct RootView: View {
 
     private var errorBinding: Binding<Bool> {
         Binding(get: { appModel.lastError != nil }, set: { newValue in if !newValue { appModel.lastError = nil } })
+    }
+
+    private var liveTabPreferredColorScheme: ColorScheme? {
+        appModel.state.settings.alwaysUseDarkLiveMode ? .dark : nil
+    }
+
+    private var clipsSurface: RollCallSurfaceVariant {
+        appModel.state.settings.alwaysUseDarkLiveMode || colorScheme == .dark ? .live : .standard
+    }
+
+    private var clipsTeamBannerVariant: TeamBannerVariant {
+        clipsSurface == .live ? .liveSide : .standard
     }
 
     var body: some View {
@@ -337,19 +344,19 @@ struct RootView: View {
     private var generalClipsTab: some View {
         NavigationStack {
             ZStack {
-                RollCallSurfaceVariant.live.previewBackground
+                clipsSurface.previewBackground
                     .ignoresSafeArea()
 
                 ScrollView {
                     VStack(alignment: .leading, spacing: RollCallSpacingTier.standard.value) {
                         if appModel.selectedTeamBuiltInClips.isEmpty {
-                            ClipsEmptyStateCard()
+                            ClipsEmptyStateCard(surface: clipsSurface)
                         } else {
-                            ClipsHeaderCard(clipCount: appModel.selectedTeamBuiltInClips.count)
+                            ClipsHeaderCard(clipCount: appModel.selectedTeamBuiltInClips.count, surface: clipsSurface)
 
                             LazyVStack(spacing: RollCallSpacingTier.tight.value) {
                                 ForEach(appModel.selectedTeamBuiltInClips) { clip in
-                                    GeneralClipCard(clip: clip) {
+                                    GeneralClipCard(clip: clip, surface: clipsSurface) {
                                         Task { await appModel.play(builtInClip: clip) }
                                     }
                                 }
@@ -364,26 +371,28 @@ struct RootView: View {
             .navigationTitle("Clips")
             .toolbar(.hidden, for: .navigationBar)
             .safeAreaInset(edge: .top, spacing: 0) {
-                rootTeamBannerHeader(variant: .liveSide)
+                rootTeamBannerHeader(variant: clipsTeamBannerVariant)
             }
         }
+        .preferredColorScheme(liveTabPreferredColorScheme)
     }
 
     private struct ClipsHeaderCard: View {
         let clipCount: Int
+        let surface: RollCallSurfaceVariant
 
         var body: some View {
             HStack(spacing: RollCallSpacingTier.standard.value) {
                 Image(systemName: "speaker.wave.2.fill")
                     .font(.headline.weight(.semibold))
-                    .foregroundStyle(Color.rollCall(.live, surface: .live))
+                    .foregroundStyle(Color.rollCall(.live, surface: surface))
                     .frame(width: 24, alignment: .leading)
 
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Crowd clips ready")
-                        .rollCallText(.cardTitle, surface: .live)
+                        .rollCallText(.cardTitle, surface: surface)
                     Text("\(clipCount) built-in reactions for quick live moments")
-                        .rollCallText(.helperText, surface: .live)
+                        .rollCallText(.helperText, surface: surface)
                         .lineLimit(2)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -396,7 +405,7 @@ struct RootView: View {
                     Text("Ready")
                 }
                 .font(.caption.weight(.semibold))
-                .foregroundStyle(Color.rollCall(.ready, surface: .live))
+                .foregroundStyle(Color.rollCall(.ready, surface: surface))
                 .accessibilityHidden(true)
             }
             .padding(.horizontal, 2)
@@ -404,34 +413,37 @@ struct RootView: View {
             .padding(.bottom, 10)
             .overlay(alignment: .bottom) {
                 Rectangle()
-                    .fill(Color.rollCall(.neutralStructure, surface: .live).opacity(0.7))
+                    .fill(Color.rollCall(.neutralStructure, surface: surface).opacity(0.7))
                     .frame(height: 1)
             }
         }
     }
 
     private struct ClipsEmptyStateCard: View {
+        let surface: RollCallSurfaceVariant
+
         var body: some View {
             VStack(alignment: .leading, spacing: RollCallSpacingTier.standard.value) {
                 Image(systemName: "speaker.slash.fill")
                     .font(.title2.weight(.semibold))
-                    .foregroundStyle(Color.rollCall(.warning, surface: .live))
+                    .foregroundStyle(Color.rollCall(.warning, surface: surface))
 
                 VStack(alignment: .leading, spacing: 4) {
                     Text("No clips ready")
-                        .rollCallText(.cardTitle, surface: .live)
+                        .rollCallText(.cardTitle, surface: surface)
                     Text("Select a team to use the built-in crowd clip library.")
-                        .rollCallText(.helperText, surface: .live)
+                        .rollCallText(.helperText, surface: surface)
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            .rollCallCard(.live, surface: .live)
+            .rollCallCard(surface == .live ? .live : .utility, surface: surface)
         }
     }
 
     private struct GeneralClipCard: View {
         let clip: BuiltInClip
+        let surface: RollCallSurfaceVariant
         let play: () -> Void
 
         var body: some View {
@@ -439,7 +451,7 @@ struct RootView: View {
                 HStack(spacing: RollCallSpacingTier.standard.value) {
                     VStack(alignment: .leading, spacing: 5) {
                         Text(clip.title)
-                            .rollCallText(.cardTitle, surface: .live)
+                            .rollCallText(.cardTitle, surface: surface)
                             .lineLimit(1)
                             .minimumScaleFactor(0.82)
 
@@ -447,7 +459,7 @@ struct RootView: View {
                             Label("Tap to play", systemImage: "hand.tap.fill")
                             Text(clipDurationText)
                         }
-                        .rollCallText(.helperText, surface: .live)
+                        .rollCallText(.helperText, surface: surface)
                         .lineLimit(1)
                     }
 
@@ -485,10 +497,20 @@ struct RootView: View {
         }
 
         private var cardBackground: some ShapeStyle {
-            LinearGradient(
+            if surface == .live {
+                return LinearGradient(
+                    colors: [
+                        Color.white.opacity(0.13),
+                        Color.white.opacity(0.08)
+                    ],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
+            }
+            return LinearGradient(
                 colors: [
-                    Color.white.opacity(0.13),
-                    Color.white.opacity(0.08)
+                    Color(uiColor: .secondarySystemGroupedBackground),
+                    Color(uiColor: .secondarySystemGroupedBackground)
                 ],
                 startPoint: .topLeading,
                 endPoint: .bottomTrailing
@@ -497,7 +519,7 @@ struct RootView: View {
 
         private var cardBorder: some View {
             RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .strokeBorder(Color.rollCall(.neutralStructure, surface: .live).opacity(0.9), lineWidth: 1)
+                .strokeBorder(Color.rollCall(.neutralStructure, surface: surface).opacity(0.9), lineWidth: 1)
         }
     }
 
@@ -519,6 +541,7 @@ struct RootView: View {
                 LineupEditorSheet(appModel: appModel)
             }
         }
+        .preferredColorScheme(liveTabPreferredColorScheme)
     }
 
     private var readinessTab: some View {
@@ -766,6 +789,17 @@ struct RootView: View {
                         helperText: "Keep live-use preferences simple and predictable."
                     ) {
                         Toggle(isOn: Binding(
+                            get: { appModel.state.settings.alwaysUseDarkLiveMode },
+                            set: { appModel.setAlwaysUseDarkLiveMode($0) }
+                        )) {
+                            SettingsRowLabel(
+                                title: "Always Use Dark Live Screens",
+                                detail: "Keep Game Day and Clips dark for field visibility.",
+                                systemImage: "sun.max.fill"
+                            )
+                        }
+
+                        Toggle(isOn: Binding(
                             get: { appModel.state.settings.hapticsEnabled },
                             set: { appModel.setHapticsEnabled($0) }
                         )) {
@@ -782,7 +816,7 @@ struct RootView: View {
                         )) {
                             SettingsRowLabel(
                                 title: "Fade-Out Volume Automation",
-                                detail: "Allow Roll Call to set and fade cue volume during playback.",
+                                detail: "Allow Roll Call to override playback volume to max, then lower it to simulate a fade-out.",
                                 systemImage: "speaker.wave.2.fill"
                             )
                         }
@@ -900,7 +934,7 @@ struct RootView: View {
 
     private func announcementReadinessChecks(from checks: [ReadinessCheck]) -> [ReadinessCheck] {
         checks.filter { check in
-            check.state == .enhanced || check.id.contains("announcement-upgrade")
+            check.id.contains("announcement-upgrade")
         }
     }
 
@@ -1964,8 +1998,14 @@ private struct GameDayNowBattingHero: View {
     private var actionTitle: String {
         if isActive { return "Tap Again to Stop" }
         if willUseFallback { return "Play Fallback" }
-        if announcerMode == .announcerOnly { return "Play Announcement Cue" }
-        return "Play Cue"
+        switch announcerMode {
+        case .announcerOnly:
+            return "Play Announcer"
+        case .announcerAndSong:
+            return hasCustomAnnouncer ? "Play Announcer + Song" : "Play Song"
+        case .songOnly:
+            return "Play Song"
+        }
     }
 
     private var announcerSummary: String {
@@ -2205,7 +2245,7 @@ private struct GameDayAnnouncerModePicker: View {
     var body: some View {
         Picker("Announcer Mode", selection: Binding(
             get: { selectedMode },
-            set: onSelect
+            set: { mode in onSelect(mode) }
         )) {
             ForEach(GameDayAnnouncerMode.allCases) { mode in
                 Text(mode.title).tag(mode)
@@ -2626,7 +2666,7 @@ private struct RecoveryCenterView: View {
     var body: some View {
         List {
             Section("Backups") {
-                Text("Create a manual backup before risky edits. Automatic backups are also created before package imports, and only the newest 10 are kept.")
+                Text("Create a manual backup before risky edits. Automatic backups are also created before package imports and backup restores, and only the newest 10 are kept.")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
 
@@ -2974,7 +3014,7 @@ private struct PlayerRosterRow: View {
         if let cue {
             Label(cue.rosterDisplayTitle, systemImage: "music.note")
                 .rollCallText(.helperText)
-                .foregroundStyle(Color(uiColor: .secondaryLabel))
+                .foregroundStyle(Color.rollCall(.ready))
                 .lineLimit(1)
         } else {
             Label("Song not selected", systemImage: "music.note")

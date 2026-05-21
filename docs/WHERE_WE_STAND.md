@@ -4,11 +4,12 @@ Use this file as a concise project status snapshot for the current version, what
 
 ## Roll Call
 
-Current version: `0.6.5` (build `22`)
+Current version: `0.6.6` (build `23`)
 
 Status:
 - Active prototype with a buildable iPhone app target at [RollCall.xcodeproj](/Users/jkfisher/Documents/Coding/Roll%20Call/RollCall.xcodeproj).
 - The repository has been cleaned up so the working source of truth is back on the intended `RollCall/` and `RollCall.xcodeproj/` names.
+- `0.6.6` build `23` tightens live playback volume automation, adds an automatic pre-restore backup before backup restores, fixes the Game Day announcer mode Sendable warning, and keeps recent Readiness/roster copy and status polish together.
 - `0.6.5` build `22` collects the latest live-surface UI copy and icon cleanup: Game Day player-tile labels/icons, fallback wording, Readiness announcement wording, Players row song/announcement states, Clips header treatment, and the local dark rendering for the Game Day announcer mode picker.
 - `0.6.0` build `21` aligns the Readiness experience with the accepted product model: readiness now answers whether today’s lineup can confidently run Game Day, not whether setup is “complete.”
 - The repository is now licensed for noncommercial source-available use with Roll Call-specific attribution, source-sharing, commercial-use, and asset-boundary terms.
@@ -33,6 +34,7 @@ What works now:
 - Apple Music full-song playback now forces the current cue trim start when replaying catalog songs, to avoid stale start-position behavior on reused selections
 - Cue fade-out timing now runs inside the requested clip length for local audio and preview-based Apple Music playback
 - Settings now includes a `Fade-Out Volume Automation` switch so Roll Call can either manage cue volume for fades or leave playback volume untouched
+- Settings now includes a default-on `Always Use Dark Live Screens` switch that keeps `Game Day` and `Clips` pinned to dark mode for field visibility while the rest of the app follows the user's Light/Dark appearance.
 - Subscribed full-song Apple Music playback now routes through an internal MediaPlayer application-player path so the same Apple Music cue can attempt stepped fade-out in trim preview, cue preview, and Game Day without changing the cue model
 - Experimental Apple Music local-copy flag and one-way conversion action
 - Main tab roots now use a pinned, full-width TeamBar at the top of the screen instead of repeating panel-name headers; Game Day keeps its dark live-side board with a top announcer-mode picker, compact live warning strip, Now Batting hero, On Deck area, centered `Prev / Edit Lineup / Next` row, divider before the grid, and obvious active tap-to-stop state
@@ -65,6 +67,8 @@ Known limitations:
 - Startup and tap responsiveness have been tightened by deferring/coalescing some follow-up work and moving snapshot restore I/O off the main actor, but this still needs an on-device feel pass to confirm the improvement.
 
 Verification:
+- Result in this `0.6.6` build `23` safety/playback pass: `xcrun swiftc -parse RollCall/Models.swift RollCall/Services.swift RollCall/AppModel.swift RollCall/RootView.swift` succeeded; an out-of-sandbox `xcodebuild -project RollCall.xcodeproj -scheme RollCall -destination 'generic/platform=iOS' -derivedDataPath .DerivedData CODE_SIGNING_ALLOWED=NO build` succeeded. The previous `GameDayAnnouncerModePicker` Sendable warning is fixed; Xcode still emits the unrelated AppIntents metadata note because no AppIntents framework dependency is present.
+- Result in this live-screen appearance setting pass: `xcrun swiftc -parse RollCall/Models.swift RollCall/AppModel.swift RollCall/RootView.swift` succeeded; sandboxed `xcodebuild -project RollCall.xcodeproj -scheme RollCall -destination generic/platform=iOS -derivedDataPath .DerivedData CODE_SIGNING_ALLOWED=NO build` was blocked by SwiftPM/Xcode cache permissions; the same signing-disabled build succeeded out of sandbox. The build still reports the pre-existing `GameDayAnnouncerModePicker` Sendable warning.
 - Result in this `0.6.5` build `22` UI copy/icon pass: `xcrun swiftc -parse RollCall/Models.swift RollCall/Services.swift RollCall/RootView.swift` succeeded; `git diff --check` succeeded. Full Xcode build and simulator visual verification were not run in this pass.
 - Result in the pinned-TeamBar navigation pass: `xcrun swiftc -parse RollCall/RootView.swift` succeeded; an out-of-sandbox `xcodebuild -project RollCall.xcodeproj -scheme RollCall -destination 'generic/platform=iOS' -derivedDataPath .DerivedData CODE_SIGNING_ALLOWED=NO build` succeeded. The build still reports the pre-existing `GameDayAnnouncerModePicker` Sendable warning.
 - Result in this `0.6.0` build `21` readiness-model pass: `xcrun swiftc -parse RollCall/Models.swift RollCall/Services.swift RollCall/RootView.swift` succeeded; an out-of-sandbox `xcodebuild -project RollCall.xcodeproj -scheme RollCall -destination 'generic/platform=iOS' -derivedDataPath .DerivedData CODE_SIGNING_ALLOWED=NO build` succeeded; XcodeBuildMCP build/run on `iPhone 17 Pro` succeeded. Simulator smoke confirmed Readiness shows player-audio confidence, optional upgrades stay separate, `Open Game Day` switches to the live board, fallback remains visible without a fallback warning strip, and a `Needs Audio` row opens the player editor. The build still reports the pre-existing `GameDayAnnouncerModePicker` Sendable warning.

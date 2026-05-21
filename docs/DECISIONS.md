@@ -10,6 +10,10 @@ Use this file as a concise decision log for project-specific architectural, beha
 
 ## 2026-05-21
 
+- Approved: add a default-on setting that keeps `Game Day` and `Clips` in dark mode while allowing the rest of the app to follow the user's normal Light/Dark appearance.
+  Rationale: the custom light-mode Game Day gradient can become hard to read in sunlight, while the live-use screens are the places where field visibility matters most.
+  Status: approved
+
 - Approved: Readiness should mean confidence for live Game Day use, with player-specific playable audio as the main Ready state, Announcement Cues as Enhanced, missing player audio as a helpful non-blocking need, and photos/presentation polish as optional upgrades that never reduce readiness.
   Rationale: this aligns the app with `docs/product/READINESS_MODEL.md` by encouraging setup without turning it into a warning-heavy completion checklist; built-in fallback remains live-safe but does not count as a player being Ready.
   Status: approved

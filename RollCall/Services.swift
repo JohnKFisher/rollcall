@@ -528,7 +528,8 @@ private protocol AppleMusicCatalogPlaybackControlling: AnyObject {
         songID: String,
         startTime: TimeInterval,
         duration: TimeInterval,
-        volumeAutomationEnabled: Bool
+        volumeAutomationEnabled: Bool,
+        setsInitialVolumeToMax: Bool
     ) async throws
     func setVolume(_ volume: Float)
     func stop()
@@ -539,7 +540,6 @@ private final class MediaPlayerCatalogPlaybackController: AppleMusicCatalogPlayb
     private let player: MPMusicPlayerApplicationController
     private var fadeAnchorVolume: Float = 1
     private var volumeAutomationEnabledForCurrentCue = true
-    private var startupRampTask: Task<Void, Never>?
 
     init(player: MPMusicPlayerApplicationController = MPMusicPlayerController.applicationQueuePlayer) {
         self.player = player
@@ -553,16 +553,16 @@ private final class MediaPlayerCatalogPlaybackController: AppleMusicCatalogPlayb
         songID: String,
         startTime: TimeInterval,
         duration: TimeInterval,
-        volumeAutomationEnabled: Bool
+        volumeAutomationEnabled: Bool,
+        setsInitialVolumeToMax: Bool
     ) async throws {
         volumeAutomationEnabledForCurrentCue = volumeAutomationEnabled
         if volumeAutomationEnabled {
-            fadeAnchorVolume = currentPlayerVolume()
+            fadeAnchorVolume = 1
         }
-        startupRampTask?.cancel()
         player.stop()
-        if volumeAutomationEnabled {
-            setPlayerVolume(0)
+        if volumeAutomationEnabled, setsInitialVolumeToMax {
+            setPlayerVolume(1)
         }
 
         let descriptor = MPMusicPlayerStoreQueueDescriptor(storeIDs: [songID])
@@ -578,31 +578,22 @@ private final class MediaPlayerCatalogPlaybackController: AppleMusicCatalogPlayb
         }
 
         player.play()
-        if volumeAutomationEnabled {
-            setPlayerVolume(0)
+        if volumeAutomationEnabled, setsInitialVolumeToMax {
+            setPlayerVolume(1)
         }
 
         if startTime > 0 {
             await Task.yield()
             player.currentPlaybackTime = startTime
         }
-
-        if volumeAutomationEnabled {
-            beginStartupRamp()
-        }
     }
 
     func setVolume(_ volume: Float) {
         let clamped = min(max(0, volume), 1)
-        if clamped >= 0.999 {
-            fadeAnchorVolume = currentPlayerVolume()
-        }
         setPlayerVolume(fadeAnchorVolume * clamped)
     }
 
     func stop() {
-        startupRampTask?.cancel()
-        startupRampTask = nil
         player.stop()
         if volumeAutomationEnabledForCurrentCue {
             setPlayerVolume(fadeAnchorVolume)
@@ -616,26 +607,6 @@ private final class MediaPlayerCatalogPlaybackController: AppleMusicCatalogPlayb
         player.setValue(volume, forKey: "volume")
     }
 
-    private func currentPlayerVolume() -> Float {
-        guard let number = player.value(forKey: "volume") as? NSNumber else { return 1 }
-        return min(max(number.floatValue, 0), 1)
-    }
-
-    private func beginStartupRamp() {
-        startupRampTask?.cancel()
-        let targetVolume = fadeAnchorVolume
-        startupRampTask = Task { @MainActor [weak self] in
-            guard let self else { return }
-            let steps = 4
-            for step in 1...steps {
-                guard !Task.isCancelled else { return }
-                let progress = Float(step) / Float(steps)
-                self.setPlayerVolume(targetVolume * progress)
-                try? await Task.sleep(for: .milliseconds(30))
-            }
-            self.startupRampTask = nil
-        }
-    }
 }
 
 @MainActor
@@ -692,7 +663,11 @@ final class CuePlaybackEngine: NSObject, ObservableObject {
         )
     }
 
-    func playAsset(relativePath: String, activeCueID: UUID) async throws {
+    func playAsset(
+        relativePath: String,
+        activeCueID: UUID,
+        fadeOutVolumeAutomationEnabled: Bool = true
+    ) async throws {
         if self.activeCueID == activeCueID {
             stop()
             return
@@ -712,6 +687,9 @@ final class CuePlaybackEngine: NSObject, ObservableObject {
         let player = try AVAudioPlayer(contentsOf: url)
         announcerPlayer = player
         player.prepareToPlay()
+        if fadeOutVolumeAutomationEnabled {
+            player.volume = 1
+        }
         guard player.play() else {
             announcerPlayer = nil
             self.activeCueID = nil
@@ -828,6 +806,9 @@ final class CuePlaybackEngine: NSObject, ObservableObject {
             }
             announcerPlayer = player
             player.prepareToPlay()
+            if fadeOutVolumeAutomationEnabled {
+                player.volume = 1
+            }
             guard player.play() else {
                 announcerPlayer = nil
                 try await startPrimaryCue(cue, fadeOutVolumeAutomationEnabled: fadeOutVolumeAutomationEnabled)
@@ -847,7 +828,8 @@ final class CuePlaybackEngine: NSObject, ObservableObject {
                     try await self.startPrimaryCue(
                         cue,
                         cancelPendingStopTask: false,
-                        fadeOutVolumeAutomationEnabled: fadeOutVolumeAutomationEnabled
+                        fadeOutVolumeAutomationEnabled: fadeOutVolumeAutomationEnabled,
+                        setsInitialVolumeToMax: false
                     )
                 } catch {
                     self.stop()
@@ -862,7 +844,8 @@ final class CuePlaybackEngine: NSObject, ObservableObject {
     private func startPrimaryCue(
         _ cue: Cue,
         cancelPendingStopTask: Bool = true,
-        fadeOutVolumeAutomationEnabled: Bool
+        fadeOutVolumeAutomationEnabled: Bool,
+        setsInitialVolumeToMax: Bool = true
     ) async throws {
         if cancelPendingStopTask {
             stopTask?.cancel()
@@ -885,7 +868,8 @@ final class CuePlaybackEngine: NSObject, ObservableObject {
                         startTime: cue.startTime,
                         duration: clipDuration,
                         fadeOut: cue.fadeOutDuration,
-                        fadeOutVolumeAutomationEnabled: fadeOutVolumeAutomationEnabled
+                        fadeOutVolumeAutomationEnabled: fadeOutVolumeAutomationEnabled,
+                        setsInitialVolumeToMax: setsInitialVolumeToMax
                     )
                     return
                 } catch {
@@ -899,7 +883,7 @@ final class CuePlaybackEngine: NSObject, ObservableObject {
             let maxPreviewStart = max(0, appleMusicClipDurationLimit - clipDuration)
             let previewStart = min(max(0, cue.startTime), maxPreviewStart)
             player.seek(to: CMTime(seconds: previewStart, preferredTimescale: 600), toleranceBefore: .zero, toleranceAfter: .zero) { [weak player] _ in
-                if fadeOutVolumeAutomationEnabled {
+                if fadeOutVolumeAutomationEnabled, setsInitialVolumeToMax {
                     player?.volume = 1
                 }
                 player?.play()
@@ -917,6 +901,7 @@ final class CuePlaybackEngine: NSObject, ObservableObject {
                 duration: duration,
                 fadeOut: cue.fadeOutDuration,
                 fadeOutVolumeAutomationEnabled: fadeOutVolumeAutomationEnabled,
+                setsInitialVolumeToMax: setsInitialVolumeToMax,
                 reusePrewarm: prewarmedCueID == cue.id
             )
         case .builtInClip(let source):
@@ -927,6 +912,7 @@ final class CuePlaybackEngine: NSObject, ObservableObject {
                 duration: duration,
                 fadeOut: cue.fadeOutDuration,
                 fadeOutVolumeAutomationEnabled: fadeOutVolumeAutomationEnabled,
+                setsInitialVolumeToMax: setsInitialVolumeToMax,
                 reusePrewarm: prewarmedCueID == cue.id
             )
         }
@@ -937,13 +923,15 @@ final class CuePlaybackEngine: NSObject, ObservableObject {
         startTime: TimeInterval,
         duration: TimeInterval,
         fadeOut: TimeInterval,
-        fadeOutVolumeAutomationEnabled: Bool
+        fadeOutVolumeAutomationEnabled: Bool,
+        setsInitialVolumeToMax: Bool
     ) async throws {
         try await catalogPlaybackController.play(
             songID: source.songID,
             startTime: startTime,
             duration: duration,
-            volumeAutomationEnabled: fadeOutVolumeAutomationEnabled
+            volumeAutomationEnabled: fadeOutVolumeAutomationEnabled,
+            setsInitialVolumeToMax: setsInitialVolumeToMax
         )
         scheduleCatalogStop(
             duration: duration,
@@ -958,6 +946,7 @@ final class CuePlaybackEngine: NSObject, ObservableObject {
         duration: TimeInterval,
         fadeOut: TimeInterval,
         fadeOutVolumeAutomationEnabled: Bool,
+        setsInitialVolumeToMax: Bool,
         reusePrewarm: Bool
     ) throws {
         let player = if reusePrewarm, let prewarmedLocalPlayer {
@@ -966,7 +955,7 @@ final class CuePlaybackEngine: NSObject, ObservableObject {
             try AVAudioPlayer(contentsOf: url)
         }
         audioPlayer = player
-        if fadeOutVolumeAutomationEnabled {
+        if fadeOutVolumeAutomationEnabled, setsInitialVolumeToMax {
             player.volume = 1
         }
         player.currentTime = start

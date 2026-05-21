@@ -616,7 +616,8 @@ final class AppModel: ObservableObject {
             case .assetOnly(let relativePath, let activeCueID):
                 try await playbackEngine.playAsset(
                     relativePath: relativePath,
-                    activeCueID: activeCueID
+                    activeCueID: activeCueID,
+                    fadeOutVolumeAutomationEnabled: state.settings.fadeOutVolumeAutomationEnabled
                 )
             }
             haptics.success(isEnabled: state.settings.hapticsEnabled)
@@ -753,6 +754,11 @@ final class AppModel: ObservableObject {
 
     func setFadeOutVolumeAutomationEnabled(_ isEnabled: Bool) {
         state.settings.fadeOutVolumeAutomationEnabled = isEnabled
+        persist()
+    }
+
+    func setAlwaysUseDarkLiveMode(_ isEnabled: Bool) {
+        state.settings.alwaysUseDarkLiveMode = isEnabled
         persist()
     }
 
@@ -909,48 +915,59 @@ final class AppModel: ObservableObject {
     func createBackup(reason: String) {
         let snapshotState = state
         Task(priority: .utility) { [weak self] in
-            let result = await Task.detached(priority: .utility) { () -> Result<SnapshotRecord, Error> in
-                guard let snapshotsDirectory = try? AppPaths.snapshotsDirectory() else {
-                    return .failure(AppError.invalidImport)
-                }
-                let name = "\(UUID().uuidString).json"
-                let destination = snapshotsDirectory.appendingPathComponent(name)
-                let encoder = JSONEncoder()
-                encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-                encoder.dateEncodingStrategy = .iso8601
-                do {
-                    try encoder.encode(snapshotState).write(to: destination, options: .atomic)
-                    return .success(
-                        SnapshotRecord(
-                            id: UUID(),
-                            createdAt: .now,
-                            reason: reason,
-                            relativeManifestPath: name
-                        )
-                    )
-                } catch {
-                    return .failure(error)
-                }
-            }.value
+            let result = await self?.writeBackupRecord(for: snapshotState, reason: reason) ?? .failure(AppError.invalidImport)
 
             guard let self else { return }
             switch result {
             case .success(let snapshotRecord):
-                self.state.snapshots.insert(snapshotRecord, at: 0)
-                let overflow = Array(self.state.snapshots.dropFirst(10))
-                self.state.snapshots = Array(self.state.snapshots.prefix(10))
-                if !overflow.isEmpty {
-                    Task.detached(priority: .utility) {
-                        guard let snapshotsDirectory = try? AppPaths.snapshotsDirectory() else { return }
-                        for snapshot in overflow {
-                            let url = snapshotsDirectory.appendingPathComponent(snapshot.relativeManifestPath)
-                            try? FileManager.default.removeItem(at: url)
-                        }
-                    }
-                }
+                self.insertBackupRecord(snapshotRecord)
                 self.persist()
             case .failure(let error):
                 self.lastError = error.localizedDescription
+            }
+        }
+    }
+
+    private func writeBackupRecord(for snapshotState: AppState, reason: String) async -> Result<SnapshotRecord, Error> {
+        await Task.detached(priority: .utility) { () -> Result<SnapshotRecord, Error> in
+            guard let snapshotsDirectory = try? AppPaths.snapshotsDirectory() else {
+                return .failure(AppError.invalidImport)
+            }
+            let name = "\(UUID().uuidString).json"
+            let destination = snapshotsDirectory.appendingPathComponent(name)
+            let encoder = JSONEncoder()
+            encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+            encoder.dateEncodingStrategy = .iso8601
+            do {
+                try encoder.encode(snapshotState).write(to: destination, options: .atomic)
+                return .success(
+                    SnapshotRecord(
+                        id: UUID(),
+                        createdAt: .now,
+                        reason: reason,
+                        relativeManifestPath: name
+                    )
+                )
+            } catch {
+                return .failure(error)
+            }
+        }.value
+    }
+
+    private func insertBackupRecord(_ snapshotRecord: SnapshotRecord) {
+        state.snapshots.insert(snapshotRecord, at: 0)
+        let overflow = Array(state.snapshots.dropFirst(10))
+        state.snapshots = Array(state.snapshots.prefix(10))
+        pruneBackupFiles(for: overflow)
+    }
+
+    private func pruneBackupFiles(for snapshots: [SnapshotRecord]) {
+        guard !snapshots.isEmpty else { return }
+        Task.detached(priority: .utility) {
+            guard let snapshotsDirectory = try? AppPaths.snapshotsDirectory() else { return }
+            for snapshot in snapshots {
+                let url = snapshotsDirectory.appendingPathComponent(snapshot.relativeManifestPath)
+                try? FileManager.default.removeItem(at: url)
             }
         }
     }
@@ -960,6 +977,10 @@ final class AppModel: ObservableObject {
             guard let snapshotsDirectory = try? AppPaths.snapshotsDirectory() else {
                 throw AppError.invalidImport
             }
+            let preRestoreBackup = try await self.writeBackupRecord(
+                for: self.state,
+                reason: "Automatic backup before restore"
+            ).get()
             let sourceURL = snapshotsDirectory.appendingPathComponent(snapshot.relativeManifestPath)
             let currentVersion = self.state.appVersion
             let currentDeviceIdentity = self.state.deviceIdentity
@@ -978,9 +999,11 @@ final class AppModel: ObservableObject {
             }.value
 
             self.state = restoredState
+            self.insertBackupRecord(preRestoreBackup)
             self.normalizeSelectedTeamIfNeeded()
             self.normalizeAllTeams()
             self.scheduleReadinessRefresh()
+            self.persist()
         }
     }
 
