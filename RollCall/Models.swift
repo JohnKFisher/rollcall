@@ -489,9 +489,32 @@ struct Team: Codable, Equatable, Identifiable {
 
 enum ReadinessState: String, Codable {
     case ready
-    case warning
-    case failed
-    case unknown
+    case enhanced
+    case needsAudio
+    case optional
+    case gameDayCheck
+    case issue
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.singleValueContainer()
+        let rawValue = try container.decode(String.self)
+        switch rawValue {
+        case "ready":
+            self = .ready
+        case "enhanced":
+            self = .enhanced
+        case "needsAudio", "warning":
+            self = .needsAudio
+        case "optional":
+            self = .optional
+        case "gameDayCheck", "unknown":
+            self = .gameDayCheck
+        case "issue", "failed":
+            self = .issue
+        default:
+            self = .gameDayCheck
+        }
+    }
 }
 
 struct ReadinessCheck: Codable, Equatable, Identifiable {

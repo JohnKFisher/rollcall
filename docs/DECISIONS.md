@@ -8,6 +8,12 @@ Use this file as a concise decision log for project-specific architectural, beha
   Rationale: the project should remain very free for personal, educational, nonprofit, school, public agency, volunteer, youth, and community sports use while keeping commercial use permission-only and protecting Roll Call branding, personal materials, and third-party assets.
   Status: approved
 
+## 2026-05-21
+
+- Approved: Readiness should mean confidence for live Game Day use, with player-specific playable audio as the main Ready state, Announcement Cues as Enhanced, missing player audio as a helpful non-blocking need, and photos/presentation polish as optional upgrades that never reduce readiness.
+  Rationale: this aligns the app with `docs/product/READINESS_MODEL.md` by encouraging setup without turning it into a warning-heavy completion checklist; built-in fallback remains live-safe but does not count as a player being Ready.
+  Status: approved
+
 ## 2026-05-15
 
 - Approved: AirDropped or shared `.rollcall` files should open directly into Roll Call's existing import flow, while preserving the current backup-first import semantics.

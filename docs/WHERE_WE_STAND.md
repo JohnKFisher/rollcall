@@ -4,12 +4,12 @@ Use this file as a concise project status snapshot for the current version, what
 
 ## Roll Call
 
-Current version: `0.6.0` (build `20`)
+Current version: `0.6.0` (build `21`)
 
 Status:
 - Active prototype with a buildable iPhone app target at [RollCall.xcodeproj](/Users/jkfisher/Documents/Coding/Roll%20Call/RollCall.xcodeproj).
 - The repository has been cleaned up so the working source of truth is back on the intended `RollCall/` and `RollCall.xcodeproj/` names.
-- `0.6.0` build `20` is the real-use pause build. The intended next step is to use it in the field for a week or two and collect only practical, field-relevant issues.
+- `0.6.0` build `21` aligns the Readiness experience with the accepted product model: readiness now answers whether today’s lineup can confidently run Game Day, not whether setup is “complete.”
 - The repository is now licensed for noncommercial source-available use with Roll Call-specific attribution, source-sharing, commercial-use, and asset-boundary terms.
 
 What works now:
@@ -35,7 +35,7 @@ What works now:
 - Experimental Apple Music local-copy flag and one-way conversion action
 - Game Day dark live-side board with a thin TeamBar, top announcer-mode picker, compact live warning strip, Now Batting hero, On Deck area, centered `Prev / Edit Lineup / Next` row, divider before the grid, and obvious active tap-to-stop state
 - General Clips tab using the shared cue engine with bundled licensed crowd clips tracked in `ATTRIBUTIONS.md`
-- Readiness dashboard with Apple Music, asset, and cue-specific checks
+- Readiness confidence dashboard with player-specific audio as Ready, Announcement Cues as Enhanced, missing player audio as a non-blocking need, optional polish separated from readiness, direct player repair routing, and before-start device checks kept separate from player status
 - `.rollcall` package export/import with bundled local media, custom intro audio, and roster photos
 - `.rollcall` export now produces a zipped single-file archive (with backward-compatible import support for older directory-style packages)
 - AirDropped or shared `.rollcall` files can now open directly into Roll Call's existing import flow, the manual import picker accepts `.rollcall` files even when Files surfaces them as generic file data, and the app now advertises `.rollcall` as an editable document type it owns
@@ -57,12 +57,13 @@ Known limitations:
 - The new subscribed-song MediaPlayer backend is implemented but still unproven on a real subscribed device; until that on-device check passes, full-song Apple Music fade behavior should still be treated as provisional.
 - The new Apple Music hook suggestion is intentionally conservative and still needs an on-device feel pass to judge whether its default entrance guesses are actually helpful.
 - Roll Call now gives only lightweight Focus guidance for interruptions; it still does not have OS-level Do Not Disturb or Guided Access integration.
-- In `Announcer Only`, players without a recorded Announcement Cue fall back to `Small Cheer`; in `Announcer+Song`, missing announcers are skipped and missing songs fall back to `Small Cheer`.
+- In `Announcer Only`, players without a recorded Announcement Cue fall back to `Small Cheer`; in `Announcer+Song`, missing announcers are skipped and missing songs fall back to `Small Cheer`. This fallback is live-safe but does not count as player-specific Ready status in Readiness.
 - The no-song Game Day fallback clip is currently code-defaulted to `Small Cheer`; a user-facing selector for changing that default is not implemented yet.
 - Local audio import still exists as a fallback path, but it has been moved behind a secondary disclosure in the player editor so Apple Music remains the obvious primary flow.
 - Startup and tap responsiveness have been tightened by deferring/coalescing some follow-up work and moving snapshot restore I/O off the main actor, but this still needs an on-device feel pass to confirm the improvement.
 
 Verification:
+- Result in this `0.6.0` build `21` readiness-model pass: `xcrun swiftc -parse RollCall/Models.swift RollCall/Services.swift RollCall/RootView.swift` succeeded; an out-of-sandbox `xcodebuild -project RollCall.xcodeproj -scheme RollCall -destination 'generic/platform=iOS' -derivedDataPath .DerivedData CODE_SIGNING_ALLOWED=NO build` succeeded; XcodeBuildMCP build/run on `iPhone 17 Pro` succeeded. Simulator smoke confirmed Readiness shows player-audio confidence, optional upgrades stay separate, `Open Game Day` switches to the live board, fallback remains visible without a fallback warning strip, and a `Needs Audio` row opens the player editor. The build still reports the pre-existing `GameDayAnnouncerModePicker` Sendable warning.
 - `xcrun swiftc -parse RollCall/RootView.swift`
 - `xcrun swift-frontend -typecheck -module-cache-path /private/tmp/rollcall-module-cache -primary-file RollCall/RootView.swift RollCall/Services.swift RollCall/Models.swift RollCall/AppModel.swift RollCall/RollCallApp.swift -sdk /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS26.5.sdk -target arm64-apple-ios18.0`
 - `xcodebuild -project '/Users/jkfisher/Documents/Coding/Roll Call/RollCall.xcodeproj' -scheme RollCall -destination 'generic/platform=iOS' -derivedDataPath '/Users/jkfisher/Documents/Coding/Roll Call/.DerivedData' build`

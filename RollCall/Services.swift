@@ -1112,29 +1112,30 @@ final class ReadinessService {
         let session = AVAudioSession.sharedInstance()
         let route = session.currentRoute.outputs.first?.portName ?? "Unknown"
         let volume = session.outputVolume
-        let appleMusicCount = team?.players.compactMap(\.cue).filter { cue in
+        let presentPlayers = team?.presentPlayersInBattingOrder ?? []
+        let appleMusicCount = presentPlayers.compactMap(\.cue).filter { cue in
             if case .appleMusic = cue.source { return true }
             return false
-        }.count ?? 0
+        }.count
         let musicAuthStatus = MusicAuthorization.currentStatus
-        let playerChecks = (team?.battingOrderPlayers ?? []).compactMap { readinessCheck(for: $0, team: team) }
+        let playerChecks = presentPlayers.compactMap { readinessCheck(for: $0) }
         let customChecks = customAnnouncerChecks(for: team)
+        let optionalChecks = optionalUpgradeChecks(for: team)
         return ReadinessStatus(
             generatedAt: .now,
             checks: [
-                ReadinessCheck(id: "route", title: "Audio Route", detail: route, state: route == "Unknown" ? .warning : .ready),
-                ReadinessCheck(id: "volume", title: "Volume", detail: "\(Int(volume * 100))%", state: volume < 0.25 ? .warning : .ready),
-                ReadinessCheck(id: "network", title: "Apple Music Network", detail: appleMusicCount == 0 ? "No Apple Music cues assigned." : (pathStatus == .satisfied ? "Connection available." : "Connection unavailable. Apple Music cues may fail."), state: appleMusicCount == 0 ? .unknown : (pathStatus == .satisfied ? .ready : .warning)),
+                ReadinessCheck(id: "route", title: "Audio Route", detail: route == "Unknown" ? "Choose your speaker before live use." : route, state: route == "Unknown" ? .issue : .gameDayCheck),
+                ReadinessCheck(id: "volume", title: "Volume", detail: "\(Int(volume * 100))%", state: volume < 0.25 ? .issue : .gameDayCheck),
+                ReadinessCheck(id: "network", title: "Apple Music Network", detail: appleMusicCount == 0 ? "No Apple Music cues in today's lineup." : (pathStatus == .satisfied ? "Connection available." : "Connection unavailable. Apple Music cues may fail."), state: appleMusicCount == 0 ? .gameDayCheck : (pathStatus == .satisfied ? .gameDayCheck : .issue)),
                 ReadinessCheck(id: "music-auth", title: "Apple Music Access", detail: appleMusicCount == 0 ? "No Apple Music cues assigned." : appleMusicAuthorizationDetail(for: musicAuthStatus), state: readinessStateForMusic(status: musicAuthStatus, appleMusicCount: appleMusicCount)),
-                ReadinessCheck(id: "lineup", title: "Present Players", detail: "\(team?.presentPlayersInBattingOrder.count ?? 0) players marked present", state: team == nil ? .warning : ((team?.presentPlayersInBattingOrder.isEmpty ?? true) ? .warning : .ready)),
-            ] + customChecks + playerChecks
+                ReadinessCheck(id: "lineup", title: "Present Players", detail: "\(presentPlayers.count) players marked present", state: team == nil || presentPlayers.isEmpty ? .issue : .gameDayCheck),
+            ] + playerChecks + customChecks + optionalChecks
         )
     }
 
-    private func readinessCheck(for player: Player, team: Team?) -> ReadinessCheck? {
-        guard player.isPresent else { return nil }
+    private func readinessCheck(for player: Player) -> ReadinessCheck? {
         guard let cue = player.cue else {
-            return ReadinessCheck(id: "player-\(player.id)", title: player.displayName, detail: "Present player has no cue assigned.", state: .warning)
+            return ReadinessCheck(id: "player-\(player.id)-needs-audio", title: player.displayName, detail: "Add a song or local audio. Game Day can still use Small Cheer fallback.", state: .needsAudio)
         }
 
         switch cue.source {
@@ -1142,65 +1143,79 @@ final class ReadinessService {
             break
         case .localAudio(let source):
             if !audioAssetService.assetExists(relativePath: source.relativePath) {
-                return ReadinessCheck(id: "player-\(player.id)", title: player.displayName, detail: "Local cue file is missing from app storage.", state: .failed)
+                return ReadinessCheck(id: "player-\(player.id)-audio-issue", title: player.displayName, detail: "The selected local cue file is missing from app storage.", state: .issue)
             }
         case .builtInClip(let source):
             if !audioAssetService.assetExists(relativePath: builtInClipRelativePath(for: source)) {
-                return ReadinessCheck(id: "player-\(player.id)", title: player.displayName, detail: "Built-in clip asset is missing.", state: .failed)
+                return ReadinessCheck(id: "player-\(player.id)-audio-issue", title: player.displayName, detail: "The selected built-in clip asset is missing.", state: .issue)
             }
         }
 
-        if team?.session.gameDayAnnouncerMode.usesAnnouncer == true {
-            if let customAnnouncerRelativePath = player.customAnnouncerRelativePath {
-                if !audioAssetService.assetExists(relativePath: customAnnouncerRelativePath) {
-                    return ReadinessCheck(id: "player-\(player.id)-custom-announcer", title: player.displayName, detail: "Announcement Cue file is missing from app storage.", state: .failed)
-                }
-            }
+        if let customAnnouncerRelativePath = player.customAnnouncerRelativePath,
+           !audioAssetService.assetExists(relativePath: customAnnouncerRelativePath) {
+            return ReadinessCheck(id: "player-\(player.id)-custom-announcer-issue", title: player.displayName, detail: "The Announcement Cue file is missing from app storage.", state: .issue)
         }
 
-        if let photoRelativePath = player.photoRelativePath,
-           !audioAssetService.assetExists(relativePath: photoRelativePath) {
-            return ReadinessCheck(id: "player-\(player.id)-photo", title: player.displayName, detail: "Player photo is missing from app storage.", state: .warning)
+        if hasStoredCustomAnnouncer(for: player) {
+            return ReadinessCheck(id: "player-\(player.id)-enhanced", title: player.displayName, detail: "Playable audio plus an Announcement Cue.", state: .enhanced)
         }
 
-        return ReadinessCheck(id: "player-\(player.id)-ready", title: player.displayName, detail: "Cue is ready.", state: .ready)
+        return ReadinessCheck(id: "player-\(player.id)-ready", title: player.displayName, detail: "Playable audio is ready for Game Day.", state: .ready)
     }
 
     private func customAnnouncerChecks(for team: Team?) -> [ReadinessCheck] {
         guard let team else { return [] }
-        guard team.session.gameDayAnnouncerMode == .announcerOnly else { return [] }
         let presentPlayers = team.presentPlayersInBattingOrder
         guard !presentPlayers.isEmpty else { return [] }
-
-        let playersWithCustom = presentPlayers.filter {
-            guard let relativePath = $0.customAnnouncerRelativePath else { return false }
-            return audioAssetService.assetExists(relativePath: relativePath)
+        let readyPlayers = presentPlayers.filter { player in
+            guard player.cue != nil else { return false }
+            return readinessCheck(for: player)?.state != .issue
         }
-        if playersWithCustom.isEmpty {
-            return [
-                ReadinessCheck(
-                    id: "custom-announcers-none",
-                    title: "Announcement Cues",
-                    detail: "No present players have an Announcement Cue recorded. Game Day will fall back to Small Cheer.",
-                    state: .warning
-                )
-            ]
-        }
+        guard !readyPlayers.isEmpty else { return [] }
 
-        return presentPlayers.compactMap { player in
-            guard player.customAnnouncerRelativePath == nil else { return nil }
+        return readyPlayers.compactMap { player in
+            guard !hasStoredCustomAnnouncer(for: player) else { return nil }
             return ReadinessCheck(
-                id: "player-\(player.id)-custom-coverage",
+                id: "player-\(player.id)-announcement-upgrade",
                 title: player.displayName,
-                detail: "This present player does not have an Announcement Cue recorded. Game Day will fall back to Small Cheer.",
-                state: .warning
+                detail: "Add an Announcement Cue to make this walkup feel more stadium-like.",
+                state: .optional
             )
         }
     }
 
     private func readinessStateForMusic(status: MusicAuthorization.Status, appleMusicCount: Int) -> ReadinessState {
-        guard appleMusicCount > 0 else { return .unknown }
-        return status == .authorized ? .ready : .warning
+        guard appleMusicCount > 0 else { return .gameDayCheck }
+        return status == .authorized ? .gameDayCheck : .issue
+    }
+
+    private func optionalUpgradeChecks(for team: Team?) -> [ReadinessCheck] {
+        guard let team else { return [] }
+        return team.presentPlayersInBattingOrder.compactMap { player in
+            if player.photoRelativePath == nil {
+                return ReadinessCheck(
+                    id: "player-\(player.id)-photo-upgrade",
+                    title: player.displayName,
+                    detail: "A photo can make the live board easier to recognize, but this player can still be ready without one.",
+                    state: .optional
+                )
+            }
+            if let photoRelativePath = player.photoRelativePath,
+               !audioAssetService.assetExists(relativePath: photoRelativePath) {
+                return ReadinessCheck(
+                    id: "player-\(player.id)-photo-upgrade",
+                    title: player.displayName,
+                    detail: "The saved photo is missing. This only affects presentation, not Game Day audio.",
+                    state: .optional
+                )
+            }
+            return nil
+        }
+    }
+
+    private func hasStoredCustomAnnouncer(for player: Player) -> Bool {
+        guard let relativePath = player.customAnnouncerRelativePath else { return false }
+        return audioAssetService.assetExists(relativePath: relativePath)
     }
 
     private func appleMusicAuthorizationDetail(for status: MusicAuthorization.Status) -> String {

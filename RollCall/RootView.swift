@@ -446,13 +446,33 @@ struct RootView: View {
                     )
 
                     if let readiness = appModel.state.lastReadiness {
-                        ReadinessOverviewCard(readiness: readiness) {
+                        ReadinessOverviewCard(
+                            readiness: readiness,
+                            team: appModel.selectedTeam,
+                            onOpenGameDay: { selectedTab = .gameDay }
+                        ) {
                             appModel.refreshReadiness()
                         }
 
-                        ForEach(readinessIssueFamilies(for: readiness.checks)) { family in
-                            ReadinessIssueFamilyCard(family: family)
-                        }
+                        ReadinessPlayerAudioCard(
+                            checks: playerAudioReadinessChecks(from: readiness.checks),
+                            playerForCheck: playerForReadinessCheck,
+                            onEditPlayer: { selectedPlayer = $0 }
+                        )
+
+                        ReadinessEnhancementsCard(
+                            checks: announcementReadinessChecks(from: readiness.checks),
+                            playerForCheck: playerForReadinessCheck,
+                            onEditPlayer: { selectedPlayer = $0 }
+                        )
+
+                        ReadinessOptionalUpgradesCard(
+                            checks: optionalUpgradeReadinessChecks(from: readiness.checks),
+                            playerForCheck: playerForReadinessCheck,
+                            onEditPlayer: { selectedPlayer = $0 }
+                        )
+
+                        ReadinessGameDayChecksCard(checks: gameDayReadinessChecks(from: readiness.checks))
                     } else {
                         ReadinessEmptyCard {
                             appModel.refreshReadiness()
@@ -466,6 +486,9 @@ struct RootView: View {
             .background(Color(uiColor: .systemGroupedBackground))
             .navigationTitle("Readiness")
             .navigationBarTitleDisplayMode(.inline)
+            .sheet(item: $selectedPlayer) { player in
+                PlayerEditorSheet(appModel: appModel, player: player)
+            }
         }
     }
 
@@ -749,147 +772,83 @@ struct RootView: View {
         }
     }
 
-    private func iconName(for state: ReadinessState) -> String {
-        switch state {
-        case .ready: return "checkmark.circle.fill"
-        case .warning: return "exclamationmark.triangle.fill"
-        case .failed: return "xmark.circle.fill"
-        case .unknown: return "questionmark.circle.fill"
+    private func playerAudioReadinessChecks(from checks: [ReadinessCheck]) -> [ReadinessCheck] {
+        checks.filter { check in
+            check.id.hasPrefix("player-")
+                && !check.id.contains("announcement-upgrade")
+                && !check.id.contains("photo-upgrade")
         }
     }
 
-    private func color(for state: ReadinessState) -> Color {
-        switch state {
-        case .ready: return .green
-        case .warning: return .orange
-        case .failed: return .red
-        case .unknown: return .secondary
+    private func announcementReadinessChecks(from checks: [ReadinessCheck]) -> [ReadinessCheck] {
+        checks.filter { check in
+            check.state == .enhanced || check.id.contains("announcement-upgrade")
         }
     }
 
-    private func readinessIssueFamilies(for checks: [ReadinessCheck]) -> [ReadinessIssueFamily] {
-        let order = [
-            "audio",
-            "apple-music",
-            "team",
-            "player-cues",
-            "announcement-cues",
-            "photos",
-            "other"
-        ]
-        let grouped = Dictionary(grouping: checks, by: readinessFamilyID(for:))
-
-        return order.compactMap { id in
-            guard let checks = grouped[id], !checks.isEmpty else { return nil }
-            return ReadinessIssueFamily(
-                id: id,
-                title: readinessFamilyTitle(for: id),
-                helperText: readinessFamilyHelperText(for: id),
-                checks: checks
-            )
-        }
+    private func optionalUpgradeReadinessChecks(from checks: [ReadinessCheck]) -> [ReadinessCheck] {
+        checks.filter { $0.id.contains("photo-upgrade") }
     }
 
-    private func readinessFamilyID(for check: ReadinessCheck) -> String {
-        if check.id == "route" || check.id == "volume" {
-            return "audio"
-        }
-        if check.id == "network" || check.id == "music-auth" {
-            return "apple-music"
-        }
-        if check.id == "lineup" {
-            return "team"
-        }
-        if check.id.contains("custom-announcer") {
-            return "announcement-cues"
-        }
-        if check.id.contains("photo") {
-            return "photos"
-        }
-        if check.id.hasPrefix("player-") {
-            return "player-cues"
-        }
-        return "other"
+    private func gameDayReadinessChecks(from checks: [ReadinessCheck]) -> [ReadinessCheck] {
+        checks.filter { ["route", "volume", "network", "music-auth", "lineup"].contains($0.id) }
     }
 
-    private func readinessFamilyTitle(for id: String) -> String {
-        switch id {
-        case "audio": return "Audio Output"
-        case "apple-music": return "Apple Music Access"
-        case "team": return "Team & Present Players"
-        case "player-cues": return "Player Cues"
-        case "announcement-cues": return "Announcement Cues"
-        case "photos": return "Player Photos"
-        default: return "Other Checks"
-        }
-    }
-
-    private func readinessFamilyHelperText(for id: String) -> String {
-        switch id {
-        case "audio":
-            return "Route and volume checks for game-day playback."
-        case "apple-music":
-            return "Network and authorization checks for Apple Music cues."
-        case "team":
-            return "Selected team and present-player coverage."
-        case "player-cues":
-            return "Cue coverage for players marked present."
-        case "announcement-cues":
-            return "Custom announcement files used before player cues."
-        case "photos":
-            return "Player photo files referenced by the roster."
-        default:
-            return "Additional readiness checks."
-        }
-    }
-}
-
-private struct ReadinessIssueFamily: Identifiable {
-    let id: String
-    let title: String
-    let helperText: String
-    let checks: [ReadinessCheck]
-
-    var status: ReadinessState {
-        if checks.contains(where: { $0.state == .failed }) {
-            return .failed
-        }
-        if checks.contains(where: { $0.state == .warning }) {
-            return .warning
-        }
-        if checks.contains(where: { $0.state == .unknown }) {
-            return .unknown
-        }
-        return .ready
+    private func playerForReadinessCheck(_ check: ReadinessCheck) -> Player? {
+        appModel.selectedTeam?.players.first { check.id.contains($0.id.uuidString) }
     }
 }
 
 private struct ReadinessOverviewCard: View {
     let readiness: ReadinessStatus
+    let team: Team?
+    let onOpenGameDay: () -> Void
     let onRefresh: () -> Void
 
+    private var presentCount: Int {
+        team?.presentPlayersInBattingOrder.count ?? 0
+    }
+
+    private var playerChecks: [ReadinessCheck] {
+        readiness.checks.filter { check in
+            check.id.hasPrefix("player-")
+                && !check.id.contains("announcement-upgrade")
+                && !check.id.contains("photo-upgrade")
+        }
+    }
+
     private var readyCount: Int {
-        readiness.checks.filter { $0.state == .ready }.count
+        playerChecks.filter { $0.state == .ready || $0.state == .enhanced }.count
     }
 
-    private var warningCount: Int {
-        readiness.checks.filter { $0.state == .warning }.count
+    private var enhancedCount: Int {
+        playerChecks.filter { $0.state == .enhanced }.count
     }
 
-    private var failedCount: Int {
-        readiness.checks.filter { $0.state == .failed }.count
+    private var needsAudioCount: Int {
+        playerChecks.filter { $0.state == .needsAudio }.count
     }
 
-    private var unknownCount: Int {
-        readiness.checks.filter { $0.state == .unknown }.count
+    private var issueCount: Int {
+        playerChecks.filter { $0.state == .issue }.count
+    }
+
+    private var isReadyForGameDay: Bool {
+        presentCount > 0 && needsAudioCount == 0 && issueCount == 0
     }
 
     var body: some View {
-        SectionCard(family: .status) {
+        SectionCard(family: isReadyForGameDay ? .identity : .status) {
             VStack(alignment: .leading, spacing: RollCallSpacingTier.standard.value) {
                 HStack(alignment: .top, spacing: RollCallSpacingTier.standard.value) {
                     VStack(alignment: .leading, spacing: 4) {
-                        Text("Pre-Game Checklist")
+                        StatusChip(
+                            text: summaryChipText,
+                            role: summaryRole,
+                            systemImage: summaryIcon,
+                            emphasis: .subdued
+                        )
+                        Text(summaryTitle)
                             .rollCallText(.sectionTitle)
                         Text("Updated \(readiness.generatedAt.formatted(date: .omitted, time: .shortened))")
                             .rollCallText(.helperText)
@@ -898,17 +857,11 @@ private struct ReadinessOverviewCard: View {
                     Spacer(minLength: RollCallSpacingTier.standard.value)
 
                     ReadinessRefreshButton(action: onRefresh)
-
-                    StatusChip(
-                        text: summaryText,
-                        role: summaryRole,
-                        systemImage: summaryIcon,
-                        emphasis: .standard
-                    )
                 }
 
-                Text("Readiness reports what Roll Call can currently verify. It does not guarantee playback on every route or network condition.")
+                Text(summaryDetail)
                     .rollCallText(.helperText)
+                    .fixedSize(horizontal: false, vertical: true)
 
                 LazyVGrid(
                     columns: [GridItem(.adaptive(minimum: 118), spacing: RollCallSpacingTier.tight.value)],
@@ -916,87 +869,149 @@ private struct ReadinessOverviewCard: View {
                     spacing: RollCallSpacingTier.tight.value
                 ) {
                     StatusChip(text: "\(readyCount) ready", role: .ready, systemImage: "checkmark.circle", emphasis: .subdued)
-                    StatusChip(text: "\(warningCount) warnings", role: .warning, systemImage: "exclamationmark.triangle", emphasis: .subdued)
-                    StatusChip(text: "\(failedCount) failed", role: .destructive, systemImage: "xmark.octagon", emphasis: .subdued)
-                    if unknownCount > 0 {
-                        StatusChip(text: "\(unknownCount) unknown", role: .neutral, systemImage: "questionmark.circle", emphasis: .subdued)
+                    if needsAudioCount > 0 {
+                        StatusChip(text: "\(needsAudioCount) need audio", role: .warning, systemImage: "music.note", emphasis: .subdued)
+                    }
+                    if enhancedCount > 0 {
+                        StatusChip(text: "\(enhancedCount) enhanced", role: .live, systemImage: "mic.fill", emphasis: .subdued)
+                    }
+                    if issueCount > 0 {
+                        StatusChip(text: "\(issueCount) need repair", role: .destructive, systemImage: "wrench.and.screwdriver", emphasis: .subdued)
                     }
                 }
+
+                Button(action: onOpenGameDay) {
+                    Label("Open Game Day", systemImage: "play.rectangle.fill")
+                        .frame(maxWidth: .infinity)
+                }
+                .rollCallButtonStyle(.primary)
             }
         }
     }
 
-    private var summaryText: String {
-        if failedCount > 0 {
-            return "Needs Attention"
+    private var summaryTitle: String {
+        if presentCount == 0 {
+            return "Choose Today’s Lineup"
         }
-        if warningCount > 0 {
-            return "Warnings"
+        if issueCount > 0 {
+            return "Some Audio Needs Repair"
         }
-        if unknownCount > 0 {
-            return "Some Unknown"
+        if needsAudioCount > 0 {
+            return "Some Players Need Audio"
         }
-        return "Ready"
+        return "Ready for Game Day"
+    }
+
+    private var summaryDetail: String {
+        if presentCount == 0 {
+            return "Mark players present before game day so Roll Call can focus on the lineup you will actually use."
+        }
+        if issueCount > 0 {
+            return "A few assigned audio files need attention before they can be trusted live."
+        }
+        if needsAudioCount > 0 {
+            return "Game Day can still use Small Cheer fallback, but these players need their own audio to feel ready."
+        }
+        return "Every present player has player-specific audio. Optional upgrades can add more delight, but they are not required."
+    }
+
+    private var summaryChipText: String {
+        isReadyForGameDay ? "Ready" : "Help Available"
     }
 
     private var summaryRole: StatusChipRole {
-        if failedCount > 0 {
+        if issueCount > 0 {
             return .destructive
         }
-        if warningCount > 0 {
+        if needsAudioCount > 0 || presentCount == 0 {
             return .warning
-        }
-        if unknownCount > 0 {
-            return .neutral
         }
         return .ready
     }
 
     private var summaryIcon: String {
-        if failedCount > 0 {
-            return "xmark.octagon"
+        if issueCount > 0 {
+            return "wrench.and.screwdriver"
         }
-        if warningCount > 0 {
-            return "exclamationmark.triangle"
-        }
-        if unknownCount > 0 {
-            return "questionmark.circle"
+        if needsAudioCount > 0 || presentCount == 0 {
+            return "music.note"
         }
         return "checkmark.circle"
     }
 }
 
-private struct ReadinessIssueFamilyCard: View {
-    let family: ReadinessIssueFamily
+private struct ReadinessPlayerAudioCard: View {
+    let checks: [ReadinessCheck]
+    let playerForCheck: (ReadinessCheck) -> Player?
+    let onEditPlayer: (Player) -> Void
+
+    var body: some View {
+        ReadinessSectionCard(
+            title: "Player Audio",
+            helperText: "Ready means the player has their own playable audio. Fallback keeps Game Day safe, but it does not count as ready.",
+            checks: checks,
+            emptyText: "No present players to check yet.",
+            playerForCheck: playerForCheck,
+            onEditPlayer: onEditPlayer
+        )
+    }
+}
+
+private struct ReadinessEnhancementsCard: View {
+    let checks: [ReadinessCheck]
+    let playerForCheck: (ReadinessCheck) -> Player?
+    let onEditPlayer: (Player) -> Void
+
+    var body: some View {
+        ReadinessSectionCard(
+            title: "Announcement Cues",
+            helperText: "Announcement Cues make walkups feel more stadium-like. They are an upgrade, not a requirement.",
+            checks: checks,
+            emptyText: "Add player audio first, then Roll Call can suggest announcement upgrades.",
+            playerForCheck: playerForCheck,
+            onEditPlayer: onEditPlayer
+        )
+    }
+}
+
+private struct ReadinessOptionalUpgradesCard: View {
+    let checks: [ReadinessCheck]
+    let playerForCheck: (ReadinessCheck) -> Player?
+    let onEditPlayer: (Player) -> Void
+
+    var body: some View {
+        ReadinessSectionCard(
+            title: "Optional Polish",
+            helperText: "Photos and presentation details can make the board cooler. They never make a player incomplete.",
+            checks: checks,
+            emptyText: "Optional polish looks good for today’s lineup.",
+            playerForCheck: playerForCheck,
+            onEditPlayer: onEditPlayer
+        )
+    }
+}
+
+private struct ReadinessGameDayChecksCard: View {
+    let checks: [ReadinessCheck]
 
     var body: some View {
         VStack(alignment: .leading, spacing: RollCallSpacingTier.tight.value) {
             VStack(alignment: .leading, spacing: 3) {
-                HStack(alignment: .firstTextBaseline, spacing: RollCallSpacingTier.standard.value) {
-                    Text(family.title)
-                        .rollCallText(.sectionTitle)
-                    Spacer(minLength: RollCallSpacingTier.standard.value)
-                    StatusChip(
-                        text: family.status.readinessLabel,
-                        role: family.status.statusChipRole,
-                        systemImage: family.status.statusChipIcon,
-                        emphasis: .subdued
-                    )
-                }
-
-                Text(family.helperText)
+                Text("Before You Start")
+                    .rollCallText(.sectionTitle)
+                Text("Phone and setup checks are separate from player readiness.")
                     .rollCallText(.helperText)
             }
             .padding(.horizontal, 2)
 
-            SectionCard(family: family.status.cardFamily) {
+            SectionCard(family: checks.contains(where: { $0.state == .issue }) ? .status : .utility) {
                 VStack(spacing: 0) {
-                    ForEach(Array(family.checks.enumerated()), id: \.element.id) { index, check in
+                    ForEach(Array(checks.enumerated()), id: \.element.id) { index, check in
                         if index > 0 {
                             Divider()
                                 .padding(.leading, 42)
                         }
-                        ReadinessCheckRow(check: check)
+                        ReadinessCheckDisplayRow(check: check)
                             .padding(.vertical, RollCallSpacingTier.tight.value)
                     }
                 }
@@ -1005,8 +1020,65 @@ private struct ReadinessIssueFamilyCard: View {
     }
 }
 
-private struct ReadinessCheckRow: View {
+private struct ReadinessSectionCard: View {
+    let title: String
+    let helperText: String
+    let checks: [ReadinessCheck]
+    let emptyText: String
+    let playerForCheck: (ReadinessCheck) -> Player?
+    let onEditPlayer: (Player) -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: RollCallSpacingTier.tight.value) {
+            VStack(alignment: .leading, spacing: 3) {
+                Text(title)
+                    .rollCallText(.sectionTitle)
+                Text(helperText)
+                    .rollCallText(.helperText)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .padding(.horizontal, 2)
+
+            SectionCard(family: cardFamily) {
+                VStack(spacing: 0) {
+                    if checks.isEmpty {
+                        Text(emptyText)
+                            .rollCallText(.helperText)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                    ForEach(Array(checks.enumerated()), id: \.element.id) { index, check in
+                        if index > 0 {
+                            Divider()
+                                .padding(.leading, 42)
+                        }
+                        if let player = playerForCheck(check) {
+                            Button {
+                                onEditPlayer(player)
+                            } label: {
+                                ReadinessCheckDisplayRow(check: check, showsChevron: true)
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityHint("Opens this player’s setup.")
+                        } else {
+                            ReadinessCheckDisplayRow(check: check)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private var cardFamily: RollCallCardFamily {
+        if checks.contains(where: { $0.state == .issue || $0.state == .needsAudio }) {
+            return .status
+        }
+        return .utility
+    }
+}
+
+private struct ReadinessCheckDisplayRow: View {
     let check: ReadinessCheck
+    var showsChevron = false
 
     var body: some View {
         HStack(alignment: .top, spacing: RollCallSpacingTier.standard.value) {
@@ -1033,7 +1105,17 @@ private struct ReadinessCheckRow: View {
                     .rollCallText(.helperText)
                     .fixedSize(horizontal: false, vertical: true)
             }
+
+            if showsChevron {
+                Image(systemName: "chevron.right")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(Color(uiColor: .tertiaryLabel))
+                    .padding(.top, 8)
+                    .accessibilityHidden(true)
+            }
         }
+        .padding(.vertical, RollCallSpacingTier.tight.value)
+        .contentShape(Rectangle())
         .accessibilityElement(children: .combine)
     }
 }
@@ -1047,7 +1129,7 @@ private struct ReadinessEmptyCard: View {
                 HStack(alignment: .top, spacing: RollCallSpacingTier.standard.value) {
                     VStack(alignment: .leading, spacing: RollCallSpacingTier.tight.value) {
                         StatusChip(text: "Not Checked Yet", role: .neutral, systemImage: "checklist", emphasis: .subdued)
-                        Text("Pre-Game Checklist")
+                        Text("Ready for Game Day?")
                             .rollCallText(.sectionTitle)
                     }
 
@@ -1056,7 +1138,7 @@ private struct ReadinessEmptyCard: View {
                     ReadinessRefreshButton(action: onRefresh)
                 }
 
-                Text("Tap Refresh to generate the current readiness report.")
+                Text("Tap Refresh to check today’s lineup, player audio, optional upgrades, and before-start phone checks.")
                     .rollCallText(.helperText)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -1074,7 +1156,7 @@ private struct ReadinessRefreshButton: View {
         }
         .buttonStyle(.bordered)
         .controlSize(.small)
-        .accessibilityHint("Updates the readiness checklist.")
+        .accessibilityHint("Updates the readiness report.")
     }
 }
 
@@ -1202,44 +1284,50 @@ private extension ReadinessState {
     var readinessLabel: String {
         switch self {
         case .ready: return "Ready"
-        case .warning: return "Warning"
-        case .failed: return "Failed"
-        case .unknown: return "Unknown"
+        case .enhanced: return "Enhanced"
+        case .needsAudio: return "Needs Audio"
+        case .optional: return "Optional"
+        case .gameDayCheck: return "Check"
+        case .issue: return "Issue"
         }
     }
 
     var statusChipRole: StatusChipRole {
         switch self {
         case .ready: return .ready
-        case .warning: return .warning
-        case .failed: return .destructive
-        case .unknown: return .neutral
+        case .enhanced: return .live
+        case .needsAudio: return .warning
+        case .optional, .gameDayCheck: return .neutral
+        case .issue: return .destructive
         }
     }
 
     var statusChipIcon: String {
         switch self {
         case .ready: return "checkmark.circle"
-        case .warning: return "exclamationmark.triangle"
-        case .failed: return "xmark.octagon"
-        case .unknown: return "questionmark.circle"
+        case .enhanced: return "star.circle"
+        case .needsAudio: return "music.note"
+        case .optional: return "circle"
+        case .gameDayCheck: return "checklist"
+        case .issue: return "exclamationmark.triangle"
         }
     }
 
     var semanticColor: Color {
         switch self {
         case .ready: return Color.rollCall(.ready)
-        case .warning: return Color.rollCall(.warning)
-        case .failed: return Color.rollCall(.destructive)
-        case .unknown: return Color(uiColor: .secondaryLabel)
+        case .enhanced: return Color.rollCall(.live)
+        case .needsAudio: return Color.rollCall(.warning)
+        case .optional, .gameDayCheck: return Color(uiColor: .secondaryLabel)
+        case .issue: return Color.rollCall(.destructive)
         }
     }
 
     var cardFamily: RollCallCardFamily {
         switch self {
-        case .ready, .unknown:
+        case .ready, .enhanced, .optional, .gameDayCheck:
             return .utility
-        case .warning, .failed:
+        case .needsAudio, .issue:
             return .status
         }
     }
@@ -1573,10 +1661,6 @@ private struct GameDayTeamStack: View {
             return GameDayLiveWarning(text: "No present players in the lineup", role: .warning)
         }
 
-        if let nowPlayer, willUseFallback(for: nowPlayer) {
-            return GameDayLiveWarning(text: "Now batting will use Small Cheer fallback", role: .warning)
-        }
-
         guard let readiness = appModel.state.lastReadiness else { return nil }
         let issues = readiness.checks.filter(isLiveReadinessIssue)
         guard let firstIssue = issues.first else { return nil }
@@ -1663,9 +1747,9 @@ private struct GameDayTeamStack: View {
     }
 
     private func isLiveReadinessIssue(_ check: ReadinessCheck) -> Bool {
-        guard check.state == .warning || check.state == .failed else { return false }
-        if check.id.contains("photo") { return false }
-        if check.id.contains("custom-announcer") {
+        guard check.state == .issue else { return false }
+        if check.id.contains("photo-upgrade") || check.id.contains("announcement-upgrade") { return false }
+        if check.id.contains("custom-announcer-issue") {
             return team.session.gameDayAnnouncerMode.usesAnnouncer
         }
         if check.id.hasPrefix("player-") {
@@ -1686,7 +1770,7 @@ private struct GameDayTeamStack: View {
     }
 
     private func role(for state: ReadinessState) -> StatusChipRole {
-        state == .failed ? .destructive : .warning
+        state == .issue ? .destructive : .warning
     }
 }
 
