@@ -92,7 +92,7 @@ struct TeamBanner: View {
         case .standard:
             return Color(uiColor: .secondarySystemGroupedBackground)
         case .liveSide:
-            return Color.white.opacity(0.08)
+            return Color.rollCall(.neutralSurface, surface: .live)
         }
     }
 

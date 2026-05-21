@@ -31,7 +31,7 @@ struct RollCallCardModifier: ViewModifier {
         case (.utility, .standard):
             return Color(uiColor: .secondarySystemGroupedBackground)
         case (_, .live):
-            return Color.white.opacity(0.08)
+            return Color.rollCall(.neutralSurface, surface: .live)
         }
     }
 
@@ -143,4 +143,3 @@ private extension RollCallCardFamily {
         }
     }
 }
-

@@ -58,11 +58,11 @@ struct RollCallTextStyle: ViewModifier {
         case (.helperText, .standard):
             return Color(uiColor: .secondaryLabel)
         case (.helperText, .live):
-            return Color.white.opacity(0.72)
+            return Color(uiColor: .secondaryLabel)
         case (_, .standard):
             return Color(uiColor: .label)
         case (_, .live):
-            return Color.white
+            return Color(uiColor: .label)
         }
     }
 }
@@ -112,4 +112,3 @@ private extension RollCallTextRole {
         }
     }
 }
-

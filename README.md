@@ -14,7 +14,7 @@ Active prototype.
 Roll Call is built primarily for my own Apple-centric youth sports workflow,
 but it may be useful to other families, coaches, schools, and community teams
 with similar needs. The current source builds an iPhone app target, and the app
-is in a real-use pause around version `0.6.0` build `19`.
+is in a real-use pause around version `0.7.0` build `25`.
 
 There are rough edges. Apple Music behavior in particular depends on device
 account state, App ID configuration, and provisioning that cannot be fully

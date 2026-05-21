@@ -67,6 +67,8 @@ No explicit End Game required.
 
 User can leave the app without feeling like they must save/finalize anything.
 
+Game Day and Clips are the only live screens. Their Light/Dark behavior, including the lineup sheet opened from Game Day, is defined in `docs/product/APPEARANCE_RULES.md`.
+
 ## Premium UX
 
 Do not mention Premium during onboarding.

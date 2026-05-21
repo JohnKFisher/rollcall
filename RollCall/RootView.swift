@@ -63,6 +63,7 @@ private extension View {
 }
 
 struct RootView: View {
+    @Environment(\.colorScheme) private var deviceColorScheme
     @ObservedObject var appModel: AppModel
     @State private var newTeamName = ""
     @State private var selectedPlayer: Player?
@@ -80,8 +81,11 @@ struct RootView: View {
         Binding(get: { appModel.lastError != nil }, set: { newValue in if !newValue { appModel.lastError = nil } })
     }
 
-    private var liveTabPreferredColorScheme: ColorScheme? {
-        appModel.state.settings.alwaysUseDarkLiveMode ? .dark : nil
+    private var effectiveLiveColorScheme: ColorScheme {
+        if deviceColorScheme == .dark || appModel.state.settings.alwaysUseDarkLiveMode {
+            return .dark
+        }
+        return .light
     }
 
     private var clipsSurface: RollCallSurfaceVariant {
@@ -330,16 +334,49 @@ struct RootView: View {
         .frame(maxWidth: .infinity)
         .background {
             rootTeamBannerBackground(for: variant)
+                .ignoresSafeArea(edges: .top)
         }
     }
 
     @ViewBuilder
     private func rootTeamBannerBackground(for variant: TeamBannerVariant) -> some View {
-        switch variant {
-        case .standard:
-            Color(uiColor: .systemGroupedBackground)
-        case .liveSide:
-            LiveSurfaceBackground()
+        RootTeamBannerMaterialBackground(variant: variant)
+    }
+
+    private struct RootTeamBannerMaterialBackground: View {
+        let variant: TeamBannerVariant
+
+        var body: some View {
+            ZStack {
+                if #available(iOS 26.0, *) {
+                    Rectangle()
+                        .fill(.clear)
+                        .glassEffect(.regular.tint(materialTint), in: .rect(cornerRadius: 0))
+                } else {
+                    Rectangle()
+                        .fill(.regularMaterial)
+                }
+
+                materialTint.opacity(overlayOpacity)
+            }
+        }
+
+        private var materialTint: Color {
+            switch variant {
+            case .standard:
+                return Color(uiColor: .systemGroupedBackground)
+            case .liveSide:
+                return Color.rollCall(.neutralSurface, surface: .live)
+            }
+        }
+
+        private var overlayOpacity: Double {
+            switch variant {
+            case .standard:
+                return 0.72
+            case .liveSide:
+                return 0.64
+            }
         }
     }
 
@@ -376,7 +413,7 @@ struct RootView: View {
                 rootTeamBannerHeader(variant: clipsTeamBannerVariant)
             }
         }
-        .preferredColorScheme(liveTabPreferredColorScheme)
+        .environment(\.colorScheme, effectiveLiveColorScheme)
     }
 
     private struct ClipsHeaderCard: View {
@@ -492,8 +529,8 @@ struct RootView: View {
             if surface == .live {
                 return LinearGradient(
                     colors: [
-                        Color.white.opacity(0.13),
-                        Color.white.opacity(0.08)
+                        Color.rollCall(.neutralSurface, surface: .live),
+                        Color.rollCall(.neutralSurface, surface: .live).opacity(0.82)
                     ],
                     startPoint: .topLeading,
                     endPoint: .bottomTrailing
@@ -531,9 +568,10 @@ struct RootView: View {
             }
             .sheet(isPresented: $showLineupEditor) {
                 LineupEditorSheet(appModel: appModel)
+                    .environment(\.colorScheme, effectiveLiveColorScheme)
             }
         }
-        .preferredColorScheme(liveTabPreferredColorScheme)
+        .environment(\.colorScheme, effectiveLiveColorScheme)
     }
 
     private var readinessTab: some View {
@@ -1914,26 +1952,15 @@ private enum LiveSurfaceStyle {
 }
 
 private struct LiveSurfaceBackground: View {
-    @Environment(\.colorScheme) private var colorScheme
     var accentTint: Color = LiveSurfaceStyle.backgroundAccentTint
 
     var body: some View {
-        if colorScheme == .dark {
+        ZStack {
+            Color(uiColor: .systemGroupedBackground)
             LinearGradient(
                 colors: [
-                    Color(red: 0.04, green: 0.06, blue: 0.08),
-                    Color(red: 0.08, green: 0.10, blue: 0.12),
-                    accentTint.opacity(0.16)
-                ],
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            )
-        } else {
-            LinearGradient(
-                colors: [
-                    Color(red: 0.08, green: 0.10, blue: 0.12),
-                    Color(red: 0.12, green: 0.13, blue: 0.14),
-                    accentTint.opacity(0.20)
+                    .clear,
+                    accentTint.opacity(0.18)
                 ],
                 startPoint: .topLeading,
                 endPoint: .bottomTrailing
@@ -2128,7 +2155,7 @@ private struct GameDayWarningStrip: View {
         .foregroundStyle(warning.role == .destructive ? Color.rollCall(.destructive, surface: .live) : Color.rollCall(.warning, surface: .live))
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
-        .background(Color.black.opacity(0.28), in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+        .background(Color.rollCall(.neutralSurface, surface: .live), in: RoundedRectangle(cornerRadius: 9, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: 9, style: .continuous)
                 .strokeBorder(Color.rollCall(.neutralStructure, surface: .live), lineWidth: 1)
@@ -2228,11 +2255,11 @@ private struct GameDayNowBattingHero: View {
                     Text("Now Batting")
                         .font(.caption.weight(.bold))
                         .textCase(.uppercase)
-                        .foregroundStyle(Color.white.opacity(0.70))
+                        .foregroundStyle(Color(uiColor: .secondaryLabel))
 
                     Text(player.displayName)
                         .font(.system(.largeTitle, design: .rounded).weight(.bold))
-                        .foregroundStyle(.white)
+                        .foregroundStyle(Color(uiColor: .label))
                         .lineLimit(1)
                         .minimumScaleFactor(0.45)
                         .allowsTightening(true)
@@ -2264,12 +2291,12 @@ private struct GameDayNowBattingHero: View {
                     Text(cueTitle)
                 }
                 .font(.subheadline.weight(.semibold))
-                .foregroundStyle(.white)
+                .foregroundStyle(Color(uiColor: .label))
                 .lineLimit(1)
                 .minimumScaleFactor(0.78)
                 Text(announcerSummary)
                     .font(.caption.weight(.medium))
-                    .foregroundStyle(Color.white.opacity(0.72))
+                    .foregroundStyle(Color(uiColor: .secondaryLabel))
                     .lineLimit(1)
             }
 
@@ -2284,22 +2311,22 @@ private struct GameDayNowBattingHero: View {
                         .textCase(.uppercase)
                 }
             }
-            .foregroundStyle(.white)
+            .foregroundStyle(isActive ? Color.white : Color(uiColor: .label))
             .padding(.horizontal, 14)
             .padding(.vertical, 12)
             .background(
-                isActive ? Color.rollCall(.live, surface: .live) : Color.white.opacity(0.12),
+                isActive ? Color.rollCall(.live, surface: .live) : Color.rollCall(.neutralSurface, surface: .live),
                 in: RoundedRectangle(cornerRadius: 12, style: .continuous)
             )
             .overlay(
                 RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .strokeBorder(isActive ? Color.white.opacity(0.50) : Color.rollCall(.neutralStructure, surface: .live), lineWidth: 1)
+                    .strokeBorder(isActive ? Color(uiColor: .label).opacity(0.50) : Color.rollCall(.neutralStructure, surface: .live), lineWidth: 1)
             )
         }
         .padding(14)
         .background(
             RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .fill(isActive ? Color.rollCall(.live, surface: .live).opacity(0.24) : Color.white.opacity(0.09))
+                .fill(isActive ? Color.rollCall(.live, surface: .live).opacity(0.24) : Color.rollCall(.neutralSurface, surface: .live))
         )
         .overlay(
             RoundedRectangle(cornerRadius: 18, style: .continuous)
@@ -2351,7 +2378,7 @@ private struct GameDayOnDeckCard: View {
             }
         }
         .padding(12)
-        .background(Color.white.opacity(0.07), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .background(Color.rollCall(.neutralSurface, surface: .live), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: 14, style: .continuous)
                 .strokeBorder(Color.rollCall(.neutralStructure, surface: .live), lineWidth: 1)
@@ -2367,15 +2394,15 @@ private struct GameDayOnDeckCard: View {
                 Text("On Deck")
                     .font(.caption.weight(.bold))
                     .textCase(.uppercase)
-                    .foregroundStyle(Color.white.opacity(0.62))
+                    .foregroundStyle(Color(uiColor: .secondaryLabel))
                 Text(player.displayName)
                     .font(.title3.weight(.bold))
-                    .foregroundStyle(.white)
+                    .foregroundStyle(Color(uiColor: .label))
                     .lineLimit(1)
                     .minimumScaleFactor(0.78)
                 Text(onDeckStatus(for: player))
                     .font(.caption.weight(.medium))
-                    .foregroundStyle(Color.white.opacity(0.70))
+                    .foregroundStyle(Color(uiColor: .secondaryLabel))
                     .lineLimit(1)
             }
             Spacer(minLength: 0)
@@ -2393,13 +2420,13 @@ private struct GameDayOnDeckCard: View {
                 Text("On Deck")
                     .font(.caption.weight(.bold))
                     .textCase(.uppercase)
-                    .foregroundStyle(Color.white.opacity(0.62))
+                    .foregroundStyle(Color(uiColor: .secondaryLabel))
                 Text("No on deck player")
                     .font(.headline.weight(.bold))
-                    .foregroundStyle(.white)
+                    .foregroundStyle(Color(uiColor: .label))
                 Text("Mark another player present to show who is next.")
                     .font(.caption.weight(.medium))
-                    .foregroundStyle(Color.white.opacity(0.70))
+                    .foregroundStyle(Color(uiColor: .secondaryLabel))
             }
             Spacer(minLength: 0)
         }
@@ -2435,7 +2462,6 @@ private struct GameDayAnnouncerModePicker: View {
             }
         }
         .pickerStyle(.segmented)
-        .environment(\.colorScheme, .dark)
     }
 }
 
@@ -2476,7 +2502,7 @@ private struct GameDayControlRow: View {
 private struct GameDayGridDivider: View {
     var body: some View {
         Rectangle()
-            .fill(Color.white.opacity(0.12))
+            .fill(Color.rollCall(.neutralStructure, surface: .live))
             .frame(height: 1)
             .padding(.vertical, 4)
     }
@@ -2491,17 +2517,17 @@ private struct GameDayEmptyHero: View {
             Text("Now Batting")
                 .font(.caption.weight(.bold))
                 .textCase(.uppercase)
-                .foregroundStyle(Color.white.opacity(0.64))
+                .foregroundStyle(Color(uiColor: .secondaryLabel))
             Text(title)
                 .font(.title.bold())
-                .foregroundStyle(.white)
+                .foregroundStyle(Color(uiColor: .label))
             Text(detail)
                 .font(.subheadline.weight(.medium))
-                .foregroundStyle(Color.white.opacity(0.72))
+                .foregroundStyle(Color(uiColor: .secondaryLabel))
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(14)
-        .background(Color.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .background(Color.rollCall(.neutralSurface, surface: .live), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: 18, style: .continuous)
                 .strokeBorder(Color.rollCall(.neutralStructure, surface: .live), lineWidth: 1)
@@ -2558,7 +2584,7 @@ private struct GameDayStatePill: View {
         case .disabled:
             return Color.rollCall(.disabled, surface: .live)
         case .neutral:
-            return Color.white.opacity(0.62)
+            return Color(uiColor: .secondaryLabel)
         }
     }
 }
@@ -2602,7 +2628,7 @@ private struct GameDayPlayerGrid: View {
                         HStack(alignment: .center, spacing: 4) {
                             Text(player.uniformNumber.isEmpty ? "--" : "#\(player.uniformNumber)")
                                 .font(.caption.weight(.bold))
-                                .foregroundStyle(Color.white.opacity(0.62))
+                                .foregroundStyle(Color(uiColor: .secondaryLabel))
                             Spacer(minLength: 0)
                             if let tileState {
                                 if tileState.animatesSymbol {
@@ -2618,7 +2644,7 @@ private struct GameDayPlayerGrid: View {
 
                         Text(tileName(for: player))
                             .font(.headline.weight(.bold))
-                            .foregroundStyle(.white)
+                            .foregroundStyle(Color(uiColor: .label))
                             .lineLimit(2)
                             .minimumScaleFactor(0.74)
                             .frame(maxWidth: .infinity, alignment: .leading)
@@ -2634,7 +2660,7 @@ private struct GameDayPlayerGrid: View {
                             Text(footerText)
                                 .font(.caption2.weight(.semibold))
                                 .textCase(.uppercase)
-                                .foregroundStyle(Color.white.opacity(0.50))
+                                .foregroundStyle(Color(uiColor: .tertiaryLabel))
                                 .lineLimit(2)
                         }
                     }
@@ -2765,7 +2791,7 @@ private struct GameDayPlayerGrid: View {
     }
 
     private func tileBackground(isActive: Bool) -> Color {
-        isActive ? Color.rollCall(.live, surface: .live).opacity(0.22) : Color.white.opacity(0.07)
+        isActive ? Color.rollCall(.live, surface: .live).opacity(0.22) : Color.rollCall(.neutralSurface, surface: .live)
     }
 
     private func tileBorder(isActive: Bool) -> Color {
@@ -3195,15 +3221,27 @@ private struct PlayerRosterRow: View {
     @ViewBuilder
     private var cueSummary: some View {
         if let cue {
-            Label(cue.rosterDisplayTitle, systemImage: "music.note")
-                .rollCallText(.helperText)
-                .lineLimit(1)
-                .foregroundStyle(Color.rollCall(.ready))
+            HStack(alignment: .firstTextBaseline, spacing: 44) {
+                Image(systemName: "music.note")
+                    .font(.footnote.weight(.semibold))
+                    .foregroundStyle(Color.rollCall(.ready))
+                Text(cue.rosterDisplayTitle)
+                    .font(.footnote)
+                    .fontWeight(.medium)
+                    .lineLimit(1)
+                    .foregroundStyle(Color.rollCall(.ready))
+            }
         } else {
-            Label("Song not selected", systemImage: "music.note")
-                .rollCallText(.helperText)
-                .lineLimit(1)
-                .foregroundStyle(Color.rollCall(.warning))
+            HStack(alignment: .firstTextBaseline, spacing: 44) {
+                Image(systemName: "music.note")
+                    .font(.footnote.weight(.semibold))
+                    .foregroundStyle(Color.rollCall(.warning))
+                Text("Song not selected")
+                    .font(.footnote)
+                    .fontWeight(.medium)
+                    .lineLimit(1)
+                    .foregroundStyle(Color.rollCall(.warning))
+            }
         }
     }
 
@@ -3394,7 +3432,7 @@ private struct PlayerEditorSheet: View {
                     VStack(alignment: .leading, spacing: 12) {
                         HStack(alignment: .top, spacing: 10) {
                             PlayerEditorSectionIcon(systemImage: "mic.fill", role: .live)
-                            Text("Optional. In Game Day, this recording can play by itself in Announcer Only or before the player’s song in Announcer+Song.")
+                            Text("Optional. Record a quick custom intro, like \"Now batting for the Niners, number 47, Kasidy Yates!\" In Game Day, it can play by itself in Announcer Only or before the player's song in Announcer+Song.")
                                 .rollCallText(.helperText)
                         }
 
@@ -4482,6 +4520,8 @@ private struct AdvancedTrimSheet: View {
                     nudgeRow(title: "Fade", value: cue.fadeOutDuration) { delta in
                         cue.fadeOutDuration = min(max(0.1, cue.fadeOutDuration + delta), 3.0)
                     }
+                    Text("Fade timing is used only when Fade-Out Volume Automation is enabled in Settings.")
+                        .rollCallText(.helperText)
                 }
             }
             .navigationTitle("Advanced Trim")
@@ -4540,7 +4580,7 @@ private struct PlayerPhotoThumbnail: View {
         .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                .stroke(Color.white.opacity(0.08), lineWidth: 1)
+                .stroke(Color(uiColor: .separator), lineWidth: 1)
         )
     }
 

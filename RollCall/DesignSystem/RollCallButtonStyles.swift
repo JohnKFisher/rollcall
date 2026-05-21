@@ -68,7 +68,7 @@ struct RollCallButtonStyle: ButtonStyle {
         case .primary, .destructive, .liveControl:
             return .white
         case .secondary, .quiet:
-            return surface == .live ? .white : Color(uiColor: .label)
+            return Color(uiColor: .label)
         }
     }
 
@@ -157,4 +157,3 @@ private extension RollCallButtonFamily {
         }
     }
 }
-

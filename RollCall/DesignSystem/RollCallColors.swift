@@ -20,7 +20,7 @@ extension Color {
         case (.accent, .standard):
             return Color(uiColor: .systemOrange)
         case (.accent, .live):
-            return Color(uiColor: .systemYellow)
+            return Color(uiColor: .systemOrange)
         case (.live, .standard):
             return Color(uiColor: .systemBlue)
         case (.live, .live):
@@ -40,11 +40,11 @@ extension Color {
         case (.neutralSurface, .standard):
             return Color(uiColor: .secondarySystemGroupedBackground)
         case (.neutralSurface, .live):
-            return Color(uiColor: .secondaryLabel).opacity(0.22)
+            return Color(uiColor: .secondarySystemGroupedBackground)
         case (.neutralStructure, .standard):
             return Color(uiColor: .separator)
         case (.neutralStructure, .live):
-            return Color.white.opacity(0.18)
+            return Color(uiColor: .separator)
         }
     }
 }
@@ -110,8 +110,7 @@ extension RollCallSurfaceVariant {
         case .standard:
             return Color(uiColor: .systemGroupedBackground)
         case .live:
-            return Color(red: 0.05, green: 0.07, blue: 0.10)
+            return Color(uiColor: .systemGroupedBackground)
         }
     }
 }
-

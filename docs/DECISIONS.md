@@ -10,6 +10,10 @@ Use this file as a concise decision log for project-specific architectural, beha
 
 ## 2026-05-21
 
+- Approved: live-screen appearance follows the explicit matrix in `docs/product/APPEARANCE_RULES.md`: setup screens always follow the device, `Game Day` and `Clips` force dark only when the device is dark or `Always Use Dark Live Screens` is enabled, and the Game Day lineup sheet follows the effective live appearance.
+  Rationale: the setting is meant to protect live-use readability without turning the whole app dark or leaving live content stuck in a dark-only custom palette when the user intentionally allows Light Mode.
+  Status: approved
+
 - Approved: add a default-on setting that keeps `Game Day` and `Clips` in dark mode while allowing the rest of the app to follow the user's normal Light/Dark appearance.
   Rationale: the custom light-mode Game Day gradient can become hard to read in sunlight, while the live-use screens are the places where field visibility matters most. `Game Day` and `Clips` should share the same live-side background treatment so the live surfaces read as intentionally related.
   Status: approved
