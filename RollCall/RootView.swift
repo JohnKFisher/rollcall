@@ -13,6 +13,61 @@ private enum RootTab: Hashable {
     case settings
 }
 
+private struct PlayingSpeakerSymbol: View {
+    let systemImage: String
+    var color: Color?
+    @State private var isPulsing = false
+
+    var body: some View {
+        Image(systemName: resolvedSystemImage)
+            .modifier(PlayingSpeakerSymbolEffect(color: color, isPulsing: isPulsing))
+            .onAppear {
+                isPulsing = true
+            }
+    }
+
+    private var resolvedSystemImage: String {
+        if UIImage(systemName: systemImage) != nil {
+            return systemImage
+        }
+        if UIImage(systemName: "speaker.wave.3") != nil {
+            return "speaker.wave.3"
+        }
+        return "speaker.wave.2.fill"
+    }
+}
+
+private struct PlayingSpeakerSymbolEffect: ViewModifier {
+    let color: Color?
+    let isPulsing: Bool
+
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        if #available(iOS 26.0, *) {
+            content
+                .optionalForegroundStyle(color)
+                .symbolEffect(.drawOn.individually, options: .repeat(.periodic(delay: 3.0)))
+        } else {
+            content
+                .optionalForegroundStyle(color)
+                .scaleEffect(isPulsing ? 1.16 : 0.92)
+                .opacity(isPulsing ? 1.0 : 0.62)
+                .animation(.easeInOut(duration: 0.85).repeatForever(autoreverses: true), value: isPulsing)
+        }
+    }
+}
+
+private extension View {
+    @ViewBuilder
+    func optionalForegroundStyle(_ color: Color?) -> some View {
+        if let color {
+            self.foregroundStyle(color)
+        } else {
+            self
+        }
+    }
+}
+
 struct RootView: View {
     @ObservedObject var appModel: AppModel
     @State private var newTeamName = ""
@@ -157,15 +212,6 @@ struct RootView: View {
     private var playersTab: some View {
         NavigationStack {
             List {
-                Section {
-                    TeamBanner(
-                        teamName: appModel.selectedTeam?.name,
-                        secondaryStatus: selectedTeamBannerStatus
-                    )
-                }
-                .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
-                .listRowBackground(Color.clear)
-
                 if let team = appModel.selectedTeam {
                     Section {
                         PlayerQuickAddView(appModel: appModel)
@@ -211,7 +257,10 @@ struct RootView: View {
             }
             .listStyle(.insetGrouped)
             .navigationTitle("Players")
-            .navigationBarTitleDisplayMode(.inline)
+            .toolbar(.hidden, for: .navigationBar)
+            .safeAreaInset(edge: .top, spacing: 0) {
+                rootTeamBannerHeader()
+            }
             .scrollDismissesKeyboard(.interactively)
             .dismissesKeyboardOnTap()
             .sheet(item: $selectedPlayer) { player in
@@ -252,6 +301,39 @@ struct RootView: View {
         return (firstName, remainder)
     }
 
+    private func rootTeamBannerHeader(
+        variant: TeamBannerVariant = .standard,
+        secondaryStatus: TeamBannerSecondaryStatus? = nil
+    ) -> some View {
+        VStack(spacing: 0) {
+            TeamBanner(
+                teamName: appModel.selectedTeam?.name,
+                secondaryStatus: secondaryStatus ?? selectedTeamBannerStatus,
+                variant: variant
+            )
+            .frame(maxWidth: .infinity)
+            .accessibilityIdentifier("root-team-banner")
+            .padding(.horizontal, 6)
+
+            Rectangle()
+                .fill(Color.rollCall(.neutralStructure, surface: variant == .liveSide ? .live : .standard).opacity(0.55))
+                .frame(height: 1)
+        }
+        .padding(.top, 6)
+        .padding(.bottom, 6)
+        .frame(maxWidth: .infinity)
+        .background(rootTeamBannerBackground(for: variant))
+    }
+
+    private func rootTeamBannerBackground(for variant: TeamBannerVariant) -> Color {
+        switch variant {
+        case .standard:
+            return Color(uiColor: .systemGroupedBackground)
+        case .liveSide:
+            return RollCallSurfaceVariant.live.previewBackground
+        }
+    }
+
     private var generalClipsTab: some View {
         NavigationStack {
             ZStack {
@@ -260,12 +342,6 @@ struct RootView: View {
 
                 ScrollView {
                     VStack(alignment: .leading, spacing: RollCallSpacingTier.standard.value) {
-                        TeamBanner(
-                            teamName: appModel.selectedTeam?.name,
-                            secondaryStatus: selectedTeamBannerStatus,
-                            variant: .liveSide
-                        )
-
                         if appModel.selectedTeamBuiltInClips.isEmpty {
                             ClipsEmptyStateCard()
                         } else {
@@ -286,10 +362,10 @@ struct RootView: View {
                 }
             }
             .navigationTitle("Clips")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbarBackground(.visible, for: .navigationBar)
-            .toolbarBackground(RollCallSurfaceVariant.live.previewBackground, for: .navigationBar)
-            .toolbarColorScheme(.dark, for: .navigationBar)
+            .toolbar(.hidden, for: .navigationBar)
+            .safeAreaInset(edge: .top, spacing: 0) {
+                rootTeamBannerHeader(variant: .liveSide)
+            }
         }
     }
 
@@ -299,12 +375,11 @@ struct RootView: View {
         var body: some View {
             HStack(spacing: RollCallSpacingTier.standard.value) {
                 Image(systemName: "speaker.wave.2.fill")
-                    .font(.title3.weight(.semibold))
+                    .font(.headline.weight(.semibold))
                     .foregroundStyle(Color.rollCall(.live, surface: .live))
-                    .frame(width: 34, height: 34)
-                    .background(Color.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+                    .frame(width: 24, alignment: .leading)
 
-                VStack(alignment: .leading, spacing: 3) {
+                VStack(alignment: .leading, spacing: 2) {
                     Text("Crowd clips ready")
                         .rollCallText(.cardTitle, surface: .live)
                     Text("\(clipCount) built-in reactions for quick live moments")
@@ -316,15 +391,22 @@ struct RootView: View {
 
                 Spacer(minLength: RollCallSpacingTier.tight.value)
 
-                StatusChip(
-                    text: "Ready",
-                    role: .ready,
-                    systemImage: "checkmark.circle.fill",
-                    emphasis: .subdued
-                )
+                HStack(spacing: 5) {
+                    Image(systemName: "checkmark.circle.fill")
+                    Text("Ready")
+                }
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(Color.rollCall(.ready, surface: .live))
                 .accessibilityHidden(true)
             }
-            .rollCallCard(.live, surface: .live)
+            .padding(.horizontal, 2)
+            .padding(.top, 2)
+            .padding(.bottom, 10)
+            .overlay(alignment: .bottom) {
+                Rectangle()
+                    .fill(Color.rollCall(.neutralStructure, surface: .live).opacity(0.7))
+                    .frame(height: 1)
+            }
         }
     }
 
@@ -429,7 +511,10 @@ struct RootView: View {
                 }
             }
             .navigationTitle("Game Day")
-            .navigationBarTitleDisplayMode(.inline)
+            .toolbar(.hidden, for: .navigationBar)
+            .safeAreaInset(edge: .top, spacing: 0) {
+                rootTeamBannerHeader(variant: .liveSide, secondaryStatus: gameDayTeamBannerStatus)
+            }
             .sheet(isPresented: $showLineupEditor) {
                 LineupEditorSheet(appModel: appModel)
             }
@@ -440,11 +525,6 @@ struct RootView: View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: RollCallSpacingTier.large.value) {
-                    TeamBanner(
-                        teamName: appModel.selectedTeam?.name,
-                        secondaryStatus: selectedTeamBannerStatus
-                    )
-
                     if let readiness = appModel.state.lastReadiness {
                         ReadinessOverviewCard(
                             readiness: readiness,
@@ -485,7 +565,10 @@ struct RootView: View {
             }
             .background(Color(uiColor: .systemGroupedBackground))
             .navigationTitle("Readiness")
-            .navigationBarTitleDisplayMode(.inline)
+            .toolbar(.hidden, for: .navigationBar)
+            .safeAreaInset(edge: .top, spacing: 0) {
+                rootTeamBannerHeader()
+            }
             .sheet(item: $selectedPlayer) { player in
                 PlayerEditorSheet(appModel: appModel, player: player)
             }
@@ -496,11 +579,6 @@ struct RootView: View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: RollCallSpacingTier.large.value) {
-                    TeamBanner(
-                        teamName: appModel.selectedTeam?.name,
-                        secondaryStatus: selectedTeamBannerStatus
-                    )
-
                     if let team = appModel.selectedTeam {
                         TeamsSectionGroup(
                             title: "Selected Team",
@@ -584,7 +662,10 @@ struct RootView: View {
             }
             .background(Color(uiColor: .systemGroupedBackground))
             .navigationTitle("Teams")
-            .navigationBarTitleDisplayMode(.inline)
+            .toolbar(.hidden, for: .navigationBar)
+            .safeAreaInset(edge: .top, spacing: 0) {
+                rootTeamBannerHeader()
+            }
             .scrollDismissesKeyboard(.interactively)
             .dismissesKeyboardOnTap()
         }
@@ -597,6 +678,40 @@ struct RootView: View {
         return TeamBannerSecondaryStatus(
             text: "\(team.players.count) players • \(team.presentPlayersInBattingOrder.count) present"
         )
+    }
+
+    private var gameDayTeamBannerStatus: TeamBannerSecondaryStatus? {
+        guard let team = appModel.selectedTeam else {
+            return TeamBannerSecondaryStatus(text: "Choose or create a team", tone: .warning)
+        }
+        if hasLiveGameDayWarning(for: team) {
+            return TeamBannerSecondaryStatus(text: "Warnings", tone: .warning)
+        }
+        return TeamBannerSecondaryStatus(
+            text: "\(team.players.count) players • \(team.presentPlayersInBattingOrder.count) present"
+        )
+    }
+
+    private func hasLiveGameDayWarning(for team: Team) -> Bool {
+        let presentPlayers = team.presentPlayersInBattingOrder
+        if presentPlayers.isEmpty {
+            return true
+        }
+
+        guard let readiness = appModel.state.lastReadiness else { return false }
+        return readiness.checks.contains { check in
+            guard check.state == .issue else { return false }
+            if check.id.contains("photo-upgrade") || check.id.contains("announcement-upgrade") { return false }
+            if check.id.contains("custom-announcer-issue") {
+                return team.session.gameDayAnnouncerMode.usesAnnouncer
+            }
+            if check.id.hasPrefix("player-") {
+                return presentPlayers.contains { player in
+                    check.id.contains(player.id.uuidString)
+                }
+            }
+            return ["route", "volume", "network", "music-auth", "lineup"].contains(check.id)
+        }
     }
 
     private var settingsTab: some View {
@@ -763,7 +878,10 @@ struct RootView: View {
             }
             .background(Color(uiColor: .systemGroupedBackground))
             .navigationTitle("Settings")
-            .navigationBarTitleDisplayMode(.inline)
+            .toolbar(.hidden, for: .navigationBar)
+            .safeAreaInset(edge: .top, spacing: 0) {
+                rootTeamBannerHeader()
+            }
             .sheet(isPresented: $packageSharePresented) {
                 if let exportURL = appModel.exportURL {
                     ActivityShareSheet(items: [exportURL])
@@ -964,8 +1082,8 @@ private struct ReadinessEnhancementsCard: View {
 
     var body: some View {
         ReadinessSectionCard(
-            title: "Announcement Cues",
-            helperText: "Announcement Cues make walkups feel more stadium-like. They are an upgrade, not a requirement.",
+            title: "Announcements",
+            helperText: "This list shows players who have songs selected but do not have announcements recorded yet.",
             checks: checks,
             emptyText: "Add player audio first, then Roll Call can suggest announcement upgrades.",
             playerForCheck: playerForCheck,
@@ -1670,21 +1788,8 @@ private struct GameDayTeamStack: View {
         return GameDayLiveWarning(text: "\(issues.count) live warnings - \(firstIssue.title)", role: role(for: firstIssue.state))
     }
 
-    private var teamBannerStatus: TeamBannerSecondaryStatus {
-        if liveWarning != nil {
-            return TeamBannerSecondaryStatus(text: "Warnings", tone: .warning)
-        }
-        return TeamBannerSecondaryStatus(text: "\(team.players.count) players - \(presentPlayers.count) present")
-    }
-
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            TeamBanner(
-                teamName: team.name,
-                secondaryStatus: teamBannerStatus,
-                variant: .liveSide
-            )
-
             GameDayAnnouncerModePicker(
                 selectedMode: team.session.gameDayAnnouncerMode,
                 onSelect: appModel.setGameDayAnnouncerMode
@@ -1777,11 +1882,6 @@ private struct GameDayTeamStack: View {
 private struct GameDayNoTeamStack: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            TeamBanner(
-                teamName: nil,
-                secondaryStatus: TeamBannerSecondaryStatus(text: "Choose or create a team", tone: .warning),
-                variant: .liveSide
-            )
             GameDayWarningStrip(warning: GameDayLiveWarning(text: "No team selected", role: .warning))
             GameDayEmptyHero(
                 title: "No Team Selected",
@@ -1829,13 +1929,17 @@ private struct GameDayNowBattingHero: View {
     private var cueTitle: String {
         switch announcerMode {
         case .announcerOnly:
-            return hasCustomAnnouncer ? "Announcement Cue Only" : "Fallback: Small Cheer"
+            return hasCustomAnnouncer ? "Announcer Only" : "Fallback: Small Cheer"
         case .announcerAndSong, .songOnly:
             if let cue = player.cue {
-                return "Cue: \(cue.label)"
+                return cue.label
             }
             return "Fallback: Small Cheer"
         }
+    }
+
+    private var cueTitleShowsMusicIcon: Bool {
+        announcerMode != .announcerOnly && player.cue != nil
     }
 
     private var hasCustomAnnouncer: Bool {
@@ -1867,14 +1971,14 @@ private struct GameDayNowBattingHero: View {
     private var announcerSummary: String {
         switch announcerMode {
         case .announcerOnly:
-            return hasCustomAnnouncer ? "Announcement cue only" : "No announcement cue, Small Cheer fallback"
+            return hasCustomAnnouncer ? "Announcer Only" : "Announcement not recorded, Small Cheer fallback"
         case .announcerAndSong:
             if player.cue == nil {
-                return hasCustomAnnouncer ? "Announcement cue + Small Cheer" : "Small Cheer fallback"
+                return hasCustomAnnouncer ? "Announcer + Small Cheer" : "Small Cheer fallback"
             }
-            return hasCustomAnnouncer ? "Announcement cue + song" : "Song only"
+            return hasCustomAnnouncer ? "Announcer + Song" : "Song only"
         case .songOnly:
-            return player.cue == nil ? "No song cue, Small Cheer fallback" : "Song only"
+            return player.cue == nil ? "Song not selected, Small Cheer fallback" : "Song only"
         }
     }
 
@@ -1918,9 +2022,10 @@ private struct GameDayNowBattingHero: View {
                         }
                         GameDayStatePill(
                             text: statusText,
-                            systemImage: isActive ? "speaker.wave.2.fill" : (willUseFallback ? "music.note.list" : "checkmark.circle.fill"),
+                            systemImage: isActive ? "speaker.wave.3.fill" : (willUseFallback ? "music.note.list" : "checkmark.circle.fill"),
                             role: isActive ? .live : (willUseFallback ? .warning : .ready),
-                            strong: isActive
+                            strong: isActive,
+                            animatesSymbol: isActive
                         )
                     }
                 }
@@ -1929,11 +2034,16 @@ private struct GameDayNowBattingHero: View {
             }
 
             VStack(alignment: .leading, spacing: 5) {
-                Text(cueTitle)
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(.white)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.78)
+                HStack(spacing: 5) {
+                    if cueTitleShowsMusicIcon {
+                        Image(systemName: "music.note")
+                    }
+                    Text(cueTitle)
+                }
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(.white)
+                .lineLimit(1)
+                .minimumScaleFactor(0.78)
                 Text(announcerSummary)
                     .font(.caption.weight(.medium))
                     .foregroundStyle(Color.white.opacity(0.72))
@@ -2076,12 +2186,12 @@ private struct GameDayOnDeckCard: View {
         let hasCustomAnnouncer = appModel.hasStoredCustomAnnouncer(for: player)
         switch announcerMode {
         case .announcerOnly:
-            return hasCustomAnnouncer ? "Announcement cue ready" : "Small Cheer fallback"
+            return hasCustomAnnouncer ? "Announcer Only" : "Small Cheer fallback"
         case .announcerAndSong:
             if player.cue == nil {
-                return hasCustomAnnouncer ? "Announcement cue + Small Cheer" : "Small Cheer fallback"
+                return hasCustomAnnouncer ? "Announcer + Small Cheer" : "Small Cheer fallback"
             }
-            return hasCustomAnnouncer ? "Announcement cue + song" : "Song ready"
+            return hasCustomAnnouncer ? "Announcer + Song" : "Song ready"
         case .songOnly:
             return player.cue == nil ? "Small Cheer fallback" : "Song ready"
         }
@@ -2102,6 +2212,7 @@ private struct GameDayAnnouncerModePicker: View {
             }
         }
         .pickerStyle(.segmented)
+        .environment(\.colorScheme, .dark)
     }
 }
 
@@ -2180,19 +2291,27 @@ private struct GameDayStatePill: View {
     let systemImage: String
     let role: StatusChipRole
     let strong: Bool
+    var animatesSymbol: Bool = false
 
     var body: some View {
-        Label(text, systemImage: systemImage)
-            .font(.caption.weight(.bold))
-            .lineLimit(1)
-            .foregroundStyle(foreground)
-            .padding(.horizontal, 9)
-            .padding(.vertical, 6)
-            .background(background, in: Capsule(style: .continuous))
-            .overlay(
-                Capsule(style: .continuous)
-                    .strokeBorder(color.opacity(strong ? 0 : 0.45), lineWidth: 1)
-            )
+        HStack(spacing: 5) {
+            if animatesSymbol {
+                PlayingSpeakerSymbol(systemImage: systemImage)
+            } else {
+                Image(systemName: systemImage)
+            }
+            Text(text)
+        }
+        .font(.caption.weight(.bold))
+        .lineLimit(1)
+        .foregroundStyle(foreground)
+        .padding(.horizontal, 9)
+        .padding(.vertical, 6)
+        .background(background, in: Capsule(style: .continuous))
+        .overlay(
+            Capsule(style: .continuous)
+                .strokeBorder(color.opacity(strong ? 0 : 0.45), lineWidth: 1)
+        )
     }
 
     private var foreground: Color {
@@ -2263,9 +2382,14 @@ private struct GameDayPlayerGrid: View {
                                 .foregroundStyle(Color.white.opacity(0.62))
                             Spacer(minLength: 0)
                             if let tileState {
-                                Image(systemName: tileState.systemImage)
-                                    .font(.caption.weight(.bold))
-                                    .foregroundStyle(tileState.color)
+                                if tileState.animatesSymbol {
+                                    PlayingSpeakerSymbol(systemImage: tileState.systemImage, color: tileState.color)
+                                        .font(.caption.weight(.bold))
+                                } else {
+                                    Image(systemName: tileState.systemImage)
+                                        .font(.caption.weight(.bold))
+                                        .foregroundStyle(tileState.color)
+                                }
                             }
                         }
 
@@ -2281,14 +2405,14 @@ private struct GameDayPlayerGrid: View {
                                 .font(.caption2.weight(.bold))
                                 .textCase(.uppercase)
                                 .foregroundStyle(tileState.color)
-                                .lineLimit(1)
+                                .lineLimit(2)
                                 .minimumScaleFactor(0.78)
-                        } else {
-                            Text(tileFooterText(for: player))
+                        } else if let footerText = tileFooterText(for: player) {
+                            Text(footerText)
                                 .font(.caption2.weight(.semibold))
                                 .textCase(.uppercase)
                                 .foregroundStyle(Color.white.opacity(0.50))
-                                .lineLimit(1)
+                                .lineLimit(2)
                         }
                     }
                     .padding(10)
@@ -2345,29 +2469,26 @@ private struct GameDayPlayerGrid: View {
 
     private func tileState(for player: Player, isActive: Bool) -> GameDayTileState? {
         if isActive {
-            return GameDayTileState(text: "Playing", systemImage: "speaker.wave.2.fill", color: Color.rollCall(.live, surface: .live))
+            return GameDayTileState(text: "Playing", systemImage: "speaker.wave.3.fill", color: Color.rollCall(.live, surface: .live), animatesSymbol: true)
         }
         if player.id == onDeckPlayerID {
-            return GameDayTileState(text: "On Deck", systemImage: "circle.dotted", color: Color.rollCall(.accent, surface: .live))
+            return GameDayTileState(text: "On Deck", systemImage: "person.crop.circle.badge.clock", color: Color.rollCall(.accent, surface: .live))
         }
         if player.id == nowPlayerID {
-            return GameDayTileState(text: "Now", systemImage: "arrowtriangle.right.fill", color: Color.rollCall(.ready, surface: .live))
-        }
-        if willUseFallback(for: player) {
-            return GameDayTileState(text: "Fallback", systemImage: "music.note.list", color: Color.rollCall(.warning, surface: .live))
+            return GameDayTileState(text: "Now Batting", systemImage: "figure.baseball", color: Color.rollCall(.ready, surface: .live))
         }
         return nil
     }
 
-    private func tileFooterText(for player: Player) -> String {
+    private func tileFooterText(for player: Player) -> String? {
         switch announcerMode {
         case .announcerOnly:
-            return appModel.hasStoredCustomAnnouncer(for: player) ? "Announcer" : "Fallback"
+            return appModel.hasStoredCustomAnnouncer(for: player) ? "Announcer" : nil
         case .announcerAndSong:
-            if player.cue == nil { return "Fallback" }
-            return appModel.hasStoredCustomAnnouncer(for: player) ? "Intro + Song" : "Song"
+            if player.cue == nil { return nil }
+            return appModel.hasStoredCustomAnnouncer(for: player) ? "Announcer + Song" : "Song"
         case .songOnly:
-            return player.cue == nil ? "Fallback" : "Song"
+            return player.cue == nil ? nil : "Song"
         }
     }
 
@@ -2433,6 +2554,7 @@ private struct GameDayTileState {
     let text: String
     let systemImage: String
     let color: Color
+    var animatesSymbol: Bool = false
 }
 
 private struct LineupEditorSheet: View {
@@ -2855,7 +2977,7 @@ private struct PlayerRosterRow: View {
                 .foregroundStyle(Color(uiColor: .secondaryLabel))
                 .lineLimit(1)
         } else {
-            Label("No cue", systemImage: "music.note")
+            Label("Song not selected", systemImage: "music.note")
                 .rollCallText(.helperText)
                 .foregroundStyle(Color.rollCall(.warning))
                 .lineLimit(1)
@@ -2872,8 +2994,11 @@ private struct PlayerRosterRow: View {
             if isCustomIntroMissing {
                 Label("Announcer missing", systemImage: "exclamationmark.triangle.fill")
                     .foregroundStyle(Color.rollCall(.destructive))
+            } else if hasCustomIntro {
+                Label("Announcement recorded", systemImage: "mic.fill")
+                    .foregroundStyle(Color.rollCall(.ready))
             } else if !hasCustomIntro {
-                Label("No announcer cue", systemImage: "mic.slash")
+                Label("Announcement not recorded", systemImage: "mic.slash")
                     .foregroundStyle(Color(uiColor: .tertiaryLabel))
             }
         }
