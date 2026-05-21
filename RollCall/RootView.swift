@@ -1994,44 +1994,27 @@ private struct GameDayOnDeckCard: View {
     let announcerMode: GameDayAnnouncerMode
 
     var body: some View {
+        Group {
+            if player != nil {
+                Button {
+                    appModel.advanceNextBatter()
+                } label: {
+                    content
+                }
+                .buttonStyle(.plain)
+                .accessibilityHint("Moves this player to Now Batting.")
+            } else {
+                content
+            }
+        }
+    }
+
+    private var content: some View {
         HStack(spacing: 10) {
             if let player {
-                PlayerPhotoThumbnail(relativePath: player.photoRelativePath, size: 42, cornerRadius: 12)
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("On Deck")
-                        .font(.caption.weight(.bold))
-                        .textCase(.uppercase)
-                        .foregroundStyle(Color.white.opacity(0.62))
-                    Text(player.displayName)
-                        .font(.title3.weight(.bold))
-                        .foregroundStyle(.white)
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.78)
-                    Text(onDeckStatus(for: player))
-                        .font(.caption.weight(.medium))
-                        .foregroundStyle(Color.white.opacity(0.70))
-                        .lineLimit(1)
-                }
-                Spacer(minLength: 0)
-                if !player.uniformNumber.isEmpty {
-                    Text("#\(player.uniformNumber)")
-                        .font(.headline.weight(.bold))
-                        .foregroundStyle(Color.rollCall(.accent, surface: .live))
-                }
+                playerContent(for: player)
             } else {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("On Deck")
-                        .font(.caption.weight(.bold))
-                        .textCase(.uppercase)
-                        .foregroundStyle(Color.white.opacity(0.62))
-                    Text("No on deck player")
-                        .font(.headline.weight(.bold))
-                        .foregroundStyle(.white)
-                    Text("Mark another player present to show who is next.")
-                        .font(.caption.weight(.medium))
-                        .foregroundStyle(Color.white.opacity(0.70))
-                }
-                Spacer(minLength: 0)
+                emptyContent
             }
         }
         .padding(12)
@@ -2040,7 +2023,53 @@ private struct GameDayOnDeckCard: View {
             RoundedRectangle(cornerRadius: 14, style: .continuous)
                 .strokeBorder(Color.rollCall(.neutralStructure, surface: .live), lineWidth: 1)
         )
+        .contentShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
         .accessibilityElement(children: .combine)
+    }
+
+    private func playerContent(for player: Player) -> some View {
+        Group {
+            PlayerPhotoThumbnail(relativePath: player.photoRelativePath, size: 42, cornerRadius: 12)
+            VStack(alignment: .leading, spacing: 4) {
+                Text("On Deck")
+                    .font(.caption.weight(.bold))
+                    .textCase(.uppercase)
+                    .foregroundStyle(Color.white.opacity(0.62))
+                Text(player.displayName)
+                    .font(.title3.weight(.bold))
+                    .foregroundStyle(.white)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.78)
+                Text(onDeckStatus(for: player))
+                    .font(.caption.weight(.medium))
+                    .foregroundStyle(Color.white.opacity(0.70))
+                    .lineLimit(1)
+            }
+            Spacer(minLength: 0)
+            if !player.uniformNumber.isEmpty {
+                Text("#\(player.uniformNumber)")
+                    .font(.headline.weight(.bold))
+                    .foregroundStyle(Color.rollCall(.accent, surface: .live))
+            }
+        }
+    }
+
+    private var emptyContent: some View {
+        Group {
+            VStack(alignment: .leading, spacing: 4) {
+                Text("On Deck")
+                    .font(.caption.weight(.bold))
+                    .textCase(.uppercase)
+                    .foregroundStyle(Color.white.opacity(0.62))
+                Text("No on deck player")
+                    .font(.headline.weight(.bold))
+                    .foregroundStyle(.white)
+                Text("Mark another player present to show who is next.")
+                    .font(.caption.weight(.medium))
+                    .foregroundStyle(Color.white.opacity(0.70))
+            }
+            Spacer(minLength: 0)
+        }
     }
 
     private func onDeckStatus(for player: Player) -> String {
