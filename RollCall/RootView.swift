@@ -399,16 +399,6 @@ struct RootView: View {
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 .layoutPriority(1)
-
-                Spacer(minLength: RollCallSpacingTier.tight.value)
-
-                HStack(spacing: 5) {
-                    Image(systemName: "checkmark.circle.fill")
-                    Text("Ready")
-                }
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(Color.rollCall(.ready, surface: surface))
-                .accessibilityHidden(true)
             }
             .padding(.horizontal, 2)
             .padding(.top, 2)
