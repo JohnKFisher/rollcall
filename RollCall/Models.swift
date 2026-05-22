@@ -169,6 +169,17 @@ enum GameDayAnnouncerMode: String, Codable, CaseIterable, Identifiable {
     }
 }
 
+enum TeamAccentPreset: String, Codable, CaseIterable, Identifiable {
+    case rollCallOrange
+    case red
+    case gold
+    case green
+    case blue
+    case purple
+
+    var id: String { rawValue }
+}
+
 enum AnnouncerTemplate: String, Codable, CaseIterable, Identifiable {
     case nameOnly
     case numberAndName
@@ -420,6 +431,7 @@ struct Team: Codable, Equatable, Identifiable {
     var builtInClips: [BuiltInClip]
     var session: TeamSessionState
     var announcerProfile: TeamAnnouncerProfile
+    var accentPreset: TeamAccentPreset
 
     enum CodingKeys: String, CodingKey {
         case id
@@ -430,6 +442,7 @@ struct Team: Codable, Equatable, Identifiable {
         case builtInClips
         case session
         case announcerProfile
+        case accentPreset
     }
 
     init(
@@ -440,7 +453,8 @@ struct Team: Codable, Equatable, Identifiable {
         players: [Player],
         builtInClips: [BuiltInClip],
         session: TeamSessionState,
-        announcerProfile: TeamAnnouncerProfile
+        announcerProfile: TeamAnnouncerProfile,
+        accentPreset: TeamAccentPreset = .rollCallOrange
     ) {
         self.id = id
         self.name = name
@@ -450,6 +464,7 @@ struct Team: Codable, Equatable, Identifiable {
         self.builtInClips = builtInClips
         self.session = session
         self.announcerProfile = announcerProfile
+        self.accentPreset = accentPreset
     }
 
     init(from decoder: Decoder) throws {
@@ -461,6 +476,7 @@ struct Team: Codable, Equatable, Identifiable {
         players = try container.decodeIfPresent([Player].self, forKey: .players) ?? []
         builtInClips = try container.decodeIfPresent([BuiltInClip].self, forKey: .builtInClips) ?? BuiltInClip.defaults
         session = try container.decodeIfPresent(TeamSessionState.self, forKey: .session) ?? TeamSessionState(activeSessionDate: nil, battingOrder: alphabeticalPlayerIDs(for: players), nextBatterIndex: 0, gameDayAnnouncerMode: .songOnly, battingOrderIsCustomized: false)
+        accentPreset = try container.decodeIfPresent(TeamAccentPreset.self, forKey: .accentPreset) ?? .rollCallOrange
         let legacyPlayers = (try? container.decodeIfPresent([LegacyPlayerDecoder.LegacyPlayerPayload].self, forKey: .players)) ?? []
 
         if let decodedProfile = try container.decodeIfPresent(TeamAnnouncerProfile.self, forKey: .announcerProfile) {
@@ -601,6 +617,58 @@ struct TrimDefaults: Codable, Equatable {
     static let `default` = TrimDefaults(preferredLength: 8)
 }
 
+enum OnboardingFlow: String, Codable, Equatable {
+    case automatic
+    case manualChooser
+    case manualCreate
+    case manualReview
+    case importHandoff
+}
+
+struct OnboardingState: Codable, Equatable {
+    var completedAt: Date?
+    var activeFlow: OnboardingFlow?
+    var activeTeamID: UUID?
+    var didChooseCheerFallback: Bool
+    var didSeeLineup: Bool
+    var importHandoffTeamID: UUID?
+
+    var isComplete: Bool {
+        completedAt != nil
+    }
+
+    static let notStarted = OnboardingState(
+        completedAt: nil,
+        activeFlow: .automatic,
+        activeTeamID: nil,
+        didChooseCheerFallback: false,
+        didSeeLineup: false,
+        importHandoffTeamID: nil
+    )
+
+    static func completed(at date: Date = .now) -> OnboardingState {
+        OnboardingState(
+            completedAt: date,
+            activeFlow: nil,
+            activeTeamID: nil,
+            didChooseCheerFallback: false,
+            didSeeLineup: false,
+            importHandoffTeamID: nil
+        )
+    }
+
+    static func manualChooser(completedAt: Date?) -> OnboardingState {
+        OnboardingState(
+            completedAt: completedAt,
+            activeFlow: .manualChooser,
+            activeTeamID: nil,
+            didChooseCheerFallback: false,
+            didSeeLineup: false,
+            importHandoffTeamID: nil
+        )
+    }
+}
+
 struct DeviceIdentity: Codable, Equatable {
     var label: String
 }
@@ -617,6 +685,7 @@ struct AppState: Codable, Equatable {
     var lastReadiness: ReadinessStatus?
     var recentAppleMusicSelections: [RecentAppleMusicSelection]
     var trimDefaults: TrimDefaults
+    var onboarding: OnboardingState
 
     enum CodingKeys: String, CodingKey {
         case schemaVersion
@@ -630,6 +699,7 @@ struct AppState: Codable, Equatable {
         case lastReadiness
         case recentAppleMusicSelections
         case trimDefaults
+        case onboarding
     }
 
     init(
@@ -643,7 +713,8 @@ struct AppState: Codable, Equatable {
         settings: AppSettings,
         lastReadiness: ReadinessStatus?,
         recentAppleMusicSelections: [RecentAppleMusicSelection],
-        trimDefaults: TrimDefaults
+        trimDefaults: TrimDefaults,
+        onboarding: OnboardingState
     ) {
         self.schemaVersion = schemaVersion
         self.appVersion = appVersion
@@ -656,6 +727,7 @@ struct AppState: Codable, Equatable {
         self.lastReadiness = lastReadiness
         self.recentAppleMusicSelections = recentAppleMusicSelections
         self.trimDefaults = trimDefaults
+        self.onboarding = onboarding
     }
 
     init(from decoder: Decoder) throws {
@@ -671,6 +743,11 @@ struct AppState: Codable, Equatable {
         lastReadiness = try container.decodeIfPresent(ReadinessStatus.self, forKey: .lastReadiness)
         recentAppleMusicSelections = try container.decodeIfPresent([RecentAppleMusicSelection].self, forKey: .recentAppleMusicSelections) ?? []
         trimDefaults = try container.decodeIfPresent(TrimDefaults.self, forKey: .trimDefaults) ?? .default
+        if let decodedOnboarding = try container.decodeIfPresent(OnboardingState.self, forKey: .onboarding) {
+            onboarding = decodedOnboarding
+        } else {
+            onboarding = teams.isEmpty ? .notStarted : .completed()
+        }
     }
 
     static let empty = AppState(
@@ -684,7 +761,8 @@ struct AppState: Codable, Equatable {
         settings: .default,
         lastReadiness: nil,
         recentAppleMusicSelections: [],
-        trimDefaults: .default
+        trimDefaults: .default,
+        onboarding: .notStarted
     )
 }
 

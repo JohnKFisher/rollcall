@@ -13,6 +13,41 @@ private enum RootTab: Hashable {
     case settings
 }
 
+private enum PackageImportContext {
+    case settings
+    case onboarding
+}
+
+private extension TeamAccentPreset {
+    var title: String {
+        switch self {
+        case .rollCallOrange: return "Orange"
+        case .red: return "Red"
+        case .gold: return "Gold"
+        case .green: return "Green"
+        case .blue: return "Blue"
+        case .purple: return "Purple"
+        }
+    }
+
+    func color(surface: RollCallSurfaceVariant = .standard) -> Color {
+        switch self {
+        case .rollCallOrange:
+            return Color.rollCall(.accent, surface: surface)
+        case .red:
+            return Color(uiColor: .systemRed)
+        case .gold:
+            return Color(uiColor: .systemYellow)
+        case .green:
+            return Color(uiColor: .systemGreen)
+        case .blue:
+            return Color(uiColor: .systemBlue)
+        case .purple:
+            return Color(uiColor: .systemPurple)
+        }
+    }
+}
+
 private struct PlayingSpeakerSymbol: View {
     let systemImage: String
     var color: Color?
@@ -76,6 +111,7 @@ struct RootView: View {
     @State private var showRemoveTeamConfirmation = false
     @State private var renameTeamName = ""
     @State private var packageSharePresented = false
+    @State private var packageImportContext: PackageImportContext = .settings
 
     private var errorBinding: Binding<Bool> {
         Binding(get: { appModel.lastError != nil }, set: { newValue in if !newValue { appModel.lastError = nil } })
@@ -97,6 +133,139 @@ struct RootView: View {
     }
 
     var body: some View {
+        rootContent
+            .tint(.orange)
+            .task {
+                await appModel.finishLaunchingIfNeeded()
+            }
+            .onOpenURL { url in
+                appModel.handleIncomingPackage(url)
+            }
+            .overlay(alignment: .top) {
+                if appModel.isBusy {
+                    ProgressView("Working…")
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 10)
+                        .background(.ultraThinMaterial, in: Capsule())
+                        .padding(.top, 8)
+                }
+            }
+            .alert("Experimental Apple Music Local Copies", isPresented: $showExperimentalWarning) {
+                Button("Enable") {
+                    appModel.setShowExperimentalFeatures(true)
+                    appModel.enableExperimentalCopies()
+                }
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text("This feature is off by default. It attempts to turn Apple Music preview media into a regular local file. It may fail, and it is intentionally separate from the normal Apple Music path.")
+            }
+            .alert("Roll Call", isPresented: errorBinding) {
+                Button("OK") { appModel.lastError = nil }
+            } message: {
+                Text(appModel.lastError ?? "")
+            }
+            .alert("Rename Team", isPresented: $showRenameTeamAlert) {
+                TextField("Team name", text: $renameTeamName)
+                Button("Cancel", role: .cancel) {}
+                Button("Rename") {
+                    appModel.renameSelectedTeam(to: renameTeamName)
+                }
+                .disabled(renameTeamName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            } message: {
+                Text("Update the selected team name.")
+            }
+            .alert("Remove Team?", isPresented: $showRemoveTeamConfirmation) {
+                Button("Cancel", role: .cancel) {}
+                Button("Remove", role: .destructive) {
+                    appModel.removeSelectedTeam()
+                }
+            } message: {
+                if let team = appModel.selectedTeam {
+                    Text("Remove \(team.name) from this device? This deletes that team's \(team.players.count) players, lineup state, clips, and custom intros from the app. Existing exports and backups stay untouched.")
+                } else {
+                    Text("Remove the selected team from this device. Existing exports and backups stay untouched.")
+                }
+            }
+            .sheet(item: Binding(get: { appModel.pendingRosterImport }, set: { appModel.pendingRosterImport = $0 })) { pending in
+                NavigationStack {
+                    List {
+                        Section("Importing \(pending.rows.count) players from \(pending.sourceName)") {
+                            ForEach(pending.rows) { player in
+                                HStack {
+                                    Text(player.displayName)
+                                    Spacer()
+                                    if !player.uniformNumber.isEmpty {
+                                        Text("#\(player.uniformNumber)")
+                                            .foregroundStyle(.secondary)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    .navigationTitle("Roster Preview")
+                    .toolbar {
+                        ToolbarItem(placement: .topBarLeading) {
+                            Button("Cancel") { appModel.discardPendingRosterImport() }
+                        }
+                        ToolbarItem(placement: .topBarTrailing) {
+                            Button("Import") { appModel.applyPendingRosterImport() }
+                        }
+                    }
+                }
+            }
+            .sheet(isPresented: $packageImportPresented) {
+                RollCallPackageImportSheet(
+                    onPick: { url in
+                        let context = packageImportContext
+                        packageImportPresented = false
+                        Task {
+                            switch context {
+                            case .settings:
+                                await appModel.importPackage(from: url)
+                            case .onboarding:
+                                await appModel.importPackageFromOnboarding(from: url)
+                            }
+                        }
+                    },
+                    onCancel: {
+                        packageImportPresented = false
+                    }
+                )
+            }
+            .fileImporter(isPresented: $csvImportPresented, allowedContentTypes: [.commaSeparatedText, .text], allowsMultipleSelection: false) { result in
+                if case .success(let urls) = result, let url = urls.first {
+                    Task { await appModel.prepareRosterImport(from: url) }
+                }
+            }
+    }
+
+    @ViewBuilder
+    private var rootContent: some View {
+        if appModel.shouldShowOnboarding {
+            OnboardingRootView(
+                appModel: appModel,
+                onImportPackage: {
+                    packageImportContext = .onboarding
+                    packageImportPresented = true
+                },
+                onOpenGameDay: {
+                    appModel.completeOnboarding()
+                    selectedTab = .gameDay
+                },
+                onOpenReadiness: {
+                    appModel.completeOnboarding()
+                    selectedTab = .readiness
+                },
+                onContinueToApp: {
+                    appModel.completeOnboarding()
+                }
+            )
+        } else {
+            mainTabs
+        }
+    }
+
+    private var mainTabs: some View {
         TabView(selection: $selectedTab) {
             gameDayTab
                 .tag(RootTab.gameDay)
@@ -121,101 +290,6 @@ struct RootView: View {
             settingsTab
                 .tag(RootTab.settings)
                 .tabItem { Label("Settings", systemImage: "gearshape.fill") }
-        }
-        .tint(.orange)
-        .task {
-            await appModel.finishLaunchingIfNeeded()
-        }
-        .onOpenURL { url in
-            appModel.handleIncomingPackage(url)
-        }
-        .overlay(alignment: .top) {
-            if appModel.isBusy {
-                ProgressView("Working…")
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 10)
-                    .background(.ultraThinMaterial, in: Capsule())
-                    .padding(.top, 8)
-            }
-        }
-        .alert("Experimental Apple Music Local Copies", isPresented: $showExperimentalWarning) {
-            Button("Enable") {
-                appModel.setShowExperimentalFeatures(true)
-                appModel.enableExperimentalCopies()
-            }
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text("This feature is off by default. It attempts to turn Apple Music preview media into a regular local file. It may fail, and it is intentionally separate from the normal Apple Music path.")
-        }
-        .alert("Roll Call", isPresented: errorBinding) {
-            Button("OK") { appModel.lastError = nil }
-        } message: {
-            Text(appModel.lastError ?? "")
-        }
-        .alert("Rename Team", isPresented: $showRenameTeamAlert) {
-            TextField("Team name", text: $renameTeamName)
-            Button("Cancel", role: .cancel) {}
-            Button("Rename") {
-                appModel.renameSelectedTeam(to: renameTeamName)
-            }
-            .disabled(renameTeamName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-        } message: {
-            Text("Update the selected team name.")
-        }
-        .alert("Remove Team?", isPresented: $showRemoveTeamConfirmation) {
-            Button("Cancel", role: .cancel) {}
-            Button("Remove", role: .destructive) {
-                appModel.removeSelectedTeam()
-            }
-        } message: {
-            if let team = appModel.selectedTeam {
-                Text("Remove \(team.name) from this device? This deletes that team's \(team.players.count) players, lineup state, clips, and custom intros from the app. Existing exports and backups stay untouched.")
-            } else {
-                Text("Remove the selected team from this device. Existing exports and backups stay untouched.")
-            }
-        }
-        .sheet(item: Binding(get: { appModel.pendingRosterImport }, set: { appModel.pendingRosterImport = $0 })) { pending in
-            NavigationStack {
-                List {
-                    Section("Importing \(pending.rows.count) players from \(pending.sourceName)") {
-                        ForEach(pending.rows) { player in
-                            HStack {
-                                Text(player.displayName)
-                                Spacer()
-                                if !player.uniformNumber.isEmpty {
-                                    Text("#\(player.uniformNumber)")
-                                        .foregroundStyle(.secondary)
-                                }
-                            }
-                        }
-                    }
-                }
-                .navigationTitle("Roster Preview")
-                .toolbar {
-                    ToolbarItem(placement: .topBarLeading) {
-                        Button("Cancel") { appModel.discardPendingRosterImport() }
-                    }
-                    ToolbarItem(placement: .topBarTrailing) {
-                        Button("Import") { appModel.applyPendingRosterImport() }
-                    }
-                }
-            }
-        }
-        .sheet(isPresented: $packageImportPresented) {
-            RollCallPackageImportSheet(
-                onPick: { url in
-                    packageImportPresented = false
-                    Task { await appModel.importPackage(from: url) }
-                },
-                onCancel: {
-                    packageImportPresented = false
-                }
-            )
-        }
-        .fileImporter(isPresented: $csvImportPresented, allowedContentTypes: [.commaSeparatedText, .text], allowsMultipleSelection: false) { result in
-            if case .success(let urls) = result, let url = urls.first {
-                Task { await appModel.prepareRosterImport(from: url) }
-            }
         }
     }
 
@@ -319,6 +393,7 @@ struct RootView: View {
             TeamBanner(
                 teamName: appModel.selectedTeam?.name,
                 secondaryStatus: secondaryStatus ?? selectedTeamBannerStatus,
+                accentColor: appModel.selectedTeam?.accentPreset.color(surface: variant == .liveSide ? .live : .standard),
                 variant: variant
             )
             .frame(maxWidth: .infinity)
@@ -646,6 +721,15 @@ struct RootView: View {
                             VStack(alignment: .leading, spacing: RollCallSpacingTier.standard.value) {
                                 SelectedTeamSummary(team: team)
 
+                                VStack(alignment: .leading, spacing: RollCallSpacingTier.tight.value) {
+                                    Text("Team Color")
+                                        .rollCallText(.cardTitle)
+                                    AccentPresetGrid(selectedAccent: Binding(
+                                        get: { team.accentPreset },
+                                        set: { appModel.setAccentPreset($0, for: team.id) }
+                                    ))
+                                }
+
                                 Menu {
                                     Button("Rename Selected Team") {
                                         renameTeamName = appModel.selectedTeam?.name ?? ""
@@ -808,6 +892,7 @@ struct RootView: View {
                             }
 
                             Button {
+                                packageImportContext = .settings
                                 packageImportPresented = true
                             } label: {
                                 SettingsRowLabel(
@@ -818,6 +903,22 @@ struct RootView: View {
                             }
                             .rollCallButtonStyle(.secondary)
                         }
+                    }
+
+                    SettingsSectionGroup(
+                        title: "Setup Guide",
+                        helperText: "Open the guided setup again for a new team, an imported package, or the current roster."
+                    ) {
+                        Button {
+                            appModel.beginSetupGuide()
+                        } label: {
+                            SettingsRowLabel(
+                                title: "Open Setup Guide",
+                                detail: "Launch onboarding again without changing existing teams.",
+                                systemImage: "sparkles"
+                            )
+                        }
+                        .rollCallButtonStyle(.secondary)
                     }
 
                     SettingsSectionGroup(
@@ -988,6 +1089,508 @@ struct RootView: View {
 
     private func playerForReadinessCheck(_ check: ReadinessCheck) -> Player? {
         appModel.selectedTeam?.players.first { check.id.contains($0.id.uuidString) }
+    }
+}
+
+private struct OnboardingRootView: View {
+    @ObservedObject var appModel: AppModel
+    let onImportPackage: () -> Void
+    let onOpenGameDay: () -> Void
+    let onOpenReadiness: () -> Void
+    let onContinueToApp: () -> Void
+
+    @State private var teamName = ""
+    @State private var selectedAccent: TeamAccentPreset = .rollCallOrange
+    @State private var playerName = ""
+    @State private var playerNumber = ""
+    @State private var showAppleMusicPicker = false
+    @State private var showLocalAudioImporter = false
+    @State private var showAdvancedEditor = false
+    @State private var showLineupEditor = false
+    @State private var showQuickAdd = false
+
+    private var activeTeam: Team? {
+        appModel.onboardingTeam
+    }
+
+    private var primaryPlayer: Player? {
+        activeTeam?.players.first
+    }
+
+    private var canCreateTeam: Bool {
+        !teamName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    private var canAddPlayer: Bool {
+        !playerName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: RollCallSpacingTier.large.value) {
+                    OnboardingMilestonesView(activeStep: activeStep)
+
+                    switch appModel.state.onboarding.activeFlow {
+                    case .manualChooser:
+                        manualChooserContent
+                    case .importHandoff:
+                        importHandoffContent
+                    default:
+                        setupContent
+                    }
+                }
+                .padding(.horizontal, 20)
+                .padding(.vertical, 24)
+                .frame(maxWidth: 560, alignment: .leading)
+                .frame(maxWidth: .infinity, alignment: .center)
+            }
+            .background(Color(uiColor: .systemGroupedBackground))
+            .navigationTitle("Setup Guide")
+            .toolbar {
+                if appModel.state.onboarding.activeFlow == .manualChooser || appModel.state.onboarding.activeFlow == .manualReview {
+                    ToolbarItem(placement: .topBarLeading) {
+                        Button("Close") {
+                            appModel.dismissManualSetupGuide()
+                        }
+                    }
+                }
+            }
+            .sheet(isPresented: $showAppleMusicPicker) {
+                AppleMusicPickerSheet(appModel: appModel) { result in
+                    guard let player = primaryPlayer else { return }
+                    Task {
+                        let didAssign = await appModel.assignAppleMusic(result, to: player)
+                        if didAssign {
+                            await MainActor.run {
+                                showAppleMusicPicker = false
+                            }
+                        }
+                    }
+                }
+            }
+            .fileImporter(isPresented: $showLocalAudioImporter, allowedContentTypes: [.audio, .movie], allowsMultipleSelection: false) { result in
+                if case .success(let urls) = result,
+                   let url = urls.first,
+                   let player = primaryPlayer {
+                    Task { await appModel.importMedia(from: url, for: player) }
+                }
+            }
+            .sheet(isPresented: $showAdvancedEditor) {
+                if let player = primaryPlayer {
+                    PlayerEditorSheet(appModel: appModel, player: player)
+                }
+            }
+            .sheet(isPresented: $showLineupEditor, onDismiss: {
+                appModel.markOnboardingLineupSeen()
+            }) {
+                LineupEditorSheet(appModel: appModel)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var setupContent: some View {
+        if activeTeam == nil {
+            createTeamContent
+        } else if activeTeam?.players.isEmpty == true {
+            firstPlayerContent
+        } else if let player = primaryPlayer, player.cue == nil && !appModel.state.onboarding.didChooseCheerFallback {
+            audioContent(for: player)
+        } else if !appModel.state.onboarding.didSeeLineup {
+            lineupContent
+        } else {
+            finalHandoffContent
+        }
+    }
+
+    private var manualChooserContent: some View {
+        OnboardingCard {
+            VStack(alignment: .leading, spacing: RollCallSpacingTier.standard.value) {
+                StatusChip(text: "Setup Guide", role: .neutral, systemImage: "sparkles", emphasis: .subdued)
+                Text("What would you like to set up?")
+                    .rollCallText(.screenTitle)
+                Text("Use the guide again for a new team, bring in a .rollcall package, or review the team you already have.")
+                    .rollCallText(.body)
+
+                Button {
+                    appModel.startOnboardingCreateNewTeam()
+                } label: {
+                    Label("Create New Team", systemImage: "plus")
+                        .frame(maxWidth: .infinity)
+                }
+                .rollCallButtonStyle(.primary)
+
+                Button {
+                    onImportPackage()
+                } label: {
+                    Label("Import .rollcall", systemImage: "tray.and.arrow.down.fill")
+                        .frame(maxWidth: .infinity)
+                }
+                .rollCallButtonStyle(.secondary)
+
+                Button {
+                    appModel.startOnboardingReviewCurrentTeam()
+                } label: {
+                    Label("Review Current Team", systemImage: "checklist")
+                        .frame(maxWidth: .infinity)
+                }
+                .rollCallButtonStyle(.secondary)
+                .disabled(appModel.selectedTeam == nil)
+            }
+        }
+    }
+
+    private var createTeamContent: some View {
+        OnboardingCard {
+            VStack(alignment: .leading, spacing: RollCallSpacingTier.standard.value) {
+                StatusChip(text: "First Run", role: .live, systemImage: "figure.baseball", emphasis: .subdued)
+                Text("Set up your team.")
+                    .rollCallText(.screenTitle)
+                Text("Roll Call works best when the team is real from the start. You can hear the first walkup in just a few minutes.")
+                    .rollCallText(.body)
+
+                TextField("Team name", text: $teamName)
+                    .textFieldStyle(.roundedBorder)
+                    .textInputAutocapitalization(.words)
+
+                VStack(alignment: .leading, spacing: RollCallSpacingTier.tight.value) {
+                    Text("Team color")
+                        .rollCallText(.cardTitle)
+                    Text("Pick a quick accent, or leave the Roll Call default and change it later.")
+                        .rollCallText(.helperText)
+                    AccentPresetGrid(selectedAccent: $selectedAccent)
+                }
+
+                Button {
+                    appModel.addTeam(named: teamName, accentPreset: selectedAccent, forOnboarding: true)
+                    teamName = ""
+                } label: {
+                    Label("Create Team", systemImage: "plus")
+                        .frame(maxWidth: .infinity)
+                }
+                .rollCallButtonStyle(.primary)
+                .disabled(!canCreateTeam)
+
+                Button {
+                    onImportPackage()
+                } label: {
+                    Label("I Have a .rollcall to Import", systemImage: "tray.and.arrow.down.fill")
+                        .frame(maxWidth: .infinity)
+                }
+                .rollCallButtonStyle(.secondary)
+            }
+        }
+    }
+
+    private var firstPlayerContent: some View {
+        OnboardingCard {
+            VStack(alignment: .leading, spacing: RollCallSpacingTier.standard.value) {
+                StatusChip(text: activeTeam?.name ?? "Team", role: .neutral, systemImage: "person.3", emphasis: .subdued)
+                Text("Add your first player.")
+                    .rollCallText(.screenTitle)
+                Text("Start with one player. You can add the full roster after the first walkup works.")
+                    .rollCallText(.body)
+
+                TextField("Player name", text: $playerName)
+                    .textFieldStyle(.roundedBorder)
+                    .textInputAutocapitalization(.words)
+                TextField("Number", text: $playerNumber)
+                    .textFieldStyle(.roundedBorder)
+                    .keyboardType(.numberPad)
+
+                Button {
+                    appModel.addPlayer(name: playerName, number: playerNumber)
+                    playerName = ""
+                    playerNumber = ""
+                } label: {
+                    Label("Add Player", systemImage: "person.crop.circle.badge.plus")
+                        .frame(maxWidth: .infinity)
+                }
+                .rollCallButtonStyle(.primary)
+                .disabled(!canAddPlayer)
+            }
+        }
+    }
+
+    private func audioContent(for player: Player) -> some View {
+        OnboardingCard {
+            VStack(alignment: .leading, spacing: RollCallSpacingTier.standard.value) {
+                StatusChip(text: player.displayName, role: .warning, systemImage: "music.note", emphasis: .subdued)
+                Text("Choose the walkup audio.")
+                    .rollCallText(.screenTitle)
+                Text("With an active Apple Music subscription, you can choose up to 20 seconds from anywhere in the full song. Without one, you can still use Apple Music, but trimming is limited to Apple's preview clip. If you have your own audio or video file, import it and trim from that file.")
+                    .rollCallText(.body)
+
+                Button {
+                    showAppleMusicPicker = true
+                } label: {
+                    Label("Add Song", systemImage: "music.note")
+                        .frame(maxWidth: .infinity)
+                }
+                .rollCallButtonStyle(.primary)
+
+                Button {
+                    showLocalAudioImporter = true
+                } label: {
+                    Label("Use Local Audio", systemImage: "square.and.arrow.down")
+                        .frame(maxWidth: .infinity)
+                }
+                .rollCallButtonStyle(.secondary)
+
+                Button {
+                    appModel.markOnboardingCheerFallbackChosen()
+                } label: {
+                    Label("Try with Cheer", systemImage: "speaker.wave.2.fill")
+                        .frame(maxWidth: .infinity)
+                }
+                .rollCallButtonStyle(.secondary)
+
+                Button {
+                    showAdvancedEditor = true
+                } label: {
+                    Label("Advanced Setup", systemImage: "slider.horizontal.3")
+                        .frame(maxWidth: .infinity)
+                }
+                .rollCallButtonStyle(.quiet)
+            }
+        }
+    }
+
+    private var lineupContent: some View {
+        OnboardingCard {
+            VStack(alignment: .leading, spacing: RollCallSpacingTier.standard.value) {
+                StatusChip(text: "Lineup", role: .neutral, systemImage: "list.number", emphasis: .subdued)
+                Text("This is where game order lives.")
+                    .rollCallText(.screenTitle)
+                Text("Today’s Lineup controls batting order and who is present. You can open it from Game Day anytime; temporary Game Day changes do not need a separate save step.")
+                    .rollCallText(.body)
+
+                Button {
+                    showLineupEditor = true
+                } label: {
+                    Label("Open Today’s Lineup", systemImage: "list.bullet")
+                        .frame(maxWidth: .infinity)
+                }
+                .rollCallButtonStyle(.secondary)
+
+                Button {
+                    appModel.markOnboardingLineupSeen()
+                } label: {
+                    Label("Got It", systemImage: "checkmark")
+                        .frame(maxWidth: .infinity)
+                }
+                .rollCallButtonStyle(.primary)
+            }
+        }
+    }
+
+    private var finalHandoffContent: some View {
+        OnboardingCard {
+            VStack(alignment: .leading, spacing: RollCallSpacingTier.standard.value) {
+                StatusChip(text: "Ready to Try", role: .ready, systemImage: "checkmark.circle", emphasis: .subdued)
+                Text("You’re ready to try Roll Call.")
+                    .rollCallText(.screenTitle)
+                Text("Open Game Day now, add a few more players to feel the lineup flow, or continue into the app.")
+                    .rollCallText(.body)
+
+                Button {
+                    onOpenGameDay()
+                } label: {
+                    Label("Open Game Day", systemImage: "play.rectangle.fill")
+                        .frame(maxWidth: .infinity)
+                }
+                .rollCallButtonStyle(.primary)
+
+                Button {
+                    showQuickAdd = true
+                } label: {
+                    Label("Add More Players", systemImage: "person.3.fill")
+                        .frame(maxWidth: .infinity)
+                }
+                .rollCallButtonStyle(.secondary)
+
+                Button {
+                    onContinueToApp()
+                } label: {
+                    Label("Continue to App", systemImage: "arrow.right")
+                        .frame(maxWidth: .infinity)
+                }
+                .rollCallButtonStyle(.quiet)
+            }
+        }
+        .navigationDestination(isPresented: $showQuickAdd) {
+            OnboardingQuickAddPlayersView(appModel: appModel, onDone: onContinueToApp)
+        }
+    }
+
+    private var importHandoffContent: some View {
+        OnboardingCard {
+            VStack(alignment: .leading, spacing: RollCallSpacingTier.standard.value) {
+                StatusChip(text: "Imported", role: .ready, systemImage: "shippingbox.fill", emphasis: .subdued)
+                Text("Team imported.")
+                    .rollCallText(.screenTitle)
+                Text("Review readiness first if this package came from another device, or jump straight into Game Day.")
+                    .rollCallText(.body)
+
+                Button {
+                    onOpenReadiness()
+                } label: {
+                    Label("Review Readiness", systemImage: "checklist")
+                        .frame(maxWidth: .infinity)
+                }
+                .rollCallButtonStyle(.primary)
+
+                Button {
+                    onOpenGameDay()
+                } label: {
+                    Label("Open Game Day", systemImage: "play.rectangle.fill")
+                        .frame(maxWidth: .infinity)
+                }
+                .rollCallButtonStyle(.secondary)
+            }
+        }
+    }
+
+    private var activeStep: OnboardingStep {
+        if appModel.state.onboarding.activeFlow == .importHandoff {
+            return .lineup
+        }
+        guard let team = activeTeam else { return .team }
+        if team.players.isEmpty { return .player }
+        if let player = team.players.first,
+           player.cue == nil && !appModel.state.onboarding.didChooseCheerFallback {
+            return .audio
+        }
+        return .lineup
+    }
+}
+
+private enum OnboardingStep: Int, CaseIterable {
+    case team
+    case player
+    case audio
+    case lineup
+
+    var title: String {
+        switch self {
+        case .team: return "Team"
+        case .player: return "Player"
+        case .audio: return "Audio"
+        case .lineup: return "Lineup"
+        }
+    }
+}
+
+private struct OnboardingMilestonesView: View {
+    let activeStep: OnboardingStep
+
+    var body: some View {
+        HStack(spacing: 8) {
+            ForEach(OnboardingStep.allCases, id: \.self) { step in
+                Text(step.title)
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(step.rawValue <= activeStep.rawValue ? Color(uiColor: .white) : Color(uiColor: .secondaryLabel))
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 7)
+                    .background(step.rawValue <= activeStep.rawValue ? Color.rollCall(.accent) : Color.rollCall(.neutralSurface), in: Capsule())
+            }
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Setup milestones")
+    }
+}
+
+private struct OnboardingCard<Content: View>: View {
+    @ViewBuilder var content: () -> Content
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: RollCallSpacingTier.standard.value) {
+            content()
+        }
+        .padding(18)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color(uiColor: .secondarySystemGroupedBackground))
+        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .strokeBorder(Color.rollCall(.neutralStructure).opacity(0.55), lineWidth: 1)
+        )
+    }
+}
+
+private struct AccentPresetGrid: View {
+    @Binding var selectedAccent: TeamAccentPreset
+
+    var body: some View {
+        LazyVGrid(columns: [GridItem(.adaptive(minimum: 86), spacing: 8)], spacing: 8) {
+            ForEach(TeamAccentPreset.allCases) { preset in
+                Button {
+                    selectedAccent = preset
+                } label: {
+                    HStack(spacing: 6) {
+                        Circle()
+                            .fill(preset.color())
+                            .frame(width: 16, height: 16)
+                        Text(preset.title)
+                            .font(.caption.weight(.semibold))
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.8)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 9)
+                    .background(selectedAccent == preset ? preset.color().opacity(0.16) : Color.rollCall(.neutralSurface))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 8, style: .continuous)
+                            .strokeBorder(selectedAccent == preset ? preset.color() : Color.rollCall(.neutralStructure).opacity(0.45), lineWidth: 1)
+                    )
+                    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                }
+                .buttonStyle(.plain)
+            }
+        }
+    }
+}
+
+private struct OnboardingQuickAddPlayersView: View {
+    @ObservedObject var appModel: AppModel
+    let onDone: () -> Void
+
+    var body: some View {
+        List {
+            Section {
+                PlayerQuickAddView(appModel: appModel)
+            } header: {
+                PlayersSectionHeader(
+                    title: "Add More Players",
+                    helperText: "Add a few names and numbers now, then fill in songs whenever you are ready."
+                )
+            }
+
+            if let team = appModel.selectedTeam, !team.players.isEmpty {
+                Section("Current Roster") {
+                    ForEach(team.players) { player in
+                        HStack {
+                            Text(player.displayName)
+                            Spacer()
+                            if !player.uniformNumber.isEmpty {
+                                Text("#\(player.uniformNumber)")
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        .navigationTitle("Add Players")
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Button("Done") {
+                    onDone()
+                }
+            }
+        }
     }
 }
 

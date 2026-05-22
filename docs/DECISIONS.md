@@ -2,6 +2,16 @@
 
 Use this file as a concise decision log for project-specific architectural, behavioral, tooling, and scope decisions.
 
+## 2026-05-22
+
+- Approved: first-run onboarding starts from a true empty app state, not a seeded sample team, and guides users toward one real team, one player, audio or an explicit cheer fallback, lineup orientation, and Game Day.
+  Rationale: Roll Call should make the first real walkup happen quickly without fake roster data, tutorial carousels, accounts, permission barrages, or homework-style setup pressure.
+  Status: approved
+
+- Approved: Settings includes a normal user-facing setup guide relaunch path with create-new-team, import `.rollcall`, and review-current-team options.
+  Rationale: users may leave setup accidentally, want to create another team with guidance, or need repeatable onboarding for testing without hiding the path in Developer Tools.
+  Status: approved
+
 ## 2026-05-20
 
 - Approved: license Roll Call as noncommercial source-available software using PolyForm Noncommercial 1.0.0 as the base license, with separate Roll Call-specific attribution, source-sharing, commercial-use, small-snippet, and asset-boundary terms.

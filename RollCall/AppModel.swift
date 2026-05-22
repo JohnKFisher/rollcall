@@ -285,9 +285,6 @@ final class AppModel: ObservableObject {
         self.state = (try? Self.load()) ?? {
             var state = AppState.empty
             state.deviceIdentity = DeviceIdentity(label: UIDevice.current.name)
-            let team = Team.sample()
-            state.teams = [team]
-            state.selectedTeamID = team.id
             return state
         }()
         self.state.appVersion = AppMetadata.appVersion
@@ -342,6 +339,64 @@ final class AppModel: ObservableObject {
         state.teams.first(where: { $0.id == state.selectedTeamID })
     }
 
+    var shouldShowOnboarding: Bool {
+        state.teams.isEmpty || state.onboarding.activeFlow != nil || !state.onboarding.isComplete
+    }
+
+    var onboardingTeam: Team? {
+        guard let activeTeamID = state.onboarding.activeTeamID else {
+            return selectedTeam
+        }
+        return state.teams.first(where: { $0.id == activeTeamID }) ?? selectedTeam
+    }
+
+    func beginSetupGuide() {
+        state.onboarding = .manualChooser(completedAt: state.onboarding.completedAt)
+        persist()
+    }
+
+    func dismissManualSetupGuide() {
+        if state.teams.isEmpty {
+            state.onboarding = .notStarted
+        } else {
+            state.onboarding = .completed(at: state.onboarding.completedAt ?? .now)
+        }
+        persist()
+    }
+
+    func startOnboardingCreateNewTeam() {
+        state.onboarding.activeFlow = state.teams.isEmpty ? .automatic : .manualCreate
+        state.onboarding.activeTeamID = nil
+        state.onboarding.didChooseCheerFallback = false
+        state.onboarding.didSeeLineup = false
+        state.onboarding.importHandoffTeamID = nil
+        persist()
+    }
+
+    func startOnboardingReviewCurrentTeam() {
+        state.onboarding.activeFlow = .manualReview
+        state.onboarding.activeTeamID = state.selectedTeamID
+        state.onboarding.didChooseCheerFallback = selectedTeam?.players.contains { $0.cue != nil } ?? false
+        state.onboarding.didSeeLineup = false
+        state.onboarding.importHandoffTeamID = nil
+        persist()
+    }
+
+    func completeOnboarding() {
+        state.onboarding = .completed()
+        persist()
+    }
+
+    func markOnboardingCheerFallbackChosen() {
+        state.onboarding.didChooseCheerFallback = true
+        persist()
+    }
+
+    func markOnboardingLineupSeen() {
+        state.onboarding.didSeeLineup = true
+        persist()
+    }
+
     func selectTeam(_ team: Team) {
         state.selectedTeamID = team.id
         prewarmNextBatterCue()
@@ -349,9 +404,10 @@ final class AppModel: ObservableObject {
         persist()
     }
 
-    func addTeam(named name: String) {
+    @discardableResult
+    func addTeam(named name: String, accentPreset: TeamAccentPreset = .rollCallOrange, forOnboarding: Bool = false) -> Team? {
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return }
+        guard !trimmed.isEmpty else { return nil }
         let team = Team(
             id: UUID(),
             name: trimmed,
@@ -360,11 +416,20 @@ final class AppModel: ObservableObject {
             players: [],
             builtInClips: BuiltInClip.defaults,
             session: TeamSessionState(activeSessionDate: nil, battingOrder: [], nextBatterIndex: 0, gameDayAnnouncerMode: .songOnly, battingOrderIsCustomized: false),
-            announcerProfile: .default
+            announcerProfile: .default,
+            accentPreset: accentPreset
         )
         state.teams.append(team)
         state.selectedTeamID = team.id
+        if forOnboarding {
+            state.onboarding.activeFlow = state.teams.count == 1 ? .automatic : .manualCreate
+            state.onboarding.activeTeamID = team.id
+            state.onboarding.didChooseCheerFallback = false
+            state.onboarding.didSeeLineup = false
+            state.onboarding.importHandoffTeamID = nil
+        }
         persist()
+        return team
     }
 
     func duplicateTeam() {
@@ -414,6 +479,13 @@ final class AppModel: ObservableObject {
         persist()
     }
 
+    func setAccentPreset(_ accentPreset: TeamAccentPreset, for teamID: UUID) {
+        guard let index = state.teams.firstIndex(where: { $0.id == teamID }) else { return }
+        state.teams[index].accentPreset = accentPreset
+        state.teams[index].modifiedAt = .now
+        persist()
+    }
+
     func removeSelectedTeam() {
         guard let teamIndex else { return }
         state.teams.remove(at: teamIndex)
@@ -424,16 +496,18 @@ final class AppModel: ObservableObject {
         persist()
     }
 
-    func addPlayer(name: String, number: String) {
-        guard let teamIndex = teamIndex else { return }
+    @discardableResult
+    func addPlayer(name: String, number: String) -> Player? {
+        guard let teamIndex = teamIndex else { return nil }
         let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmedName.isEmpty else { return }
+        guard !trimmedName.isEmpty else { return nil }
         let player = Player(id: UUID(), displayName: trimmedName, uniformNumber: number.trimmingCharacters(in: .whitespacesAndNewlines), pronunciationOverride: "", photoRelativePath: nil, cue: nil, isPresent: true)
         state.teams[teamIndex].players.append(player)
         state.teams[teamIndex].session.battingOrder.append(player.id)
         state.teams[teamIndex].modifiedAt = .now
         normalizeLineup(for: teamIndex)
         persist()
+        return player
     }
 
     func updatePlayer(_ player: Player) {
@@ -852,10 +926,14 @@ final class AppModel: ObservableObject {
     }
 
     func importPackage(from url: URL) async {
-        await performPackageImport(from: url)
+        await performPackageImport(from: url, opensOnboardingHandoff: false)
     }
 
-    private func performPackageImport(from url: URL) async {
+    func importPackageFromOnboarding(from url: URL) async {
+        await performPackageImport(from: url, opensOnboardingHandoff: true)
+    }
+
+    private func performPackageImport(from url: URL, opensOnboardingHandoff: Bool) async {
         await busy {
             let scoped = url.startAccessingSecurityScopedResource()
             defer {
@@ -869,6 +947,14 @@ final class AppModel: ObservableObject {
             self.state.teams.append(imported)
             self.state.selectedTeamID = imported.id
             self.normalizeLineup(for: self.state.teams.count - 1)
+            if opensOnboardingHandoff {
+                self.state.onboarding.completedAt = .now
+                self.state.onboarding.activeFlow = .importHandoff
+                self.state.onboarding.activeTeamID = imported.id
+                self.state.onboarding.importHandoffTeamID = imported.id
+                self.state.onboarding.didChooseCheerFallback = false
+                self.state.onboarding.didSeeLineup = true
+            }
             self.persist()
         }
     }
@@ -1243,7 +1329,7 @@ final class AppModel: ObservableObject {
         guard hasFinishedLaunching, !isBusy else { return }
         while !pendingIncomingPackageURLs.isEmpty {
             let nextURL = pendingIncomingPackageURLs.removeFirst()
-            await performPackageImport(from: nextURL)
+            await performPackageImport(from: nextURL, opensOnboardingHandoff: false)
         }
     }
 

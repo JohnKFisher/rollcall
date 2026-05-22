@@ -4,11 +4,12 @@ Use this file as a concise project status snapshot for the current version, what
 
 ## Roll Call
 
-Current version: `0.7.1` (build `26`)
+Current version: `0.7.1` (build `27`)
 
 Status:
 - Active prototype with a buildable iPhone app target at [RollCall.xcodeproj](/Users/jkfisher/Documents/Coding/Roll%20Call/RollCall.xcodeproj).
 - The repository has been cleaned up so the working source of truth is back on the intended `RollCall/` and `RollCall.xcodeproj/` names.
+- `0.7.1` build `27` adds first-run onboarding: new installs start empty instead of with a sample team, setup can create/import/review teams, users are guided through team color, first player, audio or an explicit cheer fallback, lineup orientation, and Game Day, and Settings can reopen the setup guide at any time.
 - `0.7.1` build `26` adds a live playback tail guard for songs and waits for Announcement Cue playback to actually finish before moving on, reducing the risk that Game Day cuts off or fades practical audio before the end of a cue.
 - `0.7.0` build `25` collects the live-screen appearance setting, shared Game Day/Clips gradient background, Readiness check polish, Player Editor announcement cue copy, and Advanced Trim fade automation guidance. The live appearance matrix now lives in `docs/product/APPEARANCE_RULES.md` so future changes preserve Light Mode, Dark Mode, the forced-dark live setting, and the Game Day lineup sheet behavior together.
 - `0.6.6` build `23` tightens live playback volume automation, adds an automatic pre-restore backup before backup restores, fixes the Game Day announcer mode Sendable warning, and keeps recent Readiness/roster copy and status polish together.
@@ -18,6 +19,8 @@ Status:
 
 What works now:
 - Team selection, duplication, and confirmed removal
+- First-run setup guide for creating or importing teams, with a Settings entry that can reopen onboarding at any time
+- Stored team accent color presets used by the TeamBar accent
 - Selected-team rename from the Teams panel
 - Player roster editing
 - Today’s lineup editing with present-player tracking, next-batter flow, persisted manual order, and one-tap A-Z / number sorting
@@ -71,6 +74,7 @@ Known limitations:
 - Startup and tap responsiveness have been tightened by deferring/coalescing some follow-up work and moving snapshot restore I/O off the main actor, but this still needs an on-device feel pass to confirm the improvement.
 
 Verification:
+- Result in this `0.7.1` build `27` onboarding pass: `xcrun swiftc -parse RollCall/Models.swift RollCall/Services.swift RollCall/AppModel.swift RollCall/RootView.swift` succeeded; raw `swift-frontend` typecheck could not load `ZIPFoundation`, which is expected outside the Xcode package context; sandboxed `xcodebuild -project RollCall.xcodeproj -scheme RollCall -destination 'generic/platform=iOS' -derivedDataPath .DerivedData CODE_SIGNING_ALLOWED=NO build` was blocked by SwiftPM/Xcode cache permissions; the same signing-disabled build succeeded out of sandbox; XcodeBuildMCP build/run on `iPhone 17 Pro` succeeded. Screenshot capture also succeeded, but the simulator already had an existing `Home Team` state, so it verified launch on the existing app state rather than a pristine first-run screen.
 - Result in this `0.7.1` build `26` playback-tail repair: `xcrun swiftc -parse RollCall/Models.swift RollCall/Services.swift RollCall/AppModel.swift RollCall/RootView.swift` succeeded; an out-of-sandbox `xcodebuild -project RollCall.xcodeproj -scheme RollCall -destination 'generic/platform=iOS' -derivedDataPath .DerivedData CODE_SIGNING_ALLOWED=NO build` succeeded. On-device audio feel still needs confirmation because this environment cannot reproduce the iPhone speaker/Apple Music runtime path.
 - Result in this `0.7.0` build `25` checkpoint: `xcrun swiftc -parse RollCall/Models.swift RollCall/Services.swift RollCall/AppModel.swift RollCall/RootView.swift` succeeded; `git diff --check` succeeded. Full Xcode build and simulator visual verification were not run in this pass.
 - Result in this `0.6.7` build `24` patch bump: `xcrun swiftc -parse RollCall/Models.swift RollCall/Services.swift RollCall/AppModel.swift RollCall/RootView.swift` succeeded; `xcodebuild -project RollCall.xcodeproj -scheme RollCall -destination 'generic/platform=iOS' -derivedDataPath .DerivedData CODE_SIGNING_ALLOWED=NO build` succeeded out of sandbox. Xcode still emits the unrelated AppIntents metadata note because no AppIntents framework dependency is present.
@@ -91,9 +95,9 @@ Verification:
 - Result in the most recent verified build session before this version bump: the in-sandbox check was blocked by cache and CoreSimulator restrictions, but an out-of-sandbox `xcodebuild -project RollCall.xcodeproj -scheme RollCall -destination 'generic/platform=iOS' build` completed successfully for `0.4.9` (build `13`) before the Game Day visual pass. XcodeBuildMCP then completed simulator build/run verification after the Game Day redesign. The remaining verification is an on-device smoke pass for AirDrop-opened `.rollcall` imports, manual picker selection of AirDropped `.rollcall` files stored in Files, whether Files now prefers Roll Call as the open target for `.rollcall`, subscribed Apple Music MediaPlayer fade behavior with the setting on and off, repeated non-zero trim starts, preview-only fallback trimming, custom-intro playback, and bright-condition Game Day readability.
 
 Recommended next priorities:
-1. Enable the MusicKit App Service for App ID `com.jkfisher.rollcall`, refresh signing/provisioning, then launch `0.7.1` on-device and do a focused smoke pass for subscribed-device full-song trimming, repeated non-zero trim starts, MediaPlayer fade-out behavior in preview and Game Day, preview-only fallback trimming, custom-intro playback, direct AirDrop `.rollcall` opening, whether Files prefers Roll Call for `.rollcall`, manual picker selection from Files, and bright-field readability with `Always Use Dark Live Screens` on and off.
-2. Add focused verification around package import/export round-trips, AirDrop/open-in-place imports, support-bundle contents, and backup retention behavior after repeated imports.
-3. If the MediaPlayer path is still flaky on-device, run one bounded silent-track crossfade experiment and then explicitly decide whether Apple Music field playback remains supportable without a local-only pivot.
+1. Run a pristine-install simulator or device smoke pass for onboarding: create team, skip/select accent, add player, use Apple Music/local audio or Try with Cheer, open lineup orientation, hand off to Game Day, reopen Setup Guide from Settings, and import a `.rollcall` package from onboarding.
+2. Enable the MusicKit App Service for App ID `com.jkfisher.rollcall`, refresh signing/provisioning, then launch `0.7.1` on-device and do a focused smoke pass for subscribed-device full-song trimming, repeated non-zero trim starts, MediaPlayer fade-out behavior in preview and Game Day, preview-only fallback trimming, custom-intro playback, direct AirDrop `.rollcall` opening, whether Files prefers Roll Call for `.rollcall`, manual picker selection from Files, and bright-field readability with `Always Use Dark Live Screens` on and off.
+3. Add focused verification around package import/export round-trips, AirDrop/open-in-place imports, support-bundle contents, and backup retention behavior after repeated imports.
 
 Build environment docs:
 - [BUILD_ENVIRONMENTS.md](/Users/jkfisher/Documents/Coding/Roll%20Call/docs/development/BUILD_ENVIRONMENTS.md)
