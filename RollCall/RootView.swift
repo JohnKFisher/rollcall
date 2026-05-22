@@ -1108,6 +1108,7 @@ private struct OnboardingRootView: View {
     @State private var showAdvancedEditor = false
     @State private var showLineupEditor = false
     @State private var showQuickAdd = false
+    @State private var visibleStepOverride: OnboardingStep?
 
     private var activeTeam: Team? {
         appModel.onboardingTeam
@@ -1148,8 +1149,18 @@ private struct OnboardingRootView: View {
             .background(Color(uiColor: .systemGroupedBackground))
             .navigationTitle("Setup Guide")
             .toolbar {
-                if appModel.state.onboarding.activeFlow == .manualChooser || appModel.state.onboarding.activeFlow == .manualCreate || appModel.state.onboarding.activeFlow == .manualReview {
+                if canNavigateBack {
                     ToolbarItem(placement: .topBarLeading) {
+                        Button {
+                            goBackOneStep()
+                        } label: {
+                            Label("Back", systemImage: "chevron.left")
+                        }
+                    }
+                }
+
+                if appModel.state.onboarding.activeFlow == .manualChooser || appModel.state.onboarding.activeFlow == .manualCreate || appModel.state.onboarding.activeFlow == .manualReview {
+                    ToolbarItem(placement: .topBarTrailing) {
                         Button("Close") {
                             appModel.dismissManualSetupGuide()
                         }
@@ -1164,6 +1175,7 @@ private struct OnboardingRootView: View {
                         if didAssign {
                             await MainActor.run {
                                 showAppleMusicPicker = false
+                                visibleStepOverride = nil
                             }
                         }
                     }
@@ -1173,7 +1185,12 @@ private struct OnboardingRootView: View {
                 if case .success(let urls) = result,
                    let url = urls.first,
                    let player = primaryPlayer {
-                    Task { await appModel.importMedia(from: url, for: player) }
+                    Task {
+                        await appModel.importMedia(from: url, for: player)
+                        await MainActor.run {
+                            visibleStepOverride = nil
+                        }
+                    }
                 }
             }
             .sheet(isPresented: $showAdvancedEditor) {
@@ -1191,16 +1208,31 @@ private struct OnboardingRootView: View {
 
     @ViewBuilder
     private var setupContent: some View {
-        if activeTeam == nil {
-            createTeamContent
-        } else if activeTeam?.players.isEmpty == true {
-            firstPlayerContent
-        } else if let player = primaryPlayer, player.cue == nil && !appModel.state.onboarding.didChooseCheerFallback {
-            audioContent(for: player)
-        } else if !appModel.state.onboarding.didSeeLineup {
-            lineupContent
-        } else {
+        if isShowingFinalHandoff {
             finalHandoffContent
+        } else {
+            switch activeStep {
+            case .team:
+                if let team = activeTeam {
+                    editTeamContent(for: team)
+                } else {
+                    createTeamContent
+                }
+            case .player:
+                if let player = primaryPlayer {
+                    editFirstPlayerContent(for: player)
+                } else {
+                    firstPlayerContent
+                }
+            case .audio:
+                if let player = primaryPlayer {
+                    audioContent(for: player)
+                } else {
+                    firstPlayerContent
+                }
+            case .lineup:
+                lineupContent
+            }
         }
     }
 
@@ -1251,7 +1283,7 @@ private struct OnboardingRootView: View {
                     .rollCallText(.body)
 
                 TextField("Team name", text: $teamName)
-                    .textFieldStyle(.roundedBorder)
+                    .onboardingTextField()
                     .textInputAutocapitalization(.words)
 
                 VStack(alignment: .leading, spacing: RollCallSpacingTier.tight.value) {
@@ -1265,6 +1297,8 @@ private struct OnboardingRootView: View {
                 Button {
                     appModel.addTeam(named: teamName, accentPreset: selectedAccent, forOnboarding: true)
                     teamName = ""
+                    selectedAccent = .rollCallOrange
+                    visibleStepOverride = nil
                 } label: {
                     Label("Create Team", systemImage: "plus")
                         .frame(maxWidth: .infinity)
@@ -1283,6 +1317,45 @@ private struct OnboardingRootView: View {
         }
     }
 
+    private func editTeamContent(for team: Team) -> some View {
+        OnboardingCard {
+            VStack(alignment: .leading, spacing: RollCallSpacingTier.standard.value) {
+                StatusChip(text: "Team", role: .neutral, systemImage: "person.3", emphasis: .subdued)
+                Text("Review your team.")
+                    .rollCallText(.screenTitle)
+                Text("Change the team name or accent, then keep going.")
+                    .rollCallText(.body)
+
+                TextField("Team name", text: $teamName)
+                    .onboardingTextField()
+                    .textInputAutocapitalization(.words)
+
+                VStack(alignment: .leading, spacing: RollCallSpacingTier.tight.value) {
+                    Text("Team color")
+                        .rollCallText(.cardTitle)
+                    Text("This can still be changed later in the team setup.")
+                        .rollCallText(.helperText)
+                    AccentPresetGrid(selectedAccent: $selectedAccent)
+                }
+
+                Button {
+                    appModel.renameSelectedTeam(to: teamName)
+                    appModel.setAccentPreset(selectedAccent, for: team.id)
+                    visibleStepOverride = .player
+                } label: {
+                    Label("Continue", systemImage: "arrow.right")
+                        .frame(maxWidth: .infinity)
+                }
+                .rollCallButtonStyle(.primary)
+                .disabled(!canCreateTeam)
+            }
+        }
+        .onAppear {
+            teamName = team.name
+            selectedAccent = team.accentPreset
+        }
+    }
+
     private var firstPlayerContent: some View {
         OnboardingCard {
             VStack(alignment: .leading, spacing: RollCallSpacingTier.standard.value) {
@@ -1293,16 +1366,17 @@ private struct OnboardingRootView: View {
                     .rollCallText(.body)
 
                 TextField("Player name", text: $playerName)
-                    .textFieldStyle(.roundedBorder)
+                    .onboardingTextField()
                     .textInputAutocapitalization(.words)
-                TextField("Number", text: $playerNumber)
-                    .textFieldStyle(.roundedBorder)
+                TextField("Number (optional)", text: $playerNumber)
+                    .onboardingTextField()
                     .keyboardType(.numberPad)
 
                 Button {
                     appModel.addPlayer(name: playerName, number: playerNumber)
                     playerName = ""
                     playerNumber = ""
+                    visibleStepOverride = nil
                 } label: {
                     Label("Add Player", systemImage: "person.crop.circle.badge.plus")
                         .frame(maxWidth: .infinity)
@@ -1310,6 +1384,42 @@ private struct OnboardingRootView: View {
                 .rollCallButtonStyle(.primary)
                 .disabled(!canAddPlayer)
             }
+        }
+    }
+
+    private func editFirstPlayerContent(for player: Player) -> some View {
+        OnboardingCard {
+            VStack(alignment: .leading, spacing: RollCallSpacingTier.standard.value) {
+                StatusChip(text: activeTeam?.name ?? "Team", role: .neutral, systemImage: "person.crop.circle", emphasis: .subdued)
+                Text("Review your first player.")
+                    .rollCallText(.screenTitle)
+                Text("Update the name or number, then move back to audio.")
+                    .rollCallText(.body)
+
+                TextField("Player name", text: $playerName)
+                    .onboardingTextField()
+                    .textInputAutocapitalization(.words)
+                TextField("Number (optional)", text: $playerNumber)
+                    .onboardingTextField()
+                    .keyboardType(.numberPad)
+
+                Button {
+                    var updatedPlayer = player
+                    updatedPlayer.displayName = playerName.trimmingCharacters(in: .whitespacesAndNewlines)
+                    updatedPlayer.uniformNumber = playerNumber.trimmingCharacters(in: .whitespacesAndNewlines)
+                    appModel.updatePlayer(updatedPlayer)
+                    visibleStepOverride = .audio
+                } label: {
+                    Label("Continue", systemImage: "arrow.right")
+                        .frame(maxWidth: .infinity)
+                }
+                .rollCallButtonStyle(.primary)
+                .disabled(!canAddPlayer)
+            }
+        }
+        .onAppear {
+            playerName = player.displayName
+            playerNumber = player.uniformNumber
         }
     }
 
@@ -1340,6 +1450,7 @@ private struct OnboardingRootView: View {
 
                 Button {
                     appModel.markOnboardingCheerFallbackChosen()
+                    visibleStepOverride = nil
                 } label: {
                     Label("Try with Cheer", systemImage: "speaker.wave.2.fill")
                         .frame(maxWidth: .infinity)
@@ -1376,6 +1487,7 @@ private struct OnboardingRootView: View {
 
                 Button {
                     appModel.markOnboardingLineupSeen()
+                    visibleStepOverride = nil
                 } label: {
                     Label("Got It", systemImage: "checkmark")
                         .frame(maxWidth: .infinity)
@@ -1453,6 +1565,10 @@ private struct OnboardingRootView: View {
     }
 
     private var activeStep: OnboardingStep {
+        visibleStepOverride ?? resolvedStep
+    }
+
+    private var resolvedStep: OnboardingStep {
         if appModel.state.onboarding.activeFlow == .importHandoff {
             return .lineup
         }
@@ -1463,6 +1579,41 @@ private struct OnboardingRootView: View {
             return .audio
         }
         return .lineup
+    }
+
+    private var isShowingFinalHandoff: Bool {
+        guard visibleStepOverride == nil,
+              appModel.state.onboarding.activeFlow != .manualChooser,
+              appModel.state.onboarding.activeFlow != .importHandoff,
+              let player = primaryPlayer else { return false }
+        let hasAudioPath = player.cue != nil || appModel.state.onboarding.didChooseCheerFallback
+        return hasAudioPath && appModel.state.onboarding.didSeeLineup
+    }
+
+    private var canNavigateBack: Bool {
+        appModel.state.onboarding.activeFlow != .manualChooser &&
+        appModel.state.onboarding.activeFlow != .importHandoff &&
+        previousStep != nil
+    }
+
+    private var previousStep: OnboardingStep? {
+        if isShowingFinalHandoff {
+            return .lineup
+        }
+        switch activeStep {
+        case .team:
+            return nil
+        case .player:
+            return activeTeam == nil ? nil : .team
+        case .audio:
+            return primaryPlayer == nil ? nil : .player
+        case .lineup:
+            return primaryPlayer == nil ? nil : .audio
+        }
+    }
+
+    private func goBackOneStep() {
+        visibleStepOverride = previousStep
     }
 }
 
@@ -1486,18 +1637,54 @@ private struct OnboardingMilestonesView: View {
     let activeStep: OnboardingStep
 
     var body: some View {
-        HStack(spacing: 8) {
+        HStack(spacing: 10) {
             ForEach(OnboardingStep.allCases, id: \.self) { step in
-                Text(step.title)
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(step.rawValue <= activeStep.rawValue ? Color(uiColor: .white) : Color(uiColor: .secondaryLabel))
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 7)
-                    .background(step.rawValue <= activeStep.rawValue ? Color.rollCall(.accent) : Color.rollCall(.neutralSurface), in: Capsule())
+                HStack(spacing: 5) {
+                    Image(systemName: symbolName(for: step))
+                        .font(.caption2.weight(.bold))
+                        .foregroundStyle(symbolColor(for: step))
+                        .frame(width: 14, height: 14)
+                    Text(step.title)
+                        .font(.caption.weight(step == activeStep ? .bold : .semibold))
+                        .foregroundStyle(textColor(for: step))
+                }
+                .overlay(alignment: .bottom) {
+                    if step == activeStep {
+                        Capsule()
+                            .fill(Color.rollCall(.accent))
+                            .frame(height: 2)
+                            .offset(y: 5)
+                    }
+                }
+
+                if step != OnboardingStep.allCases.last {
+                    Rectangle()
+                        .fill(Color.rollCall(.neutralStructure).opacity(0.55))
+                        .frame(width: 16, height: 1)
+                }
             }
         }
+        .padding(.bottom, 4)
         .accessibilityElement(children: .combine)
         .accessibilityLabel("Setup milestones")
+    }
+
+    private func symbolName(for step: OnboardingStep) -> String {
+        if step.rawValue < activeStep.rawValue {
+            return "checkmark.circle.fill"
+        }
+        if step == activeStep {
+            return "circle.fill"
+        }
+        return "circle"
+    }
+
+    private func symbolColor(for step: OnboardingStep) -> Color {
+        step.rawValue <= activeStep.rawValue ? Color.rollCall(.accent) : Color(uiColor: .tertiaryLabel)
+    }
+
+    private func textColor(for step: OnboardingStep) -> Color {
+        step == activeStep ? Color(uiColor: .label) : Color(uiColor: .secondaryLabel)
     }
 }
 
@@ -1516,6 +1703,20 @@ private struct OnboardingCard<Content: View>: View {
             RoundedRectangle(cornerRadius: 8, style: .continuous)
                 .strokeBorder(Color.rollCall(.neutralStructure).opacity(0.55), lineWidth: 1)
         )
+    }
+}
+
+private extension View {
+    func onboardingTextField() -> some View {
+        self
+            .padding(.horizontal, 12)
+            .padding(.vertical, 11)
+            .background(Color(uiColor: .systemBackground))
+            .overlay(
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .strokeBorder(Color.rollCall(.accent).opacity(0.55), lineWidth: 1.4)
+            )
+            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
     }
 }
 

@@ -4,11 +4,12 @@ Use this file as a concise project status snapshot for the current version, what
 
 ## Roll Call
 
-Current version: `0.7.1` (build `27`)
+Current version: `0.7.1` (build `28`)
 
 Status:
 - Active prototype with a buildable iPhone app target at [RollCall.xcodeproj](/Users/jkfisher/Documents/Coding/Roll%20Call/RollCall.xcodeproj).
 - The repository has been cleaned up so the working source of truth is back on the intended `RollCall/` and `RollCall.xcodeproj/` names.
+- `0.7.1` build `28` polishes the setup guide: onboarding text fields are more visible, the optional player number field is labeled as optional, the milestone row reads as passive location context instead of buttons, and Back lets users revisit earlier team/player/audio/lineup answers during setup.
 - `0.7.1` build `27` adds first-run onboarding: new installs start empty instead of with a sample team, setup can create/import/review teams, users are guided through team color, first player, audio or an explicit cheer fallback, lineup orientation, and Game Day, and Settings can reopen the setup guide at any time.
 - `0.7.1` build `26` adds a live playback tail guard for songs and waits for Announcement Cue playback to actually finish before moving on, reducing the risk that Game Day cuts off or fades practical audio before the end of a cue.
 - `0.7.0` build `25` collects the live-screen appearance setting, shared Game Day/Clips gradient background, Readiness check polish, Player Editor announcement cue copy, and Advanced Trim fade automation guidance. The live appearance matrix now lives in `docs/product/APPEARANCE_RULES.md` so future changes preserve Light Mode, Dark Mode, the forced-dark live setting, and the Game Day lineup sheet behavior together.
@@ -74,6 +75,7 @@ Known limitations:
 - Startup and tap responsiveness have been tightened by deferring/coalescing some follow-up work and moving snapshot restore I/O off the main actor, but this still needs an on-device feel pass to confirm the improvement.
 
 Verification:
+- Result in this `0.7.1` build `28` setup polish pass: `xcrun swiftc -parse RollCall/RootView.swift` succeeded; `git diff --check` succeeded; sandboxed `xcodebuild -project RollCall.xcodeproj -scheme RollCall -destination 'generic/platform=iOS' -derivedDataPath .DerivedData CODE_SIGNING_ALLOWED=NO build` was blocked by SwiftPM/Xcode cache permissions; the same signing-disabled build succeeded out of sandbox. Xcode still emits the unrelated AppIntents metadata note because no AppIntents framework dependency is present.
 - Result in this `0.7.1` build `27` onboarding pass: `xcrun swiftc -parse RollCall/Models.swift RollCall/Services.swift RollCall/AppModel.swift RollCall/RootView.swift` succeeded; raw `swift-frontend` typecheck could not load `ZIPFoundation`, which is expected outside the Xcode package context; sandboxed `xcodebuild -project RollCall.xcodeproj -scheme RollCall -destination 'generic/platform=iOS' -derivedDataPath .DerivedData CODE_SIGNING_ALLOWED=NO build` was blocked by SwiftPM/Xcode cache permissions; the same signing-disabled build succeeded out of sandbox; XcodeBuildMCP build/run on `iPhone 17 Pro` succeeded. Screenshot capture also succeeded, but the simulator already had an existing `Home Team` state, so it verified launch on the existing app state rather than a pristine first-run screen.
 - Result in this `0.7.1` build `26` playback-tail repair: `xcrun swiftc -parse RollCall/Models.swift RollCall/Services.swift RollCall/AppModel.swift RollCall/RootView.swift` succeeded; an out-of-sandbox `xcodebuild -project RollCall.xcodeproj -scheme RollCall -destination 'generic/platform=iOS' -derivedDataPath .DerivedData CODE_SIGNING_ALLOWED=NO build` succeeded. On-device audio feel still needs confirmation because this environment cannot reproduce the iPhone speaker/Apple Music runtime path.
 - Result in this `0.7.0` build `25` checkpoint: `xcrun swiftc -parse RollCall/Models.swift RollCall/Services.swift RollCall/AppModel.swift RollCall/RootView.swift` succeeded; `git diff --check` succeeded. Full Xcode build and simulator visual verification were not run in this pass.
