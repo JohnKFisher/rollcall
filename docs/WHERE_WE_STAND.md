@@ -4,11 +4,12 @@ Use this file as a concise project status snapshot for the current version, what
 
 ## Roll Call
 
-Current version: `0.7.1` (build `34`)
+Current version: `0.7.1` (build `35`)
 
 Status:
 - Active prototype with a buildable iPhone app target at [RollCall.xcodeproj](/Users/jkfisher/Documents/Coding/Roll%20Call/RollCall.xcodeproj).
 - The repository has been cleaned up so the working source of truth is back on the intended `RollCall/` and `RollCall.xcodeproj/` names.
+- `0.7.1` build `35` adds explanatory text to Today’s Lineup so setup and regular app users know to turn off absent players, arrange batting order, and expect Game Day to use those changes.
 - `0.7.1` build `34` updates the Setup Guide Lineup step to encourage three players and adds an in-guide Add Another Player path back to the player form.
 - `0.7.1` build `33` changes the Setup Guide audio heading after song selection so the return screen clearly reads as trim mode instead of the original choice step.
 - `0.7.1` build `32` adds the draggable start selector to the simplified Setup Guide audio trim step, without the Player Editor's Enable/Done gate.

@@ -3789,6 +3789,12 @@ private struct LineupEditorSheet: View {
         NavigationStack {
             List {
                 if let team = appModel.selectedTeam {
+                    Section {
+                        Text("Turn off players who are not here today, then drag players into batting order. Game Day uses this lineup, so these changes will be reflected when you start the walkups.")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                    }
+
                     Section("Lineup") {
                         HStack(spacing: 12) {
                             Button("Sort A-Z") {
