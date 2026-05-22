@@ -4,11 +4,12 @@ Use this file as a concise project status snapshot for the current version, what
 
 ## Roll Call
 
-Current version: `0.7.1` (build `30`)
+Current version: `0.7.1` (build `31`)
 
 Status:
 - Active prototype with a buildable iPhone app target at [RollCall.xcodeproj](/Users/jkfisher/Documents/Coding/Roll%20Call/RollCall.xcodeproj).
 - The repository has been cleaned up so the working source of truth is back on the intended `RollCall/` and `RollCall.xcodeproj/` names.
+- `0.7.1` build `31` personalizes the Setup Guide audio prompt with the player's name and separates the song-pick reassurance into a second paragraph.
 - `0.7.1` build `30` adjusts Setup Guide audio copy to make the crowd-cheer fallback clearer and more playful.
 - `0.7.1` build `29` keeps the setup guide's audio step focused after song selection: it removes the Advanced Setup jump, stays on audio after choosing/importing a cue, and offers simple starting-point, length, and preview controls before Lineup.
 - `0.7.1` build `28` polishes the setup guide: onboarding text fields are more visible, the optional player number field is labeled as optional, the milestone row reads as passive location context instead of buttons, and Back lets users revisit earlier team/player/audio/lineup answers during setup.

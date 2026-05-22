@@ -1427,8 +1427,15 @@ private struct OnboardingRootView: View {
                 StatusChip(text: player.displayName, role: player.cue == nil ? .warning : .ready, systemImage: "music.note", emphasis: .subdued)
                 Text("Choose the walkup audio.")
                     .rollCallText(.screenTitle)
-                Text(player.cue == nil ? "Pick one song or use a local audio file. You can dial in the perfect start point later; right now, just get one clip close enough to try in Game Day." : "Nice. Pick a simple start and length so you can hear this player in Game Day. Advanced dial-in options are still available later from the player setup.")
-                    .rollCallText(.body)
+                if player.cue == nil {
+                    Text("Pick \(player.displayName)'s song or use a local audio file.")
+                        .rollCallText(.body)
+                    Text("Don't worry, you can dial in the perfect start point later; right now, just get one clip close enough to try in Game Day.")
+                        .rollCallText(.body)
+                } else {
+                    Text("Nice. Pick a simple start and length so you can hear this player in Game Day. Advanced dial-in options are still available later from the player setup.")
+                        .rollCallText(.body)
+                }
                 Text("You can also just select crowd cheering sound effects too, and pick the song later, but where's the fun in that?")
                     .rollCallText(.body)
 
