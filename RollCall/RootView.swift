@@ -3224,50 +3224,79 @@ private struct PlayerRosterRow: View {
     @ViewBuilder
     private var cueSummary: some View {
         if let cue {
-            HStack(alignment: .firstTextBaseline, spacing: 44) {
-                Image(systemName: "music.note")
-                    .font(.footnote.weight(.semibold))
-                    .foregroundStyle(Color.rollCall(.ready))
-                Text(cue.rosterDisplayTitle)
-                    .font(.footnote)
-                    .fontWeight(.medium)
-                    .lineLimit(1)
-                    .foregroundStyle(Color.rollCall(.ready))
-            }
+            PlayerRosterMetadataLine(
+                title: cue.rosterDisplayTitle,
+                systemImage: "music.note",
+                color: Color.rollCall(.ready),
+                font: .footnote
+            )
         } else {
-            HStack(alignment: .firstTextBaseline, spacing: 44) {
-                Image(systemName: "music.note")
-                    .font(.footnote.weight(.semibold))
-                    .foregroundStyle(Color.rollCall(.warning))
-                Text("Song not selected")
-                    .font(.footnote)
-                    .fontWeight(.medium)
-                    .lineLimit(1)
-                    .foregroundStyle(Color.rollCall(.warning))
-            }
+            PlayerRosterMetadataLine(
+                title: "Song not selected",
+                systemImage: "music.note",
+                color: Color.rollCall(.warning),
+                font: .footnote
+            )
         }
     }
 
     private var operationalSummary: some View {
         HStack(alignment: .center, spacing: RollCallSpacingTier.tight.value) {
             if !isPresent {
-                Label("Hidden from Game Day", systemImage: "eye.slash")
-                    .foregroundStyle(Color(uiColor: .secondaryLabel))
+                PlayerRosterMetadataLine(
+                    title: "Hidden from Game Day",
+                    systemImage: "eye.slash",
+                    color: Color(uiColor: .secondaryLabel),
+                    font: .caption
+                )
             }
 
             if isCustomIntroMissing {
-                Label("Announcer missing", systemImage: "exclamationmark.triangle.fill")
-                    .foregroundStyle(Color.rollCall(.destructive))
+                PlayerRosterMetadataLine(
+                    title: "Announcer missing",
+                    systemImage: "exclamationmark.triangle.fill",
+                    color: Color.rollCall(.destructive),
+                    font: .caption
+                )
             } else if hasCustomIntro {
-                Label("Announcement recorded", systemImage: "mic.fill")
-                    .foregroundStyle(Color.rollCall(.ready))
+                PlayerRosterMetadataLine(
+                    title: "Announcement recorded",
+                    systemImage: "mic.fill",
+                    color: Color.rollCall(.ready),
+                    font: .caption
+                )
             } else if !hasCustomIntro {
-                Label("Announcement not recorded", systemImage: "mic.slash")
-                    .foregroundStyle(Color(uiColor: .tertiaryLabel))
+                PlayerRosterMetadataLine(
+                    title: "Announcement not recorded",
+                    systemImage: "mic.slash",
+                    color: Color(uiColor: .tertiaryLabel),
+                    font: .caption
+                )
             }
         }
-        .rollCallText(.chipLabel)
         .lineLimit(1)
+    }
+}
+
+private struct PlayerRosterMetadataLine: View {
+    let title: String
+    let systemImage: String
+    let color: Color
+    let font: Font
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: RollCallSpacingTier.tight.value) {
+            Image(systemName: systemImage)
+                .font(font.weight(.semibold))
+                .foregroundStyle(color)
+                .frame(width: 22, alignment: .center)
+
+            Text(title)
+                .font(font)
+                .fontWeight(.medium)
+                .foregroundStyle(color)
+                .lineLimit(1)
+        }
     }
 }
 
