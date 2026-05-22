@@ -1105,10 +1105,12 @@ private struct OnboardingRootView: View {
     @State private var playerNumber = ""
     @State private var showAppleMusicPicker = false
     @State private var showLocalAudioImporter = false
-    @State private var showAdvancedEditor = false
     @State private var showLineupEditor = false
     @State private var showQuickAdd = false
+    @State private var trimMode: TrimSuggestionMode = .suggestedHook
     @State private var visibleStepOverride: OnboardingStep?
+
+    private let lengthOptions: [Double] = [6, 8, 10, 12, 15]
 
     private var activeTeam: Team? {
         appModel.onboardingTeam
@@ -1175,7 +1177,8 @@ private struct OnboardingRootView: View {
                         if didAssign {
                             await MainActor.run {
                                 showAppleMusicPicker = false
-                                visibleStepOverride = nil
+                                visibleStepOverride = .audio
+                                trimMode = .suggestedHook
                             }
                         }
                     }
@@ -1188,14 +1191,9 @@ private struct OnboardingRootView: View {
                     Task {
                         await appModel.importMedia(from: url, for: player)
                         await MainActor.run {
-                            visibleStepOverride = nil
+                            visibleStepOverride = .audio
                         }
                     }
-                }
-            }
-            .sheet(isPresented: $showAdvancedEditor) {
-                if let player = primaryPlayer {
-                    PlayerEditorSheet(appModel: appModel, player: player)
                 }
             }
             .sheet(isPresented: $showLineupEditor, onDismiss: {
@@ -1426,46 +1424,162 @@ private struct OnboardingRootView: View {
     private func audioContent(for player: Player) -> some View {
         OnboardingCard {
             VStack(alignment: .leading, spacing: RollCallSpacingTier.standard.value) {
-                StatusChip(text: player.displayName, role: .warning, systemImage: "music.note", emphasis: .subdued)
+                StatusChip(text: player.displayName, role: player.cue == nil ? .warning : .ready, systemImage: "music.note", emphasis: .subdued)
                 Text("Choose the walkup audio.")
                     .rollCallText(.screenTitle)
-                Text("With an active Apple Music subscription, you can choose up to 20 seconds from anywhere in the full song. Without one, you can still use Apple Music, but trimming is limited to Apple's preview clip. If you have your own audio or video file, import it and trim from that file.")
+                Text(player.cue == nil ? "Pick one song or use a local audio file. You can dial in the perfect start point later; right now, just get one clip close enough to try in Game Day." : "Nice. Pick a simple start and length so you can hear this player in Game Day. Advanced dial-in options are still available later from the player setup.")
                     .rollCallText(.body)
 
-                Button {
-                    showAppleMusicPicker = true
-                } label: {
-                    Label("Add Song", systemImage: "music.note")
-                        .frame(maxWidth: .infinity)
+                if let cue = player.cue {
+                    selectedOnboardingCueView(cue, for: player)
+                    simpleOnboardingTrimSelector(cue, for: player)
+
+                    Button {
+                        visibleStepOverride = .lineup
+                    } label: {
+                        Label("Continue", systemImage: "arrow.right")
+                            .frame(maxWidth: .infinity)
+                    }
+                    .rollCallButtonStyle(.primary)
+                } else {
+                    Button {
+                        showAppleMusicPicker = true
+                    } label: {
+                        Label("Add Song", systemImage: "music.note")
+                            .frame(maxWidth: .infinity)
+                    }
+                    .rollCallButtonStyle(.primary)
                 }
-                .rollCallButtonStyle(.primary)
 
                 Button {
-                    showLocalAudioImporter = true
+                    if player.cue == nil {
+                        showLocalAudioImporter = true
+                    } else {
+                        showAppleMusicPicker = true
+                    }
                 } label: {
-                    Label("Use Local Audio", systemImage: "square.and.arrow.down")
+                    Label(player.cue == nil ? "Use Local Audio" : "Change Song", systemImage: player.cue == nil ? "square.and.arrow.down" : "music.note.list")
                         .frame(maxWidth: .infinity)
                 }
                 .rollCallButtonStyle(.secondary)
 
-                Button {
-                    appModel.markOnboardingCheerFallbackChosen()
-                    visibleStepOverride = nil
-                } label: {
-                    Label("Try with Cheer", systemImage: "speaker.wave.2.fill")
-                        .frame(maxWidth: .infinity)
+                if player.cue != nil {
+                    Button {
+                        showLocalAudioImporter = true
+                    } label: {
+                        Label("Use Local Audio Instead", systemImage: "square.and.arrow.down")
+                            .frame(maxWidth: .infinity)
+                    }
+                    .rollCallButtonStyle(.quiet)
                 }
-                .rollCallButtonStyle(.secondary)
 
-                Button {
-                    showAdvancedEditor = true
-                } label: {
-                    Label("Advanced Setup", systemImage: "slider.horizontal.3")
-                        .frame(maxWidth: .infinity)
+                if player.cue == nil {
+                    Button {
+                        appModel.markOnboardingCheerFallbackChosen()
+                        visibleStepOverride = nil
+                    } label: {
+                        Label("Try with Cheer", systemImage: "speaker.wave.2.fill")
+                            .frame(maxWidth: .infinity)
+                    }
+                    .rollCallButtonStyle(.secondary)
                 }
-                .rollCallButtonStyle(.quiet)
             }
         }
+    }
+
+    private func selectedOnboardingCueView(_ cue: Cue, for player: Player) -> some View {
+        VStack(alignment: .leading, spacing: RollCallSpacingTier.tight.value) {
+            Text("Selected for \(player.displayName)")
+                .rollCallText(.cardTitle)
+            switch cue.source {
+            case .appleMusic(let source):
+                Text(source.title)
+                    .rollCallText(.body)
+                Text(source.artistName)
+                    .rollCallText(.helperText)
+            case .localAudio(let source):
+                Text(source.displayName.songTitleWithoutArtistPrefix)
+                    .rollCallText(.body)
+            case .builtInClip(let source):
+                Text(source.displayName)
+                    .rollCallText(.body)
+            }
+        }
+        .padding(12)
+        .background(Color.rollCall(.neutralSurface), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+    }
+
+    private func simpleOnboardingTrimSelector(_ cue: Cue, for player: Player) -> some View {
+        VStack(alignment: .leading, spacing: RollCallSpacingTier.standard.value) {
+            if let trimHelpText = appModel.appleMusicTrimHelpText(for: cue) {
+                Text(trimHelpText)
+                    .rollCallText(.helperText)
+            }
+
+            if case .appleMusic = cue.source {
+                VStack(alignment: .leading, spacing: RollCallSpacingTier.tight.value) {
+                    Text("Starting point")
+                        .rollCallText(.cardTitle)
+                    HStack(spacing: 8) {
+                        ForEach(TrimSuggestionMode.allCases) { mode in
+                            Button(mode.title) {
+                                trimMode = mode
+                                updateOnboardingCue(trimmedCue(for: cue, mode: mode), for: player)
+                            }
+                            .buttonStyle(PlayerEditorChipButtonStyle(isSelected: trimMode == mode))
+                        }
+                    }
+                }
+            }
+
+            VStack(alignment: .leading, spacing: RollCallSpacingTier.tight.value) {
+                HStack {
+                    Text("Length")
+                        .rollCallText(.cardTitle)
+                    Spacer()
+                    Text(formattedCueTime(cue.duration))
+                        .font(.subheadline.monospacedDigit().weight(.semibold))
+                        .foregroundStyle(.secondary)
+                }
+                FlowChipRow(options: lengthOptions, selected: cue.duration) { option in
+                    updateOnboardingCue(trimmedCue(for: cue, duration: option), for: player)
+                    appModel.rememberPreferredLength(option)
+                }
+            }
+
+            Button {
+                Task { await appModel.previewCue(cue) }
+            } label: {
+                Label("Preview Clip", systemImage: "play.fill")
+                    .frame(maxWidth: .infinity)
+            }
+            .rollCallButtonStyle(.secondary)
+        }
+    }
+
+    private func trimmedCue(for cue: Cue, mode: TrimSuggestionMode) -> Cue {
+        switch mode {
+        case .suggestedHook:
+            return appModel.chooseSuggestedHook(for: cue)
+        case .startAtBeginning:
+            return appModel.chooseStartAtBeginning(for: cue)
+        }
+    }
+
+    private func trimmedCue(for cue: Cue, duration: Double) -> Cue {
+        var updated = cue
+        let timelineLength = appModel.cueTimelineLength(for: cue)
+        let durationLimit = appModel.cueDurationLimit(for: cue)
+        updated.duration = min(duration, durationLimit)
+        updated.duration = min(updated.duration, timelineLength - cue.startTime)
+        updated.duration = max(0.5, updated.duration)
+        return updated
+    }
+
+    private func updateOnboardingCue(_ cue: Cue, for player: Player) {
+        var updatedPlayer = player
+        updatedPlayer.cue = cue
+        appModel.updatePlayer(updatedPlayer)
     }
 
     private var lineupContent: some View {
