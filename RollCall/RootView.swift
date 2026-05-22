@@ -1425,7 +1425,7 @@ private struct OnboardingRootView: View {
         OnboardingCard {
             VStack(alignment: .leading, spacing: RollCallSpacingTier.standard.value) {
                 StatusChip(text: player.displayName, role: player.cue == nil ? .warning : .ready, systemImage: "music.note", emphasis: .subdued)
-                Text("Choose the walkup audio.")
+                Text(player.cue == nil ? "Choose the walkup audio." : "Trim \(player.displayName)'s walkup clip.")
                     .rollCallText(.screenTitle)
                 if player.cue == nil {
                     Text("Pick \(player.displayName)'s song or use a local audio file.")
