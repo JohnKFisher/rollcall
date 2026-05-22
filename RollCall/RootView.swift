@@ -834,6 +834,7 @@ struct RootView: View {
                                 systemImage: "sun.max.fill"
                             )
                         }
+                        .tint(Color.rollCall(.accent))
 
                         Toggle(isOn: Binding(
                             get: { appModel.state.settings.hapticsEnabled },
@@ -845,6 +846,7 @@ struct RootView: View {
                                 systemImage: "iphone.radiowaves.left.and.right"
                             )
                         }
+                        .tint(Color.rollCall(.accent))
 
                         Toggle(isOn: Binding(
                             get: { appModel.state.settings.fadeOutVolumeAutomationEnabled },
@@ -856,6 +858,7 @@ struct RootView: View {
                                 systemImage: "speaker.wave.2.fill"
                             )
                         }
+                        .tint(Color.rollCall(.accent))
                     }
 
                     SettingsSectionGroup(
