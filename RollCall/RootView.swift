@@ -1108,6 +1108,7 @@ private struct OnboardingRootView: View {
     @State private var showLineupEditor = false
     @State private var showQuickAdd = false
     @State private var trimMode: TrimSuggestionMode = .suggestedHook
+    @State private var isAddingAdditionalPlayer = false
     @State private var visibleStepOverride: OnboardingStep?
 
     private let lengthOptions: [Double] = [6, 8, 10, 12, 15]
@@ -1217,7 +1218,7 @@ private struct OnboardingRootView: View {
                     createTeamContent
                 }
             case .player:
-                if let player = primaryPlayer {
+                if let player = primaryPlayer, !isAddingAdditionalPlayer {
                     editFirstPlayerContent(for: player)
                 } else {
                     firstPlayerContent
@@ -1358,9 +1359,9 @@ private struct OnboardingRootView: View {
         OnboardingCard {
             VStack(alignment: .leading, spacing: RollCallSpacingTier.standard.value) {
                 StatusChip(text: activeTeam?.name ?? "Team", role: .neutral, systemImage: "person.3", emphasis: .subdued)
-                Text("Add your first player.")
+                Text(isAddingAdditionalPlayer ? "Add another player." : "Add your first player.")
                     .rollCallText(.screenTitle)
-                Text("Start with one player. You can add the full roster after the first walkup works.")
+                Text(isAddingAdditionalPlayer ? "Add a second or third player, then come back to Lineup to see how the order works." : "Start with one player. You can add the full roster after the first walkup works.")
                     .rollCallText(.body)
 
                 TextField("Player name", text: $playerName)
@@ -1374,6 +1375,7 @@ private struct OnboardingRootView: View {
                     appModel.addPlayer(name: playerName, number: playerNumber)
                     playerName = ""
                     playerNumber = ""
+                    isAddingAdditionalPlayer = false
                     visibleStepOverride = nil
                 } label: {
                     Label("Add Player", systemImage: "person.crop.circle.badge.plus")
@@ -1625,8 +1627,21 @@ private struct OnboardingRootView: View {
                 StatusChip(text: "Lineup", role: .neutral, systemImage: "list.number", emphasis: .subdued)
                 Text("This is where game order lives.")
                     .rollCallText(.screenTitle)
-                Text("Today’s Lineup controls batting order and who is present. You can open it from Game Day anytime; temporary Game Day changes do not need a separate save step.")
+                Text("Today’s Lineup controls batting order and who is present. You can open it from Game Day anytime.")
                     .rollCallText(.body)
+                Text("We recommend you create three players so you can best see how lineup works.")
+                    .rollCallText(.body)
+
+                Button {
+                    playerName = ""
+                    playerNumber = ""
+                    isAddingAdditionalPlayer = true
+                    visibleStepOverride = .player
+                } label: {
+                    Label("Add Another Player", systemImage: "person.crop.circle.badge.plus")
+                        .frame(maxWidth: .infinity)
+                }
+                .rollCallButtonStyle(.primary)
 
                 Button {
                     showLineupEditor = true
@@ -1638,12 +1653,13 @@ private struct OnboardingRootView: View {
 
                 Button {
                     appModel.markOnboardingLineupSeen()
+                    isAddingAdditionalPlayer = false
                     visibleStepOverride = nil
                 } label: {
                     Label("Got It", systemImage: "checkmark")
                         .frame(maxWidth: .infinity)
                 }
-                .rollCallButtonStyle(.primary)
+                .rollCallButtonStyle(.secondary)
             }
         }
     }
