@@ -344,10 +344,13 @@ final class AppModel: ObservableObject {
     }
 
     var onboardingTeam: Team? {
-        guard let activeTeamID = state.onboarding.activeTeamID else {
-            return selectedTeam
+        if let activeTeamID = state.onboarding.activeTeamID {
+            return state.teams.first(where: { $0.id == activeTeamID }) ?? selectedTeam
         }
-        return state.teams.first(where: { $0.id == activeTeamID }) ?? selectedTeam
+        if state.onboarding.activeFlow == .manualCreate {
+            return nil
+        }
+        return selectedTeam
     }
 
     func beginSetupGuide() {

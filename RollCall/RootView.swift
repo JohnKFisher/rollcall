@@ -1148,7 +1148,7 @@ private struct OnboardingRootView: View {
             .background(Color(uiColor: .systemGroupedBackground))
             .navigationTitle("Setup Guide")
             .toolbar {
-                if appModel.state.onboarding.activeFlow == .manualChooser || appModel.state.onboarding.activeFlow == .manualReview {
+                if appModel.state.onboarding.activeFlow == .manualChooser || appModel.state.onboarding.activeFlow == .manualCreate || appModel.state.onboarding.activeFlow == .manualReview {
                     ToolbarItem(placement: .topBarLeading) {
                         Button("Close") {
                             appModel.dismissManualSetupGuide()
