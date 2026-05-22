@@ -1543,6 +1543,26 @@ private struct OnboardingRootView: View {
 
             VStack(alignment: .leading, spacing: RollCallSpacingTier.tight.value) {
                 HStack {
+                    Text("Start")
+                        .rollCallText(.cardTitle)
+                    Spacer()
+                    Text(formattedCueTime(cue.startTime))
+                        .font(.subheadline.monospacedDigit().weight(.semibold))
+                        .foregroundStyle(.secondary)
+                }
+                StartScrubControl(
+                    progress: appModel.cueTimelineLength(for: cue) <= 0 ? 0 : cue.startTime / appModel.cueTimelineLength(for: cue),
+                    displayRange: appModel.cueTimelineLength(for: cue),
+                    currentValueText: formattedCueTime(cue.startTime),
+                    onSeek: { progress in
+                        updateOnboardingCue(trimmedCue(for: cue, startProgress: progress), for: player)
+                    },
+                    onLiveScrub: { _ in }
+                )
+            }
+
+            VStack(alignment: .leading, spacing: RollCallSpacingTier.tight.value) {
+                HStack {
                     Text("Length")
                         .rollCallText(.cardTitle)
                     Spacer()
@@ -1573,6 +1593,14 @@ private struct OnboardingRootView: View {
         case .startAtBeginning:
             return appModel.chooseStartAtBeginning(for: cue)
         }
+    }
+
+    private func trimmedCue(for cue: Cue, startProgress: Double) -> Cue {
+        var updated = cue
+        let timelineLength = appModel.cueTimelineLength(for: cue)
+        let maxStart = max(0, timelineLength - cue.duration)
+        updated.startTime = min(max(0, startProgress * timelineLength), maxStart)
+        return updated
     }
 
     private func trimmedCue(for cue: Cue, duration: Double) -> Cue {
