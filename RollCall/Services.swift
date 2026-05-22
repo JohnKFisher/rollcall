@@ -618,6 +618,9 @@ final class CuePlaybackEngine: NSObject, ObservableObject {
     private let catalogPlaybackController: any AppleMusicCatalogPlaybackControlling
     private let debounceWindow: TimeInterval = 0.45
     private let appleMusicClipDurationLimit: TimeInterval = 20
+    private let primaryCueTailGuard: TimeInterval = 0.75
+    private let announcerCompletionGrace: TimeInterval = 1.25
+    private let announcerCompletionPollInterval: TimeInterval = 0.05
     private var audioPlayer: AVAudioPlayer?
     private var announcerPlayer: AVAudioPlayer?
     private var remotePlayer: AVPlayer?
@@ -697,7 +700,7 @@ final class CuePlaybackEngine: NSObject, ObservableObject {
         }
 
         stopTask = Task { [weak self] in
-            try? await Task.sleep(for: .seconds(player.duration))
+            await self?.waitForAnnouncerPlaybackToFinish(player)
             guard let self, !Task.isCancelled else { return }
             self.stop()
         }
@@ -815,15 +818,19 @@ final class CuePlaybackEngine: NSObject, ObservableObject {
                 return
             }
 
-            let delay = player.duration + cue.pauseAfterAnnouncer
-            guard delay.isFinite, delay >= 0 else {
+            guard player.duration.isFinite, player.duration >= 0 else {
                 try await startPrimaryCue(cue, fadeOutVolumeAutomationEnabled: fadeOutVolumeAutomationEnabled)
                 return
             }
 
             stopTask = Task { [weak self] in
-                try? await Task.sleep(for: .seconds(delay))
+                await self?.waitForAnnouncerPlaybackToFinish(player)
                 guard let self, !Task.isCancelled else { return }
+                let pauseAfterAnnouncer = max(0, cue.pauseAfterAnnouncer)
+                if pauseAfterAnnouncer > 0 {
+                    try? await Task.sleep(for: .seconds(pauseAfterAnnouncer))
+                    guard !Task.isCancelled else { return }
+                }
                 do {
                     try await self.startPrimaryCue(
                         cue,
@@ -929,7 +936,7 @@ final class CuePlaybackEngine: NSObject, ObservableObject {
         try await catalogPlaybackController.play(
             songID: source.songID,
             startTime: startTime,
-            duration: duration,
+            duration: catalogPlaybackDurationIncludingTailGuard(for: duration),
             volumeAutomationEnabled: fadeOutVolumeAutomationEnabled,
             setsInitialVolumeToMax: setsInitialVolumeToMax
         )
@@ -968,12 +975,13 @@ final class CuePlaybackEngine: NSObject, ObservableObject {
     }
 
     private func scheduleLocalStop(duration: TimeInterval, fadeOut: TimeInterval, fadeOutVolumeAutomationEnabled: Bool) {
+        let stopDelay = playbackStopDelayIncludingTailGuard(for: duration)
         let fadeDuration = effectiveFadeDuration(
-            playbackDuration: duration,
+            playbackDuration: stopDelay,
             fadeOut: fadeOut,
             fadeOutVolumeAutomationEnabled: fadeOutVolumeAutomationEnabled
         )
-        let sustainDuration = max(0, duration - fadeDuration)
+        let sustainDuration = max(0, stopDelay - fadeDuration)
         stopTask = Task { [weak self] in
             if sustainDuration > 0 {
                 try? await Task.sleep(for: .seconds(sustainDuration))
@@ -988,12 +996,13 @@ final class CuePlaybackEngine: NSObject, ObservableObject {
     }
 
     private func scheduleRemoteStop(duration: TimeInterval, fadeOut: TimeInterval, fadeOutVolumeAutomationEnabled: Bool) {
+        let stopDelay = playbackStopDelayIncludingTailGuard(for: duration)
         let fadeDuration = effectiveFadeDuration(
-            playbackDuration: duration,
+            playbackDuration: stopDelay,
             fadeOut: fadeOut,
             fadeOutVolumeAutomationEnabled: fadeOutVolumeAutomationEnabled
         )
-        let sustainDuration = max(0, duration - fadeDuration)
+        let sustainDuration = max(0, stopDelay - fadeDuration)
         stopTask = Task { [weak self] in
             if sustainDuration > 0 {
                 try? await Task.sleep(for: .seconds(sustainDuration))
@@ -1008,12 +1017,13 @@ final class CuePlaybackEngine: NSObject, ObservableObject {
     }
 
     private func scheduleCatalogStop(duration: TimeInterval, fadeOut: TimeInterval, fadeOutVolumeAutomationEnabled: Bool) {
+        let stopDelay = playbackStopDelayIncludingTailGuard(for: duration)
         let fadeDuration = effectiveFadeDuration(
-            playbackDuration: duration,
+            playbackDuration: stopDelay,
             fadeOut: fadeOut,
             fadeOutVolumeAutomationEnabled: fadeOutVolumeAutomationEnabled
         )
-        let sustainDuration = max(0, duration - fadeDuration)
+        let sustainDuration = max(0, stopDelay - fadeDuration)
         stopTask = Task { [weak self] in
             if sustainDuration > 0 {
                 try? await Task.sleep(for: .seconds(sustainDuration))
@@ -1024,6 +1034,25 @@ final class CuePlaybackEngine: NSObject, ObservableObject {
             } else {
                 self.stop()
             }
+        }
+    }
+
+    private func playbackStopDelayIncludingTailGuard(for duration: TimeInterval) -> TimeInterval {
+        guard duration.isFinite else { return 0 }
+        return max(0, duration) + primaryCueTailGuard
+    }
+
+    private func catalogPlaybackDurationIncludingTailGuard(for duration: TimeInterval) -> TimeInterval {
+        guard duration.isFinite else { return 0 }
+        return min(appleMusicClipDurationLimit, max(0, duration) + primaryCueTailGuard)
+    }
+
+    private func waitForAnnouncerPlaybackToFinish(_ player: AVAudioPlayer) async {
+        let maxWait = max(0, player.duration) + announcerCompletionGrace
+        let startDate = Date()
+        while player.isPlaying, Date().timeIntervalSince(startDate) < maxWait {
+            guard !Task.isCancelled else { return }
+            try? await Task.sleep(for: .seconds(announcerCompletionPollInterval))
         }
     }
 
