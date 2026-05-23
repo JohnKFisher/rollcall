@@ -1107,6 +1107,7 @@ private struct OnboardingRootView: View {
     @State private var showLocalAudioImporter = false
     @State private var showLineupEditor = false
     @State private var showQuickAdd = false
+    @State private var showCloseConfirmation = false
     @State private var trimMode: TrimSuggestionMode = .suggestedHook
     @State private var isAddingAdditionalPlayer = false
     @State private var visibleStepOverride: OnboardingStep?
@@ -1165,10 +1166,18 @@ private struct OnboardingRootView: View {
                 if appModel.state.onboarding.activeFlow == .manualChooser || appModel.state.onboarding.activeFlow == .manualCreate || appModel.state.onboarding.activeFlow == .manualReview {
                     ToolbarItem(placement: .topBarTrailing) {
                         Button("Close") {
-                            appModel.dismissManualSetupGuide()
+                            showCloseConfirmation = true
                         }
                     }
                 }
+            }
+            .alert("Close Setup Guide?", isPresented: $showCloseConfirmation) {
+                Button("Keep Going", role: .cancel) { }
+                Button("Close Guide") {
+                    appModel.dismissManualSetupGuide()
+                }
+            } message: {
+                Text("Are you sure? If you haven’t used Roll Call before, we strongly recommend going through the onboarding process once so Game Day is ready when you need it.")
             }
             .sheet(isPresented: $showAppleMusicPicker) {
                 AppleMusicPickerSheet(appModel: appModel) { result in
