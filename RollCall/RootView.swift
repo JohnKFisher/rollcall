@@ -1129,6 +1129,10 @@ private struct OnboardingRootView: View {
         onboardingPlayerCount < recommendedLineupPlayerTarget
     }
 
+    private var hasRecommendedLineupPlayerCount: Bool {
+        onboardingPlayerCount >= recommendedLineupPlayerTarget
+    }
+
     private var playersNeededForRecommendedLineup: Int {
         max(0, recommendedLineupPlayerTarget - onboardingPlayerCount)
     }
@@ -1736,7 +1740,7 @@ private struct OnboardingRootView: View {
                     .rollCallText(.screenTitle)
                 Text("Setup is done. Open Game Day now and try the walkup flow with the players you created.")
                     .rollCallText(.body)
-                Text("After that, go to the Players tab to add more players and fill in more details for existing players, like announcer recordings and photos.")
+                Text("After that, go to the Players tab to add more players, fine-tune existing song clips, and fill in more details for existing players, like announcer recordings and photos.")
                     .rollCallText(.body)
                 Text("Most importantly - have fun and thanks for trying Roll Call.")
                     .rollCallText(.body)
@@ -1803,7 +1807,7 @@ private struct OnboardingRootView: View {
               appModel.state.onboarding.activeFlow != .importHandoff,
               let player = primaryPlayer else { return false }
         let hasAudioPath = player.cue != nil || appModel.state.onboarding.didChooseCheerFallback
-        return hasAudioPath && appModel.state.onboarding.didSeeLineup
+        return hasAudioPath && hasRecommendedLineupPlayerCount && appModel.state.onboarding.didSeeLineup
     }
 
     private var canNavigateBack: Bool {
