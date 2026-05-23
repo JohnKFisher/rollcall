@@ -4,11 +4,12 @@ Use this file as a concise project status snapshot for the current version, what
 
 ## Roll Call
 
-Current version: `0.7.1` (build `36`)
+Current version: `0.7.1` (build `37`)
 
 Status:
 - Active prototype with a buildable iPhone app target at [RollCall.xcodeproj](/Users/jkfisher/Documents/Coding/Roll%20Call/RollCall.xcodeproj).
 - The repository has been cleaned up so the working source of truth is back on the intended `RollCall/` and `RollCall.xcodeproj/` names.
+- `0.7.1` build `37` gives the Setup Guide lineup step two modes: fewer than three players emphasizes adding enough players to reach three while still allowing lineup review, and three or more players emphasizes opening Today’s Lineup before continuing.
 - `0.7.1` build `36` asks users to confirm before closing the manually relaunched Setup Guide, recommending that first-time users complete onboarding once before leaving.
 - `0.7.1` build `35` adds explanatory text to Today’s Lineup so setup and regular app users know to turn off absent players, arrange batting order, and expect Game Day to use those changes.
 - `0.7.1` build `34` updates the Setup Guide Lineup step to encourage three players and adds an in-guide Add Another Player path back to the player form.

@@ -1122,6 +1122,22 @@ private struct OnboardingRootView: View {
         activeTeam?.players.first
     }
 
+    private var onboardingPlayerCount: Int {
+        activeTeam?.players.count ?? 0
+    }
+
+    private var recommendedLineupPlayerTarget: Int {
+        3
+    }
+
+    private var needsMorePlayersForRecommendedLineup: Bool {
+        onboardingPlayerCount < recommendedLineupPlayerTarget
+    }
+
+    private var playersNeededForRecommendedLineup: Int {
+        max(0, recommendedLineupPlayerTarget - onboardingPlayerCount)
+    }
+
     private var canCreateTeam: Bool {
         !teamName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
@@ -1634,31 +1650,46 @@ private struct OnboardingRootView: View {
         OnboardingCard {
             VStack(alignment: .leading, spacing: RollCallSpacingTier.standard.value) {
                 StatusChip(text: "Lineup", role: .neutral, systemImage: "list.number", emphasis: .subdued)
-                Text("This is where game order lives.")
+                Text(needsMorePlayersForRecommendedLineup ? "Three players make lineup click." : "Now check the lineup.")
                     .rollCallText(.screenTitle)
-                Text("Today’s Lineup controls batting order and who is present. You can open it from Game Day anytime.")
+                Text(lineupPrimaryMessage)
                     .rollCallText(.body)
-                Text("We recommend you create three players so you can best see how lineup works.")
+                Text(lineupSecondaryMessage)
                     .rollCallText(.body)
 
-                Button {
-                    playerName = ""
-                    playerNumber = ""
-                    isAddingAdditionalPlayer = true
-                    visibleStepOverride = .player
-                } label: {
-                    Label("Add Another Player", systemImage: "person.crop.circle.badge.plus")
-                        .frame(maxWidth: .infinity)
-                }
-                .rollCallButtonStyle(.primary)
+                if needsMorePlayersForRecommendedLineup {
+                    Button {
+                        prepareToAddAnotherOnboardingPlayer()
+                    } label: {
+                        Label(addRecommendedPlayersButtonTitle, systemImage: "person.crop.circle.badge.plus")
+                            .frame(maxWidth: .infinity)
+                    }
+                    .rollCallButtonStyle(.primary)
 
-                Button {
-                    showLineupEditor = true
-                } label: {
-                    Label("Open Today’s Lineup", systemImage: "list.bullet")
-                        .frame(maxWidth: .infinity)
+                    Button {
+                        showLineupEditor = true
+                    } label: {
+                        Label("Open Lineup Anyway", systemImage: "list.bullet")
+                            .frame(maxWidth: .infinity)
+                    }
+                    .rollCallButtonStyle(.secondary)
+                } else {
+                    Button {
+                        showLineupEditor = true
+                    } label: {
+                        Label("Open Today’s Lineup", systemImage: "list.bullet")
+                            .frame(maxWidth: .infinity)
+                    }
+                    .rollCallButtonStyle(.primary)
+
+                    Button {
+                        prepareToAddAnotherOnboardingPlayer()
+                    } label: {
+                        Label("Add More Players", systemImage: "person.crop.circle.badge.plus")
+                            .frame(maxWidth: .infinity)
+                    }
+                    .rollCallButtonStyle(.secondary)
                 }
-                .rollCallButtonStyle(.secondary)
 
                 Button {
                     appModel.markOnboardingLineupSeen()
@@ -1669,8 +1700,37 @@ private struct OnboardingRootView: View {
                         .frame(maxWidth: .infinity)
                 }
                 .rollCallButtonStyle(.secondary)
+                .disabled(!appModel.state.onboarding.didSeeLineup)
             }
         }
+    }
+
+    private var lineupPrimaryMessage: String {
+        if needsMorePlayersForRecommendedLineup {
+            return "You have \(onboardingPlayerCount) \(onboardingPlayerCount == 1 ? "player" : "players"). We strongly recommend making a total of three players before you look at Today’s Lineup."
+        }
+        return "You have \(onboardingPlayerCount) players, which is enough to see how Today’s Lineup controls batting order and who is present."
+    }
+
+    private var lineupSecondaryMessage: String {
+        if needsMorePlayersForRecommendedLineup {
+            return "You can still open the lineup now, but three players make the order and Game Day handoff much clearer."
+        }
+        return "Open Today’s Lineup once, then you can continue. You can still add more players first if you want a bigger sample."
+    }
+
+    private var addRecommendedPlayersButtonTitle: String {
+        if playersNeededForRecommendedLineup == 1 {
+            return "Add One More Player to Reach Three"
+        }
+        return "Add \(playersNeededForRecommendedLineup) More Players to Reach Three"
+    }
+
+    private func prepareToAddAnotherOnboardingPlayer() {
+        playerName = ""
+        playerNumber = ""
+        isAddingAdditionalPlayer = true
+        visibleStepOverride = .player
     }
 
     private var finalHandoffContent: some View {
