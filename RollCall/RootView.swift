@@ -1222,6 +1222,7 @@ private struct OnboardingRootView: View {
     @State private var isAddingAdditionalPlayer = false
     @State private var visibleStepOverride: OnboardingStep?
     @State private var activeAudioPlayerID: UUID?
+    @State private var showFinalHandoffOverride = false
 
     private let lengthOptions: [Double] = [6, 8, 10, 12, 15]
 
@@ -1365,7 +1366,7 @@ private struct OnboardingRootView: View {
 
     @ViewBuilder
     private var setupContent: some View {
-        if isShowingFinalHandoff {
+        if showFinalHandoffOverride {
             finalHandoffContent
         } else {
             switch activeStep {
@@ -1543,11 +1544,17 @@ private struct OnboardingRootView: View {
         }
     }
 
+    private func playerOrdinal(for player: Player) -> String {
+        let ordinals = ["first", "second", "third", "fourth", "fifth"]
+        let index = activeTeam?.players.firstIndex(where: { $0.id == player.id }) ?? 0
+        return ordinals.indices.contains(index) ? ordinals[index] : "\(index + 1)th"
+    }
+
     private func editFirstPlayerContent(for player: Player) -> some View {
         OnboardingCard {
             VStack(alignment: .leading, spacing: RollCallSpacingTier.standard.value) {
                 StatusChip(text: activeTeam?.name ?? "Team", role: .neutral, systemImage: "person.crop.circle", emphasis: .subdued)
-                Text("Review your first player.")
+                Text("Review your \(playerOrdinal(for: player)) player.")
                     .rollCallText(.screenTitle)
                 Text("Update the name or number, then move back to audio.")
                     .rollCallText(.body)
@@ -1802,18 +1809,18 @@ private struct OnboardingRootView: View {
                     .rollCallButtonStyle(.secondary)
                 }
 
-                Button {
-                    appModel.markOnboardingLineupSeen()
-                    isAddingAdditionalPlayer = false
-                    visibleStepOverride = nil
-                    if !hasRecommendedLineupPlayerCount {
-                        appModel.completeOnboarding()
+                if !needsMorePlayersForRecommendedLineup || appModel.state.onboarding.didSeeLineup {
+                    Button {
+                        appModel.markOnboardingLineupSeen()
+                        isAddingAdditionalPlayer = false
+                        visibleStepOverride = nil
+                        showFinalHandoffOverride = true
+                    } label: {
+                        Label("Got It", systemImage: "checkmark")
+                            .frame(maxWidth: .infinity)
                     }
-                } label: {
-                    Label("Got It", systemImage: "checkmark")
-                        .frame(maxWidth: .infinity)
+                    .rollCallButtonStyle(.secondary)
                 }
-                .rollCallButtonStyle(.secondary)
             }
         }
     }
@@ -1932,11 +1939,12 @@ private struct OnboardingRootView: View {
     }
 
     private var canCloseSetupGuide: Bool {
-        appModel.state.onboarding.activeFlow != .importHandoff
+        appModel.state.onboarding.activeFlow != .importHandoff &&
+        !appModel.state.teams.isEmpty
     }
 
     private var previousStep: OnboardingStep? {
-        if isShowingFinalHandoff {
+        if showFinalHandoffOverride {
             return .lineup
         }
         switch activeStep {
@@ -1952,7 +1960,9 @@ private struct OnboardingRootView: View {
     }
 
     private func goBackOneStep() {
-        visibleStepOverride = previousStep
+        let target = previousStep
+        showFinalHandoffOverride = false
+        visibleStepOverride = target
     }
 
     private func applySuggestedHook(to playerID: UUID) {
