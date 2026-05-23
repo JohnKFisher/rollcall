@@ -1,89 +1,125 @@
 # Roll Call
 
-Roll Call is an iPhone app for making youth sports introductions feel more
-personal on game day.
+Roll Call is an iPhone app for youth sports walk-up music, player introductions,
+and game-day cue playback.
 
-The app is built around a simple idea: setup should help a coach or parent make
-decisions ahead of time, and Game Day should be fast, forgiving, and hard to
-mess up while people are watching.
+The 1.0 app has been submitted to the App Store. It is built for coaches,
+parents, and community teams who want game day to feel more personal without
+turning setup into homework.
 
-## Project Status
+## Status
 
-Active prototype.
+Current release line: `1.0.0`
 
-Roll Call is built primarily for my own Apple-centric youth sports workflow,
-but it may be useful to other families, coaches, schools, and community teams
-with similar needs. The current source builds an iPhone app target, and the app
-is in a real-use pause around version `0.7.0` build `25`.
+Current checked-in build: `48`
 
-There are rough edges. Apple Music behavior in particular depends on device
-account state, App ID configuration, and provisioning that cannot be fully
-verified in a simulator.
+App Store status: submitted for initial App Store review on May 23, 2026.
 
-## What It Does
+Roll Call 1.0 is intended to be a complete free app. It does not require an
+account, does not include ads, and does not put Game Day reliability behind a
+paywall.
 
-Roll Call helps a team prepare and run walk-up style player introductions.
+## What Roll Call Does
 
-Core flows include:
+Roll Call helps a team prepare and run walk-up style introductions:
 
-- Create and manage multiple teams
-- Add players, numbers, photos, and custom intro recordings
-- Pick Apple Music songs or import local audio
-- Trim cue starts and lengths for player entrances
-- Build and adjust today's lineup
-- Run Game Day with announcer-only, song-only, or announcer-plus-song playback
-- Fall back to built-in crowd audio when a player is incomplete
-- Export, import, back up, and restore `.rollcall` team packages
+- create and manage multiple teams,
+- add players, numbers, photos, and optional announcement recordings,
+- choose Apple Music songs or import local audio/video,
+- trim each player cue to a short walk-up moment,
+- use built-in fallback crowd audio when a player is not fully configured,
+- set today's lineup and player availability,
+- run Game Day in announcer-only, song-only, or announcer-plus-song mode,
+- use General Clips for quick crowd sounds,
+- export, import, back up, and restore `.rollcall` team packages.
 
-The app is intentionally not a sports management platform. It does not try to
-track stats, run a social network, require accounts, or make Game Day depend on
-cloud services.
+The app is intentionally not a sports management platform. It does not track
+stats, host social profiles, require cloud sync, or depend on a backend service
+for Game Day.
 
-## Product Shape
+## First Run
 
-Game Day is the product. Everything else supports Game Day.
+New installs start with a full-screen welcome screen and a short setup guide.
+The setup guide helps users create or import a team, pick team colors, add a
+first player, choose music or use a cheer fallback, review lineup basics, and
+open Game Day.
 
-The working priorities are:
+The setup guide can also be reopened from Settings.
+
+## Game Day Model
+
+Game Day is the center of the product. The app should feel ready when a coach
+opens it on the field:
+
+- player tiles are built around today's lineup,
+- tapping a player plays the configured cue,
+- incomplete players fall back to a built-in cheer,
+- the current session can run as `Announcer Only`, `Announcer+Song`, or
+  `Song Only`,
+- live screens can stay dark for bright-field readability,
+- readiness checks keep player setup separate from device/game-day conditions.
+
+## Apple Music And Audio
+
+Apple Music is the primary song-selection path. On devices with an active Apple
+Music playback subscription and the correct MusicKit configuration, Roll Call
+can work from full-song Apple Music timelines. Without that capability, the app
+falls back to available preview clips where possible.
+
+Local audio and video import remain available as a secondary path for
+device-owned media.
+
+Volume Automation is available in Settings for cue fades and subscribed Apple
+Music full-song behavior, but it is off by default in new settings.
+
+## Current Limitations
+
+- Full-song Apple Music behavior depends on Apple Music account state, MusicKit
+  App Service configuration, and provisioning that cannot be fully proven in a
+  simulator.
+- Subscribed Apple Music fade behavior still needs a final on-device feel pass.
+- Waveforms and per-cue gain are intentionally deferred.
+- Roll Call provides lightweight focus guidance, not OS-level Do Not Disturb or
+  Guided Access control.
+- The app is iPhone-first.
+
+For the detailed current snapshot, see
+[docs/WHERE_WE_STAND.md](docs/WHERE_WE_STAND.md).
+
+## Building
+
+Open [RollCall.xcodeproj](RollCall.xcodeproj) in Xcode and build the
+`RollCall` scheme.
+
+Useful context:
+
+- Bundle identifier: `com.jkfisher.rollcall`
+- Marketing version: `1.0.0`
+- Current project build: `48`
+- Physical-device installs require local Apple development provisioning.
+- Full Apple Music behavior requires the MusicKit App Service for the App ID.
+- Build environment details live in
+  [docs/development/BUILD_ENVIRONMENTS.md](docs/development/BUILD_ENVIRONMENTS.md).
+
+## Product Direction
+
+Roll Call's working priorities are:
 
 1. Easy
 2. Personal
 3. Cool
 4. Professional
 
-The app should be complete and useful without ads, accounts, or reliability
-paywalls. Premium ideas, if they happen later, should add delight or save time;
-they should not make the free app feel broken.
+Future work should continue to protect the core promise: if the coach taps
+Start Game right now, the experience should feel good in front of players,
+parents, and teammates.
 
-See [docs/product/NORTH_STAR.md](docs/product/NORTH_STAR.md) and
-[docs/product/PRODUCT_SCOPE.md](docs/product/PRODUCT_SCOPE.md) for the current
-product boundaries.
+Product boundaries and release thinking live in:
 
-## Current Limitations
-
-- Full-song Apple Music playback requires the right MusicKit and device account
-  setup.
-- Some Apple Music fade and trim behavior still needs on-device field testing.
-- Local audio import exists, but Apple Music is the primary path.
-- Waveforms, per-cue gain, better onboarding, and recovery flows are deferred.
-- The app currently targets iPhone; this is not a cross-platform project.
-
-For the full current snapshot, see
-[docs/WHERE_WE_STAND.md](docs/WHERE_WE_STAND.md).
-
-## Building
-
-Open [RollCall.xcodeproj](RollCall.xcodeproj) in Xcode and build the `RollCall`
-scheme.
-
-Useful context:
-
-- The app target is iOS-focused.
-- Physical-device installs require a valid local Apple development provisioning
-  profile for `com.jkfisher.rollcall`.
-- Full Apple Music behavior requires the MusicKit App Service to be enabled for
-  the App ID.
-- Build environment details live in
-  [docs/development/BUILD_ENVIRONMENTS.md](docs/development/BUILD_ENVIRONMENTS.md).
+- [docs/product/NORTH_STAR.md](docs/product/NORTH_STAR.md)
+- [docs/product/PRODUCT_SCOPE.md](docs/product/PRODUCT_SCOPE.md)
+- [docs/product/UX_RULEBOOK.md](docs/product/UX_RULEBOOK.md)
+- [docs/product/PRODUCT_ROADMAP.md](docs/product/PRODUCT_ROADMAP.md)
 
 ## Reuse And Licensing
 
@@ -111,23 +147,19 @@ Third-party materials remain under their own licenses. See
 [ATTRIBUTIONS.md](ATTRIBUTIONS.md) for ZIPFoundation and bundled Mixkit sound
 effect details.
 
-Schools, nonprofits, public agencies, volunteer teams, and youth/community
-sports organizations should feel comfortable reaching out if licensing,
-premium content, or access terms get in the way of a good community use. Free
-permission may be available.
-
 ## Repository Guide
 
 - [docs/WHERE_WE_STAND.md](docs/WHERE_WE_STAND.md): current version, verified
   behavior, limitations, and next priorities
 - [docs/product/NORTH_STAR.md](docs/product/NORTH_STAR.md): product philosophy
-  in one page
 - [docs/product/UX_RULEBOOK.md](docs/product/UX_RULEBOOK.md): interaction and
   UX rules
-- [docs/product/PRODUCT_ROADMAP.md](docs/product/PRODUCT_ROADMAP.md): 1.0 and
+- [docs/product/PRODUCT_SCOPE.md](docs/product/PRODUCT_SCOPE.md): release and
+  product boundaries
+- [docs/product/PRODUCT_ROADMAP.md](docs/product/PRODUCT_ROADMAP.md): 1.x and
   later-release direction
-- [docs/product/ARCHITECTURE_GUARDRAILS.md](docs/product/ARCHITECTURE_GUARDRAILS.md):
-  boundaries for future implementation work
+- [docs/product/Public Changelog.md](docs/product/Public%20Changelog.md):
+  public-facing release notes
 - [ROLL-CALL-LICENSE-NOTICE.md](ROLL-CALL-LICENSE-NOTICE.md): noncommercial
   reuse, fork, attribution, and asset-boundary terms
 - [docs/historical/](docs/historical/): older planning and design rationale

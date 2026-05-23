@@ -4,11 +4,12 @@ Use this file as a concise project status snapshot for the current version, what
 
 ## Roll Call
 
-Current version: `1.0.0` (build `47`)
+Current version: `1.0.0` (build `48`)
 
 Status:
-- Active prototype with a buildable iPhone app target at [RollCall.xcodeproj](/Users/jkfisher/Documents/Coding/Roll%20Call/RollCall.xcodeproj).
+- Initial `1.0.0` App Store submission candidate with a buildable iPhone app target at [RollCall.xcodeproj](/Users/jkfisher/Documents/Coding/Roll%20Call/RollCall.xcodeproj).
 - The repository has been cleaned up so the working source of truth is back on the intended `RollCall/` and `RollCall.xcodeproj/` names.
+- `1.0.0` build `48` updates the public README and release-facing docs to match the initial App Store submission state.
 - `1.0.0` build `47` swaps the launch/welcome image to the 405 softball photo, constrains the welcome layout to screen bounds, adds confirmed player removal from the Player sheet, simplifies trim/fade copy, and defaults Volume Automation off for new/missing settings.
 - `1.0.0` build `46` replaces the launch screen with a full-screen softball image and adds a matching first-run welcome screen before the existing Setup Guide flow.
 - `1.0.0` build `45` simplifies the manually relaunched Setup Guide chooser to create a new team or import a `.rollcall` file, removing the low-value Review Current Team option.

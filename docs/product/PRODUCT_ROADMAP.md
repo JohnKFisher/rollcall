@@ -1,27 +1,26 @@
 # Roll Call Product Roadmap
 
-## 1.0
+## 1.0 Submitted
 
-Roll Call 1.0 should ship as a complete free app focused on Game Day.
+Roll Call 1.0 has been submitted to the App Store as a complete free app focused on Game Day.
 
-Must include:
-- Basic Onboarding process
-- Team Home
+Included:
+- √ Basic Onboarding process
 - √ Game Day
 - √ Multiple teams
 - √ Players
 - √ Optional player numbers
 - √ Player photos
-- Team identity: name, colors, logo
-- Adjustments to Auto-fade
+- √ Team identity: name, colors
+- √ Adjustments to Auto-fade
 - √ Apple Music playback
-- Local/imported audio
+- √ Local/imported audio
 - √ Intro + song chaining
 - √ Cue points
 - √ Manual sharing/import/export
 - √ Backup/restore
 - √ Fallback audio so Game Day never fails
-- UI Consistency pass
+- √ UI Consistency pass
 - √ No required account
 - √ No ads
 - √ No premium paywall in 1.0
@@ -29,8 +28,14 @@ Must include:
 ## 1.x / Later
 
 Explore after launch:
+
+- Accent Color Usage
+- Team Home
+- Team identity logo
 - Improved Clips
-- Proper Onboarding process
+- Sample songs in "Recent"
+- Improved Hook finding
+- √ Proper Onboarding process
 - Improved Readiness
 - Improved Backup/Restore
 - Improved Photo Editing
@@ -40,6 +45,7 @@ Explore after launch:
 - Better sharing convenience
 - Improved song selection process
 - Improved clip creation process
+- Ability to add songs to clips
 - Rating Request
 - Improved Launch Screen
 
@@ -52,6 +58,7 @@ Strong candidates:
 - Batch editing
 - Easier sharing
 - Save Apple Music clip as local file
+- Lyric based song selection?
 
 Possible candidates:
 - Playlist creation from Team Songs.
