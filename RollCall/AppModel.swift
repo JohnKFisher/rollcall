@@ -523,6 +523,17 @@ final class AppModel: ObservableObject {
         persist()
     }
 
+    func removePlayer(_ player: Player) {
+        guard let teamIndex, let playerIndex = state.teams[teamIndex].players.firstIndex(where: { $0.id == player.id }) else { return }
+        let removed = state.teams[teamIndex].players.remove(at: playerIndex)
+        removeStoredAssets(for: removed)
+        state.teams[teamIndex].modifiedAt = .now
+        normalizeLineup(for: teamIndex)
+        prewarmNextBatterCue()
+        scheduleReadinessRefresh()
+        persist()
+    }
+
     func togglePresent(_ player: Player) {
         var updated = player
         updated.isPresent.toggle()
@@ -1226,6 +1237,15 @@ final class AppModel: ObservableObject {
         state.teams[teamIndex].session.nextBatterIndex = presentCount == 0 ? 0 : min(max(state.teams[teamIndex].session.nextBatterIndex, 0), presentCount - 1)
     }
 
+    private func removeStoredAssets(for player: Player) {
+        audioAssetService.removeAsset(relativePath: player.photoRelativePath)
+        audioAssetService.removeAsset(relativePath: player.customAnnouncerRelativePath)
+        audioAssetService.removeAsset(relativePath: player.generatedBuiltInAnnouncerRelativePath)
+        if case .localAudio(let source)? = player.cue?.source {
+            audioAssetService.removeAsset(relativePath: source.relativePath)
+        }
+    }
+
     private func alphabeticalBattingOrder(for players: [Player]) -> [UUID] {
         alphabeticalPlayerIDs(for: players)
     }
@@ -1511,7 +1531,7 @@ final class AppModel: ObservableObject {
         guard case .appleMusic = cue.source else { return nil }
         switch appleMusicPlaybackCapability {
         case .fullSong:
-            return "Choose up to 20 seconds from anywhere in the full song. Fade-out timing currently applies reliably to preview and local audio playback; full-song Apple Music still ends hard through MusicKit."
+            return "Choose up to 20 seconds from anywhere in the full song."
         case .previewOnly, .unknown:
             return "No Apple Music playback subscription is active. You can choose up to 20 seconds from the available preview clip."
         }

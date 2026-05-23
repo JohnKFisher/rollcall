@@ -4,6 +4,10 @@ Use this file as a concise decision log for project-specific architectural, beha
 
 ## 2026-05-23
 
+- Approved: Volume Automation now defaults off for new or missing settings, while staying available in Settings and Advanced Trim guidance.
+  Rationale: the advanced trim screen already teaches users where the feature matters, and the default should avoid surprising automatic volume changes.
+  Status: approved
+
 - Approved: first-run onboarding starts with a full-screen softball welcome image that visually matches the launch screen, then continues into the existing Setup Guide without changing the setup pages.
   Rationale: launch-to-first-run should feel more polished and emotionally tied to youth sports while preserving the current onboarding flow and completion state.
   Status: approved

@@ -4,11 +4,12 @@ Use this file as a concise project status snapshot for the current version, what
 
 ## Roll Call
 
-Current version: `1.0.0` (build `46`)
+Current version: `1.0.0` (build `47`)
 
 Status:
 - Active prototype with a buildable iPhone app target at [RollCall.xcodeproj](/Users/jkfisher/Documents/Coding/Roll%20Call/RollCall.xcodeproj).
 - The repository has been cleaned up so the working source of truth is back on the intended `RollCall/` and `RollCall.xcodeproj/` names.
+- `1.0.0` build `47` swaps the launch/welcome image to the 405 softball photo, constrains the welcome layout to screen bounds, adds confirmed player removal from the Player sheet, simplifies trim/fade copy, and defaults Volume Automation off for new/missing settings.
 - `1.0.0` build `46` replaces the launch screen with a full-screen softball image and adds a matching first-run welcome screen before the existing Setup Guide flow.
 - `1.0.0` build `45` simplifies the manually relaunched Setup Guide chooser to create a new team or import a `.rollcall` file, removing the low-value Review Current Team option.
 - `1.0.0` build `44` restores the Setup Guide Close button during first-run onboarding, softens the close confirmation with "I promise, it's fast.", and lets Got It exit the lineup step even with fewer than three players.
@@ -47,7 +48,7 @@ What works now:
 - Apple Music search that uses catalog-backed MusicKit results for subscribed full-song mode and reserves iTunes preview fallback for preview-only mode
 - Local audio import plus video-to-audio extraction
 - Trim-focused cue editor with song summary, suggested-hook vs start-at-beginning choices, start scrubber, preset lengths, Advanced fine tuning, and subscription-aware full-song vs preview-only Apple Music trimming
-- Player Editor now uses compact Roll Call visual-language cards, status chips, helper text, and button hierarchy while preserving the PE-1/PE-2 workflow
+- Player Editor now uses compact Roll Call visual-language cards, status chips, helper text, button hierarchy, and a confirmed Remove Player action while preserving the PE-1/PE-2 workflow
 - Cue timing preview from the editor
 - Per-player optional custom intro recording
 - Game Day announcer mode picker with `Announcer Only`, `Announcer+Song`, and `Song Only`, defaulting new/missing-mode teams to `Announcer+Song`

@@ -1136,53 +1136,69 @@ private struct OnboardingWelcomeView: View {
     let onGetStarted: () -> Void
 
     var body: some View {
-        ZStack {
-            Image("SoftballLaunch")
-                .resizable()
-                .scaledToFill()
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+        GeometryReader { proxy in
+            ZStack {
+                Image("SoftballLaunch")
+                    .resizable()
+                    .scaledToFill()
+                    .frame(width: proxy.size.width, height: proxy.size.height)
+                    .clipped()
+                    .ignoresSafeArea()
+
+                LinearGradient(
+                    stops: [
+                        Gradient.Stop(color: .black.opacity(0.06), location: 0.0),
+                        Gradient.Stop(color: .black.opacity(0.18), location: 0.42),
+                        Gradient.Stop(color: .black.opacity(0.82), location: 1.0)
+                    ],
+                    startPoint: .top,
+                    endPoint: .bottom
+                )
                 .ignoresSafeArea()
 
-            LinearGradient(
-                stops: [
-                    Gradient.Stop(color: .black.opacity(0.08), location: 0.0),
-                    Gradient.Stop(color: .black.opacity(0.18), location: 0.48),
-                    Gradient.Stop(color: .black.opacity(0.76), location: 1.0)
-                ],
-                startPoint: .top,
-                endPoint: .bottom
-            )
-            .ignoresSafeArea()
-
-            VStack(alignment: .leading, spacing: RollCallSpacingTier.standard.value) {
-                Spacer(minLength: 0)
-
-                VStack(alignment: .leading, spacing: RollCallSpacingTier.tight.value) {
-                    Text("Welcome to Roll Call.")
-                        .font(.largeTitle.weight(.heavy))
-                        .foregroundStyle(.white)
-                        .fixedSize(horizontal: false, vertical: true)
-                    Text("Generate Walk-Up Music Cues for Youth Sports")
-                        .font(.title3.weight(.semibold))
-                        .foregroundStyle(.white.opacity(0.88))
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-                .shadow(color: .black.opacity(0.45), radius: 12, y: 4)
-
-                Button(action: onGetStarted) {
-                    Text("Let’s Get Started")
-                        .font(.headline.weight(.bold))
-                        .foregroundStyle(Color(uiColor: .label))
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 15)
-                        .background(.white, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-                }
-                .buttonStyle(.plain)
-                .padding(.top, RollCallSpacingTier.tight.value)
+                welcomeContent
+                    .padding(.horizontal, 24)
+                    .padding(.bottom, 28)
+                    .frame(width: proxy.size.width, height: proxy.size.height, alignment: .bottomLeading)
             }
-            .padding(.horizontal, 24)
-            .padding(.bottom, 28)
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomLeading)
+        }
+        .ignoresSafeArea()
+    }
+
+    private var welcomeContent: some View {
+        VStack(alignment: .leading, spacing: RollCallSpacingTier.standard.value) {
+            Spacer(minLength: 0)
+
+            VStack(alignment: .leading, spacing: RollCallSpacingTier.tight.value) {
+                Text("Welcome to Roll Call.")
+                    .font(.largeTitle.weight(.heavy))
+                    .foregroundStyle(.white)
+                    .lineLimit(2)
+                    .minimumScaleFactor(0.72)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                Text("Generate Walk-Up Music Cues for Youth Sports")
+                    .font(.title3.weight(.semibold))
+                    .foregroundStyle(.white.opacity(0.9))
+                    .lineLimit(3)
+                    .minimumScaleFactor(0.78)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .shadow(color: .black.opacity(0.5), radius: 12, y: 4)
+
+            Button(action: onGetStarted) {
+                Text("Let’s Get Started")
+                    .font(.headline.weight(.bold))
+                    .foregroundStyle(Color(uiColor: .label))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.82)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 15)
+                    .background(.white, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+            }
+            .buttonStyle(.plain)
+            .padding(.top, RollCallSpacingTier.tight.value)
         }
     }
 }
@@ -4624,6 +4640,18 @@ private struct PlayerEditorSheet: View {
                     }
                     .playerEditorListRow()
                 }
+
+                Section {
+                    Button(role: .destructive) {
+                        pendingClearAction = .player
+                    } label: {
+                        Label("Remove Player", systemImage: "trash")
+                            .frame(maxWidth: .infinity)
+                    }
+                    .rollCallButtonStyle(.quiet)
+                    .foregroundStyle(Color.rollCall(.destructive))
+                }
+                .playerEditorListRow()
             }
             .listStyle(.insetGrouped)
             .scrollContentBackground(.hidden)
@@ -4889,6 +4917,11 @@ private struct PlayerEditorSheet: View {
             appModel.clearSong(for: player)
         case .customAnnouncer:
             appModel.clearCustomAnnouncer(for: player)
+        case .player:
+            appModel.removePlayer(player)
+            pendingClearAction = nil
+            dismiss()
+            return
         }
         pendingClearAction = nil
         refreshPlayerFromModel()
@@ -5272,6 +5305,7 @@ private extension PlayerEditorSheet {
     enum PendingClearAction: Identifiable {
         case song
         case customAnnouncer
+        case player
 
         var id: String {
             switch self {
@@ -5279,6 +5313,8 @@ private extension PlayerEditorSheet {
                 return "song"
             case .customAnnouncer:
                 return "customAnnouncer"
+            case .player:
+                return "player"
             }
         }
 
@@ -5288,6 +5324,8 @@ private extension PlayerEditorSheet {
                 return "Clear Song"
             case .customAnnouncer:
                 return "Clear Announcement Cue"
+            case .player:
+                return "Remove Player"
             }
         }
 
@@ -5297,6 +5335,8 @@ private extension PlayerEditorSheet {
                 return "This will remove the current cue for this player."
             case .customAnnouncer:
                 return "This will remove only the Announcement Cue recording for this player."
+            case .player:
+                return "This will remove this player from the roster, lineup, and Game Day."
             }
         }
     }
@@ -5632,7 +5672,7 @@ private struct AdvancedTrimSheet: View {
                     nudgeRow(title: "Fade", value: cue.fadeOutDuration) { delta in
                         cue.fadeOutDuration = min(max(0.1, cue.fadeOutDuration + delta), 3.0)
                     }
-                    Text("Fade timing is used only when Volume Automation is enabled in Settings.")
+                    Text("Fade timing only affects Apple Music full-song playback when you have an active Apple Music subscription and Volume Automation is enabled in Settings.")
                         .rollCallText(.helperText)
                 }
             }

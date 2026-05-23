@@ -396,7 +396,7 @@ struct AppSettings: Codable, Equatable {
 
     static let `default` = AppSettings(
         hapticsEnabled: true,
-        fadeOutVolumeAutomationEnabled: true,
+        fadeOutVolumeAutomationEnabled: false,
         alwaysUseDarkLiveMode: true
     )
 
@@ -419,7 +419,7 @@ struct AppSettings: Codable, Equatable {
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         hapticsEnabled = try container.decodeIfPresent(Bool.self, forKey: .hapticsEnabled) ?? true
-        fadeOutVolumeAutomationEnabled = try container.decodeIfPresent(Bool.self, forKey: .fadeOutVolumeAutomationEnabled) ?? true
+        fadeOutVolumeAutomationEnabled = try container.decodeIfPresent(Bool.self, forKey: .fadeOutVolumeAutomationEnabled) ?? false
         alwaysUseDarkLiveMode = try container.decodeIfPresent(Bool.self, forKey: .alwaysUseDarkLiveMode) ?? true
     }
 }
