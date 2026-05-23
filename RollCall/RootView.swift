@@ -1510,9 +1510,9 @@ private struct OnboardingRootView: View {
         OnboardingCard {
             VStack(alignment: .leading, spacing: RollCallSpacingTier.standard.value) {
                 StatusChip(text: activeTeam?.name ?? "Team", role: .neutral, systemImage: "person.3", emphasis: .subdued)
-                Text(isAddingAdditionalPlayer ? "Add another player." : "Add your first player.")
+                Text(isAddingAdditionalPlayer ? "Add your \(ordinalWord(for: onboardingPlayerCount)) player." : "Add your first player.")
                     .rollCallText(.screenTitle)
-                Text(isAddingAdditionalPlayer ? "Add a second or third player, then come back to Lineup to see how the order works." : "Start with one player. You can add the full roster after the first walkup works.")
+                Text(isAddingAdditionalPlayer ? "Then come back to Lineup to see how the batting order works." : "Start with one player. You can add the full roster after the first walkup works.")
                     .rollCallText(.body)
 
                 TextField("Player name", text: $playerName)
@@ -1544,10 +1544,14 @@ private struct OnboardingRootView: View {
         }
     }
 
-    private func playerOrdinal(for player: Player) -> String {
+    private func ordinalWord(for index: Int) -> String {
         let ordinals = ["first", "second", "third", "fourth", "fifth"]
-        let index = activeTeam?.players.firstIndex(where: { $0.id == player.id }) ?? 0
         return ordinals.indices.contains(index) ? ordinals[index] : "\(index + 1)th"
+    }
+
+    private func playerOrdinal(for player: Player) -> String {
+        let index = activeTeam?.players.firstIndex(where: { $0.id == player.id }) ?? 0
+        return ordinalWord(for: index)
     }
 
     private func editFirstPlayerContent(for player: Player) -> some View {
@@ -1809,7 +1813,7 @@ private struct OnboardingRootView: View {
                     .rollCallButtonStyle(.secondary)
                 }
 
-                if !needsMorePlayersForRecommendedLineup || appModel.state.onboarding.didSeeLineup {
+                if appModel.state.onboarding.didSeeLineup {
                     Button {
                         appModel.markOnboardingLineupSeen()
                         isAddingAdditionalPlayer = false
@@ -1923,15 +1927,6 @@ private struct OnboardingRootView: View {
         return .lineup
     }
 
-    private var isShowingFinalHandoff: Bool {
-        guard visibleStepOverride == nil,
-              appModel.state.onboarding.activeFlow != .manualChooser,
-              appModel.state.onboarding.activeFlow != .importHandoff,
-              let player = primaryPlayer else { return false }
-        let hasAudioPath = player.cue != nil || appModel.state.onboarding.didChooseCheerFallback
-        return hasAudioPath && hasRecommendedLineupPlayerCount && appModel.state.onboarding.didSeeLineup
-    }
-
     private var canNavigateBack: Bool {
         appModel.state.onboarding.activeFlow != .manualChooser &&
         appModel.state.onboarding.activeFlow != .importHandoff &&
@@ -1951,6 +1946,7 @@ private struct OnboardingRootView: View {
         case .team:
             return nil
         case .player:
+            if isAddingAdditionalPlayer { return .lineup }
             return activeTeam == nil ? nil : .team
         case .audio:
             return primaryPlayer == nil ? nil : .player
@@ -1962,6 +1958,7 @@ private struct OnboardingRootView: View {
     private func goBackOneStep() {
         let target = previousStep
         showFinalHandoffOverride = false
+        if target == .lineup { isAddingAdditionalPlayer = false }
         visibleStepOverride = target
     }
 
