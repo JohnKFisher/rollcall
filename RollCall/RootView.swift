@@ -1214,7 +1214,7 @@ private struct OnboardingRootView: View {
                     }
                 }
 
-                if appModel.state.onboarding.activeFlow == .manualChooser || appModel.state.onboarding.activeFlow == .manualCreate || appModel.state.onboarding.activeFlow == .manualReview {
+                if canCloseSetupGuide {
                     ToolbarItem(placement: .topBarTrailing) {
                         Button("Close") {
                             showCloseConfirmation = true
@@ -1228,7 +1228,7 @@ private struct OnboardingRootView: View {
                     appModel.dismissManualSetupGuide()
                 }
             } message: {
-                Text("Are you sure? If you haven’t used Roll Call before, we strongly recommend going through the onboarding process once so Game Day is ready when you need it.")
+                Text("Are you sure? If you haven’t used Roll Call before, we strongly recommend going through the onboarding process once so Game Day is ready when you need it.\n\nI promise, it's fast.")
             }
             .sheet(isPresented: $showAppleMusicPicker) {
                 AppleMusicPickerSheet(appModel: appModel) { result in
@@ -1709,12 +1709,14 @@ private struct OnboardingRootView: View {
                     appModel.markOnboardingLineupSeen()
                     isAddingAdditionalPlayer = false
                     visibleStepOverride = nil
+                    if !hasRecommendedLineupPlayerCount {
+                        appModel.completeOnboarding()
+                    }
                 } label: {
                     Label("Got It", systemImage: "checkmark")
                         .frame(maxWidth: .infinity)
                 }
                 .rollCallButtonStyle(.secondary)
-                .disabled(!appModel.state.onboarding.didSeeLineup)
             }
         }
     }
@@ -1830,6 +1832,10 @@ private struct OnboardingRootView: View {
         appModel.state.onboarding.activeFlow != .manualChooser &&
         appModel.state.onboarding.activeFlow != .importHandoff &&
         previousStep != nil
+    }
+
+    private var canCloseSetupGuide: Bool {
+        appModel.state.onboarding.activeFlow != .importHandoff
     }
 
     private var previousStep: OnboardingStep? {

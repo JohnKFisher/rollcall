@@ -4,6 +4,10 @@ Use this file as a concise decision log for project-specific architectural, beha
 
 ## 2026-05-23
 
+- Approved: first-run Setup Guide should offer a visible Close button, and the lineup-step Got It action should work even with fewer than the recommended three players.
+  Rationale: the three-player recommendation should remain helpful guidance, not a trap or a disabled-looking escape hatch during onboarding.
+  Status: approved
+
 - Approved: Roll Call 1.0.0 defaults new and missing-mode teams to `Announcer+Song`, keeps live-screen dark mode, Game Day haptics, and Volume Automation default-on, and keeps the Setup Guide moving from added player #2/#3 into that player's audio step instead of returning to Lineup.
   Rationale: the 1.0 submission should make the expected live experience the default while keeping onboarding focused on getting each real player to a usable walkup quickly.
   Status: approved
