@@ -854,6 +854,19 @@ struct RootView: View {
         }
     }
 
+    private var feedbackEmailURL: URL {
+        var components = URLComponents()
+        components.scheme = "mailto"
+        components.path = "johnkfisher@mac.com"
+        components.queryItems = [
+            URLQueryItem(
+                name: "subject",
+                value: "Roll Call Feedback - Version \(AppMetadata.appVersion) (\(AppMetadata.buildNumber)) \(BuildEnvironment.current.rawValue)"
+            )
+        ]
+        return components.url ?? URL(string: "mailto:johnkfisher@mac.com")!
+    }
+
     private var settingsTab: some View {
         NavigationStack {
             ScrollView {
@@ -1008,6 +1021,15 @@ struct RootView: View {
                                     title: "GitHub: JohnKFisher/roll-call",
                                     detail: "Open the public project page.",
                                     systemImage: "link"
+                                )
+                            }
+                            .buttonStyle(.plain)
+
+                            Link(destination: feedbackEmailURL) {
+                                SettingsRowLabel(
+                                    title: "Email Feedback",
+                                    detail: "Send feedback with the current app version included.",
+                                    systemImage: "envelope.fill"
                                 )
                             }
                             .buttonStyle(.plain)
