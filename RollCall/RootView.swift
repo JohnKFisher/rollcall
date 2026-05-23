@@ -856,7 +856,10 @@ struct RootView: View {
                     check.id.contains(player.id.uuidString)
                 }
             }
-            return ["route", "volume", "network", "music-auth", "lineup"].contains(check.id)
+            if check.id == "volume" {
+                return !appModel.state.settings.fadeOutVolumeAutomationEnabled
+            }
+            return ["route", "network", "music-auth", "lineup"].contains(check.id)
         }
     }
 
@@ -970,7 +973,7 @@ struct RootView: View {
                             set: { appModel.setFadeOutVolumeAutomationEnabled($0) }
                         )) {
                             SettingsRowLabel(
-                                title: "Fade-Out Volume Automation",
+                                title: "Volume Automation",
                                 detail: "Allow Roll Call to override playback volume to max, then lower it to simulate a fade-out.",
                                 systemImage: "speaker.wave.2.fill"
                             )
@@ -2307,7 +2310,7 @@ private struct ReadinessGameDayCheckRow: View {
             case "route":
                 return "Roll Call cannot identify the current output. Connect your speaker and play a quick test before starting."
             case "volume":
-                return "Device volume is \(check.detail). Turn it up and test it on the speaker you will use."
+                return "Turn up the device volume and test it on the speaker you will use."
             case "music-auth" where canRequestAppleMusicAccess:
                 return "Apple Music cues need approval. Tap Grant Access to let Roll Call use Apple Music."
             case "music-auth":
@@ -3112,7 +3115,10 @@ private struct GameDayTeamStack: View {
                 check.id.contains(player.id.uuidString)
             }
         }
-        return ["route", "volume", "network", "music-auth", "lineup"].contains(check.id)
+        if check.id == "volume" {
+            return !appModel.state.settings.fadeOutVolumeAutomationEnabled
+        }
+        return ["route", "network", "music-auth", "lineup"].contains(check.id)
     }
 
     private func willUseFallback(for player: Player) -> Bool {
@@ -5561,7 +5567,7 @@ private struct AdvancedTrimSheet: View {
                     nudgeRow(title: "Fade", value: cue.fadeOutDuration) { delta in
                         cue.fadeOutDuration = min(max(0.1, cue.fadeOutDuration + delta), 3.0)
                     }
-                    Text("Fade timing is used only when Fade-Out Volume Automation is enabled in Settings.")
+                    Text("Fade timing is used only when Volume Automation is enabled in Settings.")
                         .rollCallText(.helperText)
                 }
             }

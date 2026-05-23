@@ -1143,7 +1143,7 @@ final class ReadinessService {
             generatedAt: .now,
             checks: [
                 ReadinessCheck(id: "route", title: "Audio Route", detail: route == "Unknown" ? "Choose your speaker before live use." : route, state: route == "Unknown" ? .issue : .gameDayCheck),
-                ReadinessCheck(id: "volume", title: "Volume", detail: "\(Int(volume * 100))%", state: volume < 0.25 ? .issue : .gameDayCheck),
+                ReadinessCheck(id: "volume", title: "Volume", detail: volume < 0.30 ? "Please check your volume - it appears low." : "\(Int(volume * 100))%", state: volume < 0.30 ? .issue : .gameDayCheck),
                 ReadinessCheck(id: "network", title: "Apple Music Network", detail: appleMusicCount == 0 ? "No Apple Music cues in today's lineup." : (pathStatus == .satisfied ? "Connection available." : "Connection unavailable. Apple Music cues may fail."), state: appleMusicCount == 0 ? .gameDayCheck : (pathStatus == .satisfied ? .gameDayCheck : .issue)),
                 ReadinessCheck(id: "music-auth", title: "Apple Music Access", detail: appleMusicCount == 0 ? "No Apple Music cues assigned." : appleMusicAuthorizationDetail(for: musicAuthStatus), state: readinessStateForMusic(status: musicAuthStatus, appleMusicCount: appleMusicCount)),
                 ReadinessCheck(id: "lineup", title: "Present Players", detail: "\(presentPlayers.count) players marked present", state: team == nil || presentPlayers.isEmpty ? .issue : .gameDayCheck),

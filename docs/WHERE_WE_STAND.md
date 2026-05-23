@@ -4,11 +4,12 @@ Use this file as a concise project status snapshot for the current version, what
 
 ## Roll Call
 
-Current version: `1.0.0` (build `42`)
+Current version: `1.0.0` (build `43`)
 
 Status:
 - Active prototype with a buildable iPhone app target at [RollCall.xcodeproj](/Users/jkfisher/Documents/Coding/Roll%20Call/RollCall.xcodeproj).
 - The repository has been cleaned up so the working source of truth is back on the intended `RollCall/` and `RollCall.xcodeproj/` names.
+- `1.0.0` build `43` renames the Settings fade switch to `Volume Automation` and makes Game Day's low-volume warning clearer, hidden while automation is enabled, and active only below 30% volume.
 - `1.0.0` build `42` prepares the App Store submission polish pass: clearer Setup Guide first-page/import copy, Gray and Black team colors, tighter onboarding trim layout, Suggested Hook applied immediately, added-player setup continuing into audio, default `Announcer+Song`, and updated feedback wording.
 - `0.7.1` build `41` rephrases the Special Thanks attribution for the girls of the Piscataway Thunder Softball Team.
 - `0.7.1` build `40` adds a Settings > About feedback email link whose subject includes the current app version, build number, and build environment.
@@ -54,8 +55,8 @@ What works now:
 - Apple Music full-song playback now forces the current cue trim start when replaying catalog songs, to avoid stale start-position behavior on reused selections
 - Game Day playback now gives local, preview, and catalog song cues a short tail guard before app-driven stop/fade cleanup, and Announcement Cues are sequenced from actual playback completion instead of a fixed duration sleep.
 - Cue fade-out timing now runs before app-driven stop cleanup for local audio and preview-based Apple Music playback, with the short tail guard preserving the audible end of the cue.
-- Settings now includes a `Fade-Out Volume Automation` switch so Roll Call can either manage cue volume for fades or leave playback volume untouched
-- Advanced Trim now notes that Fade Out timing is only used when `Fade-Out Volume Automation` is enabled in Settings.
+- Settings now includes a `Volume Automation` switch so Roll Call can either manage cue volume for fades or leave playback volume untouched; Game Day hides the low-volume warning while this automation is enabled.
+- Advanced Trim now notes that Fade Out timing is only used when `Volume Automation` is enabled in Settings.
 - Settings now includes a default-on `Always Use Dark Live Screens` switch. Setup screens always follow the device appearance; `Game Day`, `Clips`, and the Game Day lineup sheet render dark when the device is dark or the setting is on, otherwise they render in normal Light Mode. Both live screens share a reusable system-background gradient with a centralized accent tint for future editability.
 - Subscribed full-song Apple Music playback now routes through an internal MediaPlayer application-player path so the same Apple Music cue can attempt stepped fade-out in trim preview, cue preview, and Game Day without changing the cue model
 - Experimental Apple Music local-copy flag and one-way conversion action
