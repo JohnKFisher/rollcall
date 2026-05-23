@@ -159,7 +159,7 @@ enum GameDayAnnouncerMode: String, Codable, CaseIterable, Identifiable {
         case "noAnnouncer":
             self = .songOnly
         default:
-            self = .songOnly
+            self = .announcerAndSong
         }
     }
 
@@ -176,6 +176,8 @@ enum TeamAccentPreset: String, Codable, CaseIterable, Identifiable {
     case green
     case blue
     case purple
+    case gray
+    case black
 
     var id: String { rawValue }
 }
@@ -382,7 +384,7 @@ struct TeamSessionState: Codable, Equatable {
         activeSessionDate = try container.decodeIfPresent(Date.self, forKey: .activeSessionDate)
         battingOrder = try container.decodeIfPresent([UUID].self, forKey: .battingOrder) ?? []
         nextBatterIndex = try container.decodeIfPresent(Int.self, forKey: .nextBatterIndex) ?? 0
-        gameDayAnnouncerMode = try container.decodeIfPresent(GameDayAnnouncerMode.self, forKey: .gameDayAnnouncerMode) ?? .songOnly
+        gameDayAnnouncerMode = try container.decodeIfPresent(GameDayAnnouncerMode.self, forKey: .gameDayAnnouncerMode) ?? .announcerAndSong
         battingOrderIsCustomized = try container.decodeIfPresent(Bool.self, forKey: .battingOrderIsCustomized) ?? false
     }
 }
@@ -475,7 +477,7 @@ struct Team: Codable, Equatable, Identifiable {
         modifiedAt = try container.decodeIfPresent(Date.self, forKey: .modifiedAt) ?? createdAt
         players = try container.decodeIfPresent([Player].self, forKey: .players) ?? []
         builtInClips = try container.decodeIfPresent([BuiltInClip].self, forKey: .builtInClips) ?? BuiltInClip.defaults
-        session = try container.decodeIfPresent(TeamSessionState.self, forKey: .session) ?? TeamSessionState(activeSessionDate: nil, battingOrder: alphabeticalPlayerIDs(for: players), nextBatterIndex: 0, gameDayAnnouncerMode: .songOnly, battingOrderIsCustomized: false)
+        session = try container.decodeIfPresent(TeamSessionState.self, forKey: .session) ?? TeamSessionState(activeSessionDate: nil, battingOrder: alphabeticalPlayerIDs(for: players), nextBatterIndex: 0, gameDayAnnouncerMode: .announcerAndSong, battingOrderIsCustomized: false)
         accentPreset = try container.decodeIfPresent(TeamAccentPreset.self, forKey: .accentPreset) ?? .rollCallOrange
         let legacyPlayers = (try? container.decodeIfPresent([LegacyPlayerDecoder.LegacyPlayerPayload].self, forKey: .players)) ?? []
 
@@ -895,7 +897,7 @@ extension Team {
             modifiedAt: .now,
             players: players,
             builtInClips: BuiltInClip.defaults,
-            session: TeamSessionState(activeSessionDate: nil, battingOrder: alphabeticalPlayerIDs(for: players), nextBatterIndex: 0, gameDayAnnouncerMode: .songOnly, battingOrderIsCustomized: false),
+            session: TeamSessionState(activeSessionDate: nil, battingOrder: alphabeticalPlayerIDs(for: players), nextBatterIndex: 0, gameDayAnnouncerMode: .announcerAndSong, battingOrderIsCustomized: false),
             announcerProfile: .default
         )
     }

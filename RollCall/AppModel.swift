@@ -418,7 +418,7 @@ final class AppModel: ObservableObject {
             modifiedAt: .now,
             players: [],
             builtInClips: BuiltInClip.defaults,
-            session: TeamSessionState(activeSessionDate: nil, battingOrder: [], nextBatterIndex: 0, gameDayAnnouncerMode: .songOnly, battingOrderIsCustomized: false),
+            session: TeamSessionState(activeSessionDate: nil, battingOrder: [], nextBatterIndex: 0, gameDayAnnouncerMode: .announcerAndSong, battingOrderIsCustomized: false),
             announcerProfile: .default,
             accentPreset: accentPreset
         )
@@ -1144,7 +1144,7 @@ final class AppModel: ObservableObject {
     }
 
     private func playbackPlan(for player: Player) -> PlayerPlaybackPlan? {
-        let mode = selectedTeam?.session.gameDayAnnouncerMode ?? .songOnly
+        let mode = selectedTeam?.session.gameDayAnnouncerMode ?? .announcerAndSong
         let announcerRelativePath = storedCustomAnnouncerRelativePath(for: player)
         switch mode {
         case .announcerOnly:

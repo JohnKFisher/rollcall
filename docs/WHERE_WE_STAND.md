@@ -4,11 +4,12 @@ Use this file as a concise project status snapshot for the current version, what
 
 ## Roll Call
 
-Current version: `0.7.1` (build `41`)
+Current version: `1.0.0` (build `42`)
 
 Status:
 - Active prototype with a buildable iPhone app target at [RollCall.xcodeproj](/Users/jkfisher/Documents/Coding/Roll%20Call/RollCall.xcodeproj).
 - The repository has been cleaned up so the working source of truth is back on the intended `RollCall/` and `RollCall.xcodeproj/` names.
+- `1.0.0` build `42` prepares the App Store submission polish pass: clearer Setup Guide first-page/import copy, Gray and Black team colors, tighter onboarding trim layout, Suggested Hook applied immediately, added-player setup continuing into audio, default `Announcer+Song`, and updated feedback wording.
 - `0.7.1` build `41` rephrases the Special Thanks attribution for the girls of the Piscataway Thunder Softball Team.
 - `0.7.1` build `40` adds a Settings > About feedback email link whose subject includes the current app version, build number, and build environment.
 - `0.7.1` build `39` keeps the Setup Guide on the three-player lineup recommendation after a sub-three lineup preview while enabling Got It, and mentions fine-tuning song clips in the Ready to Try handoff.
@@ -34,7 +35,7 @@ Status:
 What works now:
 - Team selection, duplication, and confirmed removal
 - First-run setup guide for creating or importing teams, with a Settings entry that can reopen onboarding at any time and a simplified post-song trim step before lineup handoff
-- Stored team accent color presets used by the TeamBar accent
+- Stored team accent color presets, now including Gray and Black, used by the TeamBar accent
 - Selected-team rename from the Teams panel
 - Player roster editing
 - Today’s lineup editing with present-player tracking, next-batter flow, persisted manual order, and one-tap A-Z / number sorting
@@ -45,7 +46,7 @@ What works now:
 - Player Editor now uses compact Roll Call visual-language cards, status chips, helper text, and button hierarchy while preserving the PE-1/PE-2 workflow
 - Cue timing preview from the editor
 - Per-player optional custom intro recording
-- Game Day announcer mode picker with `Announcer Only`, `Announcer+Song`, and `Song Only`
+- Game Day announcer mode picker with `Announcer Only`, `Announcer+Song`, and `Song Only`, defaulting new/missing-mode teams to `Announcer+Song`
 - Player roster and Game Day views now show custom-intro coverage alongside cue coverage
 - Player roster rows now say whether a song is selected and whether an announcement is recorded using the current simplified announcement language
 - Game Day player taps now fall back to built-in `Small Cheer` when the player has no selected song cue
@@ -112,7 +113,7 @@ Verification:
 
 Recommended next priorities:
 1. Run a pristine-install simulator or device smoke pass for onboarding: create team, skip/select accent, add player, use Apple Music/local audio or Try with Cheer, open lineup orientation, hand off to Game Day, reopen Setup Guide from Settings, and import a `.rollcall` package from onboarding.
-2. Enable the MusicKit App Service for App ID `com.jkfisher.rollcall`, refresh signing/provisioning, then launch `0.7.1` on-device and do a focused smoke pass for subscribed-device full-song trimming, repeated non-zero trim starts, MediaPlayer fade-out behavior in preview and Game Day, preview-only fallback trimming, custom-intro playback, direct AirDrop `.rollcall` opening, whether Files prefers Roll Call for `.rollcall`, manual picker selection from Files, and bright-field readability with `Always Use Dark Live Screens` on and off.
+2. Enable the MusicKit App Service for App ID `com.jkfisher.rollcall`, refresh signing/provisioning, then launch `1.0.0` on-device and do a focused smoke pass for subscribed-device full-song trimming, repeated non-zero trim starts, MediaPlayer fade-out behavior in preview and Game Day, preview-only fallback trimming, custom-intro playback, direct AirDrop `.rollcall` opening, whether Files prefers Roll Call for `.rollcall`, manual picker selection from Files, and bright-field readability with `Always Use Dark Live Screens` on and off.
 3. Add focused verification around package import/export round-trips, AirDrop/open-in-place imports, support-bundle contents, and backup retention behavior after repeated imports.
 
 Build environment docs:

@@ -352,7 +352,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = YES;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 41;
+				CURRENT_PROJECT_VERSION = 42;
 				DEVELOPMENT_TEAM = 5Y9T5WZ4J3;
 				ENABLE_DEBUG_DYLIB = NO;
 				ENABLE_PREVIEWS = NO;
@@ -372,7 +372,7 @@
 				INFOPLIST_KEY_UILaunchStoryboardName = LaunchScreen;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = UIInterfaceOrientationPortrait;
 				INFOPLIST_KEY_UTExportedTypeDeclarations = "<array><dict><key>UTTypeIdentifier</key><string>com.jkfisher.rollcall.package</string><key>UTTypeDescription</key><string>Roll Call Package</string><key>UTTypeConformsTo</key><array><string>public.zip-archive</string></array><key>UTTypeTagSpecification</key><dict><key>public.filename-extension</key><array><string>rollcall</string></array></dict></dict></array>";
-				MARKETING_VERSION = 0.7.1;
+				MARKETING_VERSION = 1.0.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.jkfisher.rollcall;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SUPPORTED_PLATFORMS = "iphonesimulator iphoneos";
@@ -388,7 +388,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = YES;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 41;
+				CURRENT_PROJECT_VERSION = 42;
 				DEVELOPMENT_TEAM = 5Y9T5WZ4J3;
 				ENABLE_DEBUG_DYLIB = NO;
 				ENABLE_PREVIEWS = NO;
@@ -408,7 +408,7 @@
 				INFOPLIST_KEY_UILaunchStoryboardName = LaunchScreen;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = UIInterfaceOrientationPortrait;
 				INFOPLIST_KEY_UTExportedTypeDeclarations = "<array><dict><key>UTTypeIdentifier</key><string>com.jkfisher.rollcall.package</string><key>UTTypeDescription</key><string>Roll Call Package</string><key>UTTypeConformsTo</key><array><string>public.zip-archive</string></array><key>UTTypeTagSpecification</key><dict><key>public.filename-extension</key><array><string>rollcall</string></array></dict></dict></array>";
-				MARKETING_VERSION = 0.7.1;
+				MARKETING_VERSION = 1.0.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.jkfisher.rollcall;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SUPPORTED_PLATFORMS = "iphonesimulator iphoneos";
@@ -424,7 +424,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = YES;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 41;
+				CURRENT_PROJECT_VERSION = 42;
 				DEVELOPMENT_TEAM = 5Y9T5WZ4J3;
 				ENABLE_DEBUG_DYLIB = NO;
 				ENABLE_PREVIEWS = NO;
@@ -444,7 +444,7 @@
 				INFOPLIST_KEY_UILaunchStoryboardName = LaunchScreen;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = UIInterfaceOrientationPortrait;
 				INFOPLIST_KEY_UTExportedTypeDeclarations = "<array><dict><key>UTTypeIdentifier</key><string>com.jkfisher.rollcall.package</string><key>UTTypeDescription</key><string>Roll Call Package</string><key>UTTypeConformsTo</key><array><string>public.zip-archive</string></array><key>UTTypeTagSpecification</key><dict><key>public.filename-extension</key><array><string>rollcall</string></array></dict></dict></array>";
-				MARKETING_VERSION = 0.7.1;
+				MARKETING_VERSION = 1.0.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.jkfisher.rollcall;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SUPPORTED_PLATFORMS = "iphonesimulator iphoneos";

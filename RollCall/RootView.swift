@@ -27,6 +27,8 @@ private extension TeamAccentPreset {
         case .green: return "Green"
         case .blue: return "Blue"
         case .purple: return "Purple"
+        case .gray: return "Gray"
+        case .black: return "Black"
         }
     }
 
@@ -44,6 +46,10 @@ private extension TeamAccentPreset {
             return Color(uiColor: .systemBlue)
         case .purple:
             return Color(uiColor: .systemPurple)
+        case .gray:
+            return Color(uiColor: .systemGray)
+        case .black:
+            return Color.black
         }
     }
 }
@@ -1028,7 +1034,7 @@ struct RootView: View {
                             Link(destination: feedbackEmailURL) {
                                 SettingsRowLabel(
                                     title: "Email Feedback",
-                                    detail: "Send feedback with the current app version included.",
+                                    detail: "Send feedback to the developer with bugs and suggestions so we can smooth any rough edges.",
                                     systemImage: "envelope.fill"
                                 )
                             }
@@ -1128,6 +1134,7 @@ private struct OnboardingRootView: View {
     @State private var trimMode: TrimSuggestionMode = .suggestedHook
     @State private var isAddingAdditionalPlayer = false
     @State private var visibleStepOverride: OnboardingStep?
+    @State private var activeAudioPlayerID: UUID?
 
     private let lengthOptions: [Double] = [6, 8, 10, 12, 15]
 
@@ -1136,7 +1143,11 @@ private struct OnboardingRootView: View {
     }
 
     private var primaryPlayer: Player? {
-        activeTeam?.players.first
+        if let activeAudioPlayerID,
+           let player = activeTeam?.players.first(where: { $0.id == activeAudioPlayerID }) {
+            return player
+        }
+        return activeTeam?.players.first
     }
 
     private var onboardingPlayerCount: Int {
@@ -1223,9 +1234,10 @@ private struct OnboardingRootView: View {
                         let didAssign = await appModel.assignAppleMusic(result, to: player)
                         if didAssign {
                             await MainActor.run {
+                                trimMode = .suggestedHook
+                                applySuggestedHook(to: player.id)
                                 showAppleMusicPicker = false
                                 visibleStepOverride = .audio
-                                trimMode = .suggestedHook
                             }
                         }
                     }
@@ -1287,7 +1299,7 @@ private struct OnboardingRootView: View {
                 StatusChip(text: "Setup Guide", role: .neutral, systemImage: "sparkles", emphasis: .subdued)
                 Text("What would you like to set up?")
                     .rollCallText(.screenTitle)
-                Text("Use the guide again for a new team, bring in a .rollcall package, or review the team you already have.")
+                Text("Use the guide again for a new team, import a .rollcall file from another user, or review the team you already have.")
                     .rollCallText(.body)
 
                 Button {
@@ -1301,7 +1313,7 @@ private struct OnboardingRootView: View {
                 Button {
                     onImportPackage()
                 } label: {
-                    Label("Import .rollcall", systemImage: "tray.and.arrow.down.fill")
+                    Label("Import a .rollcall File", systemImage: "tray.and.arrow.down.fill")
                         .frame(maxWidth: .infinity)
                 }
                 .rollCallButtonStyle(.secondary)
@@ -1324,7 +1336,7 @@ private struct OnboardingRootView: View {
                 StatusChip(text: "First Run", role: .live, systemImage: "figure.baseball", emphasis: .subdued)
                 Text("Set up your team.")
                     .rollCallText(.screenTitle)
-                Text("Roll Call works best when the team is real from the start. You can hear the first walkup in just a few minutes.")
+                Text("Roll Call works best when you try it out with your real team. You can hear the first walkup in just a few minutes.")
                     .rollCallText(.body)
 
                 TextField("Team name", text: $teamName)
@@ -1354,7 +1366,7 @@ private struct OnboardingRootView: View {
                 Button {
                     onImportPackage()
                 } label: {
-                    Label("I Have a .rollcall to Import", systemImage: "tray.and.arrow.down.fill")
+                    Label("Import a .rollcall File from Another User", systemImage: "tray.and.arrow.down.fill")
                         .frame(maxWidth: .infinity)
                 }
                 .rollCallButtonStyle(.secondary)
@@ -1418,11 +1430,17 @@ private struct OnboardingRootView: View {
                     .keyboardType(.numberPad)
 
                 Button {
-                    appModel.addPlayer(name: playerName, number: playerNumber)
+                    let addedPlayer = appModel.addPlayer(name: playerName, number: playerNumber)
                     playerName = ""
                     playerNumber = ""
-                    isAddingAdditionalPlayer = false
-                    visibleStepOverride = nil
+                    if isAddingAdditionalPlayer, let addedPlayer {
+                        activeAudioPlayerID = addedPlayer.id
+                        isAddingAdditionalPlayer = false
+                        visibleStepOverride = .audio
+                    } else {
+                        isAddingAdditionalPlayer = false
+                        visibleStepOverride = nil
+                    }
                 } label: {
                     Label("Add Player", systemImage: "person.crop.circle.badge.plus")
                         .frame(maxWidth: .infinity)
@@ -1488,7 +1506,6 @@ private struct OnboardingRootView: View {
                     .rollCallText(.body)
 
                 if let cue = player.cue {
-                    selectedOnboardingCueView(cue, for: player)
                     simpleOnboardingTrimSelector(cue, for: player)
 
                     Button {
@@ -1544,35 +1561,8 @@ private struct OnboardingRootView: View {
         }
     }
 
-    private func selectedOnboardingCueView(_ cue: Cue, for player: Player) -> some View {
-        VStack(alignment: .leading, spacing: RollCallSpacingTier.tight.value) {
-            Text("Selected for \(player.displayName)")
-                .rollCallText(.cardTitle)
-            switch cue.source {
-            case .appleMusic(let source):
-                Text(source.title)
-                    .rollCallText(.body)
-                Text(source.artistName)
-                    .rollCallText(.helperText)
-            case .localAudio(let source):
-                Text(source.displayName.songTitleWithoutArtistPrefix)
-                    .rollCallText(.body)
-            case .builtInClip(let source):
-                Text(source.displayName)
-                    .rollCallText(.body)
-            }
-        }
-        .padding(12)
-        .background(Color.rollCall(.neutralSurface), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-    }
-
     private func simpleOnboardingTrimSelector(_ cue: Cue, for player: Player) -> some View {
         VStack(alignment: .leading, spacing: RollCallSpacingTier.standard.value) {
-            if let trimHelpText = appModel.appleMusicTrimHelpText(for: cue) {
-                Text(trimHelpText)
-                    .rollCallText(.helperText)
-            }
-
             if case .appleMusic = cue.source {
                 VStack(alignment: .leading, spacing: RollCallSpacingTier.tight.value) {
                     Text("Starting point")
@@ -1751,6 +1741,7 @@ private struct OnboardingRootView: View {
         playerName = ""
         playerNumber = ""
         isAddingAdditionalPlayer = true
+        activeAudioPlayerID = nil
         visibleStepOverride = .player
     }
 
@@ -1856,6 +1847,13 @@ private struct OnboardingRootView: View {
 
     private func goBackOneStep() {
         visibleStepOverride = previousStep
+    }
+
+    private func applySuggestedHook(to playerID: UUID) {
+        guard var player = activeTeam?.players.first(where: { $0.id == playerID }),
+              let cue = player.cue else { return }
+        player.cue = appModel.chooseSuggestedHook(for: cue)
+        appModel.updatePlayer(player)
     }
 }
 

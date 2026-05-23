@@ -2,6 +2,12 @@
 
 Use this file as a concise decision log for project-specific architectural, behavioral, tooling, and scope decisions.
 
+## 2026-05-23
+
+- Approved: Roll Call 1.0.0 defaults new and missing-mode teams to `Announcer+Song`, keeps live-screen dark mode, Game Day haptics, and fade-out volume automation default-on, and keeps the Setup Guide moving from added player #2/#3 into that player's audio step instead of returning to Lineup.
+  Rationale: the 1.0 submission should make the expected live experience the default while keeping onboarding focused on getting each real player to a usable walkup quickly.
+  Status: approved
+
 ## 2026-05-22
 
 - Approved: first-run onboarding starts from a true empty app state, not a seeded sample team, and guides users toward one real team, one player, audio or an explicit cheer fallback, lineup orientation, and Game Day.
