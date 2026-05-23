@@ -1270,7 +1270,7 @@ private struct OnboardingRootView: View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: RollCallSpacingTier.large.value) {
-                    OnboardingMilestonesView(activeStep: activeStep)
+                    OnboardingMilestonesView(activeStep: activeStep, isComplete: showFinalHandoffOverride)
 
                     switch appModel.state.onboarding.activeFlow {
                     case .manualChooser:
@@ -1947,6 +1947,9 @@ private struct OnboardingRootView: View {
             return nil
         case .player:
             if isAddingAdditionalPlayer { return .lineup }
+            if let primary = primaryPlayer, primary.id != activeTeam?.players.first?.id {
+                return .lineup
+            }
             return activeTeam == nil ? nil : .team
         case .audio:
             return primaryPlayer == nil ? nil : .player
@@ -1988,6 +1991,7 @@ private enum OnboardingStep: Int, CaseIterable {
 
 private struct OnboardingMilestonesView: View {
     let activeStep: OnboardingStep
+    var isComplete: Bool = false
 
     var body: some View {
         HStack(spacing: 10) {
@@ -1998,11 +2002,11 @@ private struct OnboardingMilestonesView: View {
                         .foregroundStyle(symbolColor(for: step))
                         .frame(width: 14, height: 14)
                     Text(step.title)
-                        .font(.caption.weight(step == activeStep ? .bold : .semibold))
+                        .font(.caption.weight(isComplete ? .semibold : (step == activeStep ? .bold : .semibold)))
                         .foregroundStyle(textColor(for: step))
                 }
                 .overlay(alignment: .bottom) {
-                    if step == activeStep {
+                    if !isComplete && step == activeStep {
                         Capsule()
                             .fill(Color.rollCall(.accent))
                             .frame(height: 2)
@@ -2023,21 +2027,20 @@ private struct OnboardingMilestonesView: View {
     }
 
     private func symbolName(for step: OnboardingStep) -> String {
-        if step.rawValue < activeStep.rawValue {
-            return "checkmark.circle.fill"
-        }
-        if step == activeStep {
-            return "circle.fill"
-        }
+        if isComplete { return "checkmark.circle.fill" }
+        if step.rawValue < activeStep.rawValue { return "checkmark.circle.fill" }
+        if step == activeStep { return "circle.fill" }
         return "circle"
     }
 
     private func symbolColor(for step: OnboardingStep) -> Color {
-        step.rawValue <= activeStep.rawValue ? Color.rollCall(.accent) : Color(uiColor: .tertiaryLabel)
+        if isComplete { return Color.rollCall(.accent) }
+        return step.rawValue <= activeStep.rawValue ? Color.rollCall(.accent) : Color(uiColor: .tertiaryLabel)
     }
 
     private func textColor(for step: OnboardingStep) -> Color {
-        step == activeStep ? Color(uiColor: .label) : Color(uiColor: .secondaryLabel)
+        if isComplete { return Color(uiColor: .secondaryLabel) }
+        return step == activeStep ? Color(uiColor: .label) : Color(uiColor: .secondaryLabel)
     }
 }
 
