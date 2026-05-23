@@ -2825,8 +2825,8 @@ private struct AttributionsView: View {
 
                 SettingsSectionGroup(title: "Special Thanks") {
                     SettingsRowLabel(
-                        title: "Piscataway Thunder Softball Team",
-                        detail: "Special thanks to the girls of the Piscataway Thunder Softball Team.",
+                        title: "The Girls of the Piscataway Thunder Softball Team",
+                        detail: "For inspiring the unending game-day energy behind Roll Call.",
                         systemImage: "heart.fill"
                     )
                 }

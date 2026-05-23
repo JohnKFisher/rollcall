@@ -4,11 +4,12 @@ Use this file as a concise project status snapshot for the current version, what
 
 ## Roll Call
 
-Current version: `0.7.1` (build `40`)
+Current version: `0.7.1` (build `41`)
 
 Status:
 - Active prototype with a buildable iPhone app target at [RollCall.xcodeproj](/Users/jkfisher/Documents/Coding/Roll%20Call/RollCall.xcodeproj).
 - The repository has been cleaned up so the working source of truth is back on the intended `RollCall/` and `RollCall.xcodeproj/` names.
+- `0.7.1` build `41` rephrases the Special Thanks attribution for the girls of the Piscataway Thunder Softball Team.
 - `0.7.1` build `40` adds a Settings > About feedback email link whose subject includes the current app version, build number, and build environment.
 - `0.7.1` build `39` keeps the Setup Guide on the three-player lineup recommendation after a sub-three lineup preview while enabling Got It, and mentions fine-tuning song clips in the Ready to Try handoff.
 - `0.7.1` build `38` simplifies the Setup Guide Ready to Try panel so the only in-panel action is opening Game Day, with completion copy that points later roster polish back to the Players tab.
