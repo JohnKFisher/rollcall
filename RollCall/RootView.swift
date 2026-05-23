@@ -1302,7 +1302,7 @@ private struct OnboardingRootView: View {
                 StatusChip(text: "Setup Guide", role: .neutral, systemImage: "sparkles", emphasis: .subdued)
                 Text("What would you like to set up?")
                     .rollCallText(.screenTitle)
-                Text("Use the guide again for a new team, import a .rollcall file from another user, or review the team you already have.")
+                Text("Use the guide again for a new team or import a .rollcall file from another user.")
                     .rollCallText(.body)
 
                 Button {
@@ -1321,14 +1321,6 @@ private struct OnboardingRootView: View {
                 }
                 .rollCallButtonStyle(.secondary)
 
-                Button {
-                    appModel.startOnboardingReviewCurrentTeam()
-                } label: {
-                    Label("Review Current Team", systemImage: "checklist")
-                        .frame(maxWidth: .infinity)
-                }
-                .rollCallButtonStyle(.secondary)
-                .disabled(appModel.selectedTeam == nil)
             }
         }
     }

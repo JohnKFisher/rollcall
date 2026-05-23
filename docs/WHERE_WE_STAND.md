@@ -4,11 +4,12 @@ Use this file as a concise project status snapshot for the current version, what
 
 ## Roll Call
 
-Current version: `1.0.0` (build `44`)
+Current version: `1.0.0` (build `45`)
 
 Status:
 - Active prototype with a buildable iPhone app target at [RollCall.xcodeproj](/Users/jkfisher/Documents/Coding/Roll%20Call/RollCall.xcodeproj).
 - The repository has been cleaned up so the working source of truth is back on the intended `RollCall/` and `RollCall.xcodeproj/` names.
+- `1.0.0` build `45` simplifies the manually relaunched Setup Guide chooser to create a new team or import a `.rollcall` file, removing the low-value Review Current Team option.
 - `1.0.0` build `44` restores the Setup Guide Close button during first-run onboarding, softens the close confirmation with "I promise, it's fast.", and lets Got It exit the lineup step even with fewer than three players.
 - `1.0.0` build `43` renames the Settings fade switch to `Volume Automation` and makes Game Day's low-volume warning clearer, hidden while automation is enabled, and active only below 30% volume.
 - `1.0.0` build `42` prepares the App Store submission polish pass: clearer Setup Guide first-page/import copy, Gray and Black team colors, tighter onboarding trim layout, Suggested Hook applied immediately, added-player setup continuing into audio, default `Announcer+Song`, and updated feedback wording.
