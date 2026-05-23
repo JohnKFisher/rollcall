@@ -255,9 +255,6 @@ struct RootView: View {
                 onOpenReadiness: {
                     appModel.completeOnboarding()
                     selectedTab = .readiness
-                },
-                onContinueToApp: {
-                    appModel.completeOnboarding()
                 }
             )
         } else {
@@ -1097,7 +1094,6 @@ private struct OnboardingRootView: View {
     let onImportPackage: () -> Void
     let onOpenGameDay: () -> Void
     let onOpenReadiness: () -> Void
-    let onContinueToApp: () -> Void
 
     @State private var teamName = ""
     @State private var selectedAccent: TeamAccentPreset = .rollCallOrange
@@ -1106,7 +1102,6 @@ private struct OnboardingRootView: View {
     @State private var showAppleMusicPicker = false
     @State private var showLocalAudioImporter = false
     @State private var showLineupEditor = false
-    @State private var showQuickAdd = false
     @State private var showCloseConfirmation = false
     @State private var trimMode: TrimSuggestionMode = .suggestedHook
     @State private var isAddingAdditionalPlayer = false
@@ -1739,7 +1734,11 @@ private struct OnboardingRootView: View {
                 StatusChip(text: "Ready to Try", role: .ready, systemImage: "checkmark.circle", emphasis: .subdued)
                 Text("You’re ready to try Roll Call.")
                     .rollCallText(.screenTitle)
-                Text("Open Game Day now, add a few more players to feel the lineup flow, or continue into the app.")
+                Text("Setup is done. Open Game Day now and try the walkup flow with the players you created.")
+                    .rollCallText(.body)
+                Text("After that, go to the Players tab to add more players and fill in more details for existing players, like announcer recordings and photos.")
+                    .rollCallText(.body)
+                Text("Most importantly - have fun and thanks for trying Roll Call.")
                     .rollCallText(.body)
 
                 Button {
@@ -1749,26 +1748,7 @@ private struct OnboardingRootView: View {
                         .frame(maxWidth: .infinity)
                 }
                 .rollCallButtonStyle(.primary)
-
-                Button {
-                    showQuickAdd = true
-                } label: {
-                    Label("Add More Players", systemImage: "person.3.fill")
-                        .frame(maxWidth: .infinity)
-                }
-                .rollCallButtonStyle(.secondary)
-
-                Button {
-                    onContinueToApp()
-                } label: {
-                    Label("Continue to App", systemImage: "arrow.right")
-                        .frame(maxWidth: .infinity)
-                }
-                .rollCallButtonStyle(.quiet)
             }
-        }
-        .navigationDestination(isPresented: $showQuickAdd) {
-            OnboardingQuickAddPlayersView(appModel: appModel, onDone: onContinueToApp)
         }
     }
 
@@ -1985,47 +1965,6 @@ private struct AccentPresetGrid: View {
                     .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
                 }
                 .buttonStyle(.plain)
-            }
-        }
-    }
-}
-
-private struct OnboardingQuickAddPlayersView: View {
-    @ObservedObject var appModel: AppModel
-    let onDone: () -> Void
-
-    var body: some View {
-        List {
-            Section {
-                PlayerQuickAddView(appModel: appModel)
-            } header: {
-                PlayersSectionHeader(
-                    title: "Add More Players",
-                    helperText: "Add a few names and numbers now, then fill in songs whenever you are ready."
-                )
-            }
-
-            if let team = appModel.selectedTeam, !team.players.isEmpty {
-                Section("Current Roster") {
-                    ForEach(team.players) { player in
-                        HStack {
-                            Text(player.displayName)
-                            Spacer()
-                            if !player.uniformNumber.isEmpty {
-                                Text("#\(player.uniformNumber)")
-                                    .foregroundStyle(.secondary)
-                            }
-                        }
-                    }
-                }
-            }
-        }
-        .navigationTitle("Add Players")
-        .toolbar {
-            ToolbarItem(placement: .topBarTrailing) {
-                Button("Done") {
-                    onDone()
-                }
             }
         }
     }
