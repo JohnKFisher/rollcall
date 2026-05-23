@@ -4,11 +4,12 @@ Use this file as a concise project status snapshot for the current version, what
 
 ## Roll Call
 
-Current version: `1.0.0` (build `45`)
+Current version: `1.0.0` (build `46`)
 
 Status:
 - Active prototype with a buildable iPhone app target at [RollCall.xcodeproj](/Users/jkfisher/Documents/Coding/Roll%20Call/RollCall.xcodeproj).
 - The repository has been cleaned up so the working source of truth is back on the intended `RollCall/` and `RollCall.xcodeproj/` names.
+- `1.0.0` build `46` replaces the launch screen with a full-screen softball image and adds a matching first-run welcome screen before the existing Setup Guide flow.
 - `1.0.0` build `45` simplifies the manually relaunched Setup Guide chooser to create a new team or import a `.rollcall` file, removing the low-value Review Current Team option.
 - `1.0.0` build `44` restores the Setup Guide Close button during first-run onboarding, softens the close confirmation with "I promise, it's fast.", and lets Got It exit the lineup step even with fewer than three players.
 - `1.0.0` build `43` renames the Settings fade switch to `Volume Automation` and makes Game Day's low-volume warning clearer, hidden while automation is enabled, and active only below 30% volume.
@@ -37,7 +38,7 @@ Status:
 
 What works now:
 - Team selection, duplication, and confirmed removal
-- First-run setup guide for creating or importing teams, with a Settings entry that can reopen onboarding at any time and a simplified post-song trim step before lineup handoff
+- First-run welcome screen plus setup guide for creating or importing teams, with a Settings entry that can reopen onboarding at any time and a simplified post-song trim step before lineup handoff
 - Stored team accent color presets, now including Gray and Black, used by the TeamBar accent
 - Selected-team rename from the Teams panel
 - Player roster editing

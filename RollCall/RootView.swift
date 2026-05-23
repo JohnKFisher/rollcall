@@ -118,6 +118,7 @@ struct RootView: View {
     @State private var renameTeamName = ""
     @State private var packageSharePresented = false
     @State private var packageImportContext: PackageImportContext = .settings
+    @State private var hasEnteredOnboardingFlow = false
 
     private var errorBinding: Binding<Bool> {
         Binding(get: { appModel.lastError != nil }, set: { newValue in if !newValue { appModel.lastError = nil } })
@@ -146,6 +147,11 @@ struct RootView: View {
             }
             .onOpenURL { url in
                 appModel.handleIncomingPackage(url)
+            }
+            .onChange(of: appModel.shouldShowOnboarding) { _, shouldShowOnboarding in
+                if !shouldShowOnboarding {
+                    hasEnteredOnboardingFlow = false
+                }
             }
             .overlay(alignment: .top) {
                 if appModel.isBusy {
@@ -248,21 +254,27 @@ struct RootView: View {
     @ViewBuilder
     private var rootContent: some View {
         if appModel.shouldShowOnboarding {
-            OnboardingRootView(
-                appModel: appModel,
-                onImportPackage: {
-                    packageImportContext = .onboarding
-                    packageImportPresented = true
-                },
-                onOpenGameDay: {
-                    appModel.completeOnboarding()
-                    selectedTab = .gameDay
-                },
-                onOpenReadiness: {
-                    appModel.completeOnboarding()
-                    selectedTab = .readiness
+            if hasEnteredOnboardingFlow {
+                OnboardingRootView(
+                    appModel: appModel,
+                    onImportPackage: {
+                        packageImportContext = .onboarding
+                        packageImportPresented = true
+                    },
+                    onOpenGameDay: {
+                        appModel.completeOnboarding()
+                        selectedTab = .gameDay
+                    },
+                    onOpenReadiness: {
+                        appModel.completeOnboarding()
+                        selectedTab = .readiness
+                    }
+                )
+            } else {
+                OnboardingWelcomeView {
+                    hasEnteredOnboardingFlow = true
                 }
-            )
+            }
         } else {
             mainTabs
         }
@@ -1117,6 +1129,61 @@ struct RootView: View {
 
     private func playerForReadinessCheck(_ check: ReadinessCheck) -> Player? {
         appModel.selectedTeam?.players.first { check.id.contains($0.id.uuidString) }
+    }
+}
+
+private struct OnboardingWelcomeView: View {
+    let onGetStarted: () -> Void
+
+    var body: some View {
+        ZStack {
+            Image("SoftballLaunch")
+                .resizable()
+                .scaledToFill()
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .ignoresSafeArea()
+
+            LinearGradient(
+                stops: [
+                    Gradient.Stop(color: .black.opacity(0.08), location: 0.0),
+                    Gradient.Stop(color: .black.opacity(0.18), location: 0.48),
+                    Gradient.Stop(color: .black.opacity(0.76), location: 1.0)
+                ],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+            .ignoresSafeArea()
+
+            VStack(alignment: .leading, spacing: RollCallSpacingTier.standard.value) {
+                Spacer(minLength: 0)
+
+                VStack(alignment: .leading, spacing: RollCallSpacingTier.tight.value) {
+                    Text("Welcome to Roll Call.")
+                        .font(.largeTitle.weight(.heavy))
+                        .foregroundStyle(.white)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Text("Generate Walk-Up Music Cues for Youth Sports")
+                        .font(.title3.weight(.semibold))
+                        .foregroundStyle(.white.opacity(0.88))
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .shadow(color: .black.opacity(0.45), radius: 12, y: 4)
+
+                Button(action: onGetStarted) {
+                    Text("Let’s Get Started")
+                        .font(.headline.weight(.bold))
+                        .foregroundStyle(Color(uiColor: .label))
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 15)
+                        .background(.white, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                }
+                .buttonStyle(.plain)
+                .padding(.top, RollCallSpacingTier.tight.value)
+            }
+            .padding(.horizontal, 24)
+            .padding(.bottom, 28)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomLeading)
+        }
     }
 }
 
