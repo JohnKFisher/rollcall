@@ -317,7 +317,7 @@ struct MusicCatalogService: Sendable {
 
     func playbackCapability() async -> AppleMusicPlaybackCapability {
         do {
-            let status = try await authorizedStatus()
+            let status = currentAuthorizationStatus()
             guard status == .authorized else { return .previewOnly }
             let subscription = try await MusicSubscription.current
             return subscription.canPlayCatalogContent ? .fullSong : .previewOnly
@@ -466,6 +466,10 @@ struct MusicCatalogService: Sendable {
         default:
             return MusicAuthorization.currentStatus
         }
+    }
+
+    private func currentAuthorizationStatus() -> MusicAuthorization.Status {
+        MusicAuthorization.currentStatus
     }
 }
 

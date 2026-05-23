@@ -11,7 +11,7 @@ turning setup into homework.
 
 Current release line: `1.0.0`
 
-Current checked-in build: `48`
+Current checked-in build: `49`
 
 App Store status: submitted for initial App Store review on May 23, 2026.
 
@@ -95,7 +95,7 @@ Useful context:
 
 - Bundle identifier: `com.jkfisher.rollcall`
 - Marketing version: `1.0.0`
-- Current project build: `48`
+- Current project build: `49`
 - Physical-device installs require local Apple development provisioning.
 - Full Apple Music behavior requires the MusicKit App Service for the App ID.
 - Build environment details live in

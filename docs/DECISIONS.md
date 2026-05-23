@@ -4,6 +4,10 @@ Use this file as a concise decision log for project-specific architectural, beha
 
 ## 2026-05-23
 
+- Approved: Apple Music authorization must be requested only from explicit Apple Music actions, not from passive first-launch capability refresh.
+  Rationale: first launch should avoid a permission barrage; Roll Call can explain access at song-picking time while still allowing local audio and preview-limited fallback behavior when access is skipped.
+  Status: approved
+
 - Approved: Volume Automation now defaults off for new or missing settings, while staying available in Settings and Advanced Trim guidance.
   Rationale: the advanced trim screen already teaches users where the feature matters, and the default should avoid surprising automatic volume changes.
   Status: approved

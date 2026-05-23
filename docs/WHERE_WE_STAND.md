@@ -4,11 +4,12 @@ Use this file as a concise project status snapshot for the current version, what
 
 ## Roll Call
 
-Current version: `1.0.0` (build `48`)
+Current version: `1.0.0` (build `49`)
 
 Status:
 - Initial `1.0.0` App Store submission candidate with a buildable iPhone app target at [RollCall.xcodeproj](/Users/jkfisher/Documents/Coding/Roll%20Call/RollCall.xcodeproj).
 - The repository has been cleaned up so the working source of truth is back on the intended `RollCall/` and `RollCall.xcodeproj/` names.
+- `1.0.0` build `49` moves Apple Music authorization off first launch: passive capability checks no longer request access, and song-picking entry points explain Apple Music access before showing the iOS permission prompt.
 - `1.0.0` build `48` updates the public README and release-facing docs to match the initial App Store submission state.
 - `1.0.0` build `47` swaps the launch/welcome image to the 405 softball photo, constrains the welcome layout to screen bounds, adds confirmed player removal from the Player sheet, simplifies trim/fade copy, and defaults Volume Automation off for new/missing settings.
 - `1.0.0` build `46` replaces the launch screen with a full-screen softball image and adds a matching first-run welcome screen before the existing Setup Guide flow.
@@ -95,6 +96,7 @@ Known limitations:
 - Startup and tap responsiveness have been tightened by deferring/coalescing some follow-up work and moving snapshot restore I/O off the main actor, but this still needs an on-device feel pass to confirm the improvement.
 
 Verification:
+- Result in this `1.0.0` build `49` Apple Music permission-timing pass: `xcrun swiftc -parse RollCall/Models.swift RollCall/Services.swift RollCall/AppModel.swift RollCall/RootView.swift` succeeded; `git diff --check` succeeded. Sandboxed `xcodebuild -project RollCall.xcodeproj -scheme RollCall -destination 'generic/platform=iOS' -derivedDataPath .DerivedData CODE_SIGNING_ALLOWED=NO build` was blocked by SwiftPM/module-cache write permissions, and the out-of-sandbox retry could not run because the approval path was blocked by the app's current usage limit.
 - Result in this `0.7.1` build `29` setup-audio guide pass: `xcrun swiftc -parse RollCall/Models.swift RollCall/Services.swift RollCall/AppModel.swift RollCall/RootView.swift` succeeded; sandboxed `xcodebuild -project RollCall.xcodeproj -scheme RollCall -destination 'generic/platform=iOS' -derivedDataPath .DerivedData CODE_SIGNING_ALLOWED=NO build` was blocked by SwiftPM/Xcode cache permissions; the same signing-disabled build succeeded out of sandbox. Xcode still emits the unrelated AppIntents metadata note because no AppIntents framework dependency is present.
 - Result in this `0.7.1` build `28` setup polish pass: `xcrun swiftc -parse RollCall/RootView.swift` succeeded; `git diff --check` succeeded; sandboxed `xcodebuild -project RollCall.xcodeproj -scheme RollCall -destination 'generic/platform=iOS' -derivedDataPath .DerivedData CODE_SIGNING_ALLOWED=NO build` was blocked by SwiftPM/Xcode cache permissions; the same signing-disabled build succeeded out of sandbox. Xcode still emits the unrelated AppIntents metadata note because no AppIntents framework dependency is present.
 - Result in this `0.7.1` build `27` onboarding pass: `xcrun swiftc -parse RollCall/Models.swift RollCall/Services.swift RollCall/AppModel.swift RollCall/RootView.swift` succeeded; raw `swift-frontend` typecheck could not load `ZIPFoundation`, which is expected outside the Xcode package context; sandboxed `xcodebuild -project RollCall.xcodeproj -scheme RollCall -destination 'generic/platform=iOS' -derivedDataPath .DerivedData CODE_SIGNING_ALLOWED=NO build` was blocked by SwiftPM/Xcode cache permissions; the same signing-disabled build succeeded out of sandbox; XcodeBuildMCP build/run on `iPhone 17 Pro` succeeded. Screenshot capture also succeeded, but the simulator already had an existing `Home Team` state, so it verified launch on the existing app state rather than a pristine first-run screen.

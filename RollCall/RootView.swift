@@ -1214,6 +1214,7 @@ private struct OnboardingRootView: View {
     @State private var playerName = ""
     @State private var playerNumber = ""
     @State private var showAppleMusicPicker = false
+    @State private var showAppleMusicAccessPrimer = false
     @State private var showLocalAudioImporter = false
     @State private var showLineupEditor = false
     @State private var showCloseConfirmation = false
@@ -1312,6 +1313,19 @@ private struct OnboardingRootView: View {
                 }
             } message: {
                 Text("Are you sure? If you haven’t used Roll Call before, we strongly recommend going through the onboarding process once so Game Day is ready when you need it.\n\nI promise, it's fast.")
+            }
+            .alert("Use Apple Music?", isPresented: $showAppleMusicAccessPrimer) {
+                Button("Not Now", role: .cancel) { }
+                Button("Continue") {
+                    Task {
+                        await appModel.requestAppleMusicAccess()
+                        await MainActor.run {
+                            showAppleMusicPicker = true
+                        }
+                    }
+                }
+            } message: {
+                Text("Roll Call uses Apple Music access when you choose songs, play full tracks your subscription allows, or update team playlists. You can still use local audio if you skip this.")
             }
             .sheet(isPresented: $showAppleMusicPicker) {
                 AppleMusicPickerSheet(appModel: appModel) { result in
@@ -1595,7 +1609,7 @@ private struct OnboardingRootView: View {
                     .rollCallButtonStyle(.primary)
                 } else {
                     Button {
-                        showAppleMusicPicker = true
+                        presentAppleMusicPicker()
                     } label: {
                         Label("Add Song", systemImage: "music.note")
                             .frame(maxWidth: .infinity)
@@ -1607,7 +1621,7 @@ private struct OnboardingRootView: View {
                     if player.cue == nil {
                         showLocalAudioImporter = true
                     } else {
-                        showAppleMusicPicker = true
+                        presentAppleMusicPicker()
                     }
                 } label: {
                     Label(player.cue == nil ? "Use Local Audio" : "Change Song", systemImage: player.cue == nil ? "square.and.arrow.down" : "music.note.list")
@@ -1636,6 +1650,14 @@ private struct OnboardingRootView: View {
                     .rollCallButtonStyle(.secondary)
                 }
             }
+        }
+    }
+
+    private func presentAppleMusicPicker() {
+        if appModel.needsAppleMusicAccessPrompt {
+            showAppleMusicAccessPrimer = true
+        } else {
+            showAppleMusicPicker = true
         }
     }
 
@@ -4416,6 +4438,7 @@ private struct PlayerEditorSheet: View {
     @State private var photoCropFallbackTask: Task<Void, Never>?
     @State private var didCropperRender = false
     @State private var showAppleMusicPicker = false
+    @State private var showAppleMusicAccessPrimer = false
     @State private var trimMode: TrimSuggestionMode = .suggestedHook
     @State private var showAdvancedTrim = false
     @State private var liveScrubTask: Task<Void, Never>?
@@ -4487,7 +4510,7 @@ private struct PlayerEditorSheet: View {
                                 }
 
                                 Button {
-                                    showAppleMusicPicker = true
+                                    presentAppleMusicPicker()
                                 } label: {
                                     Label("Change Song", systemImage: "music.note.list")
                                 }
@@ -4506,7 +4529,7 @@ private struct PlayerEditorSheet: View {
                                 }
 
                                 Button {
-                                    showAppleMusicPicker = true
+                                    presentAppleMusicPicker()
                                 } label: {
                                     Label("Choose Song", systemImage: "music.note")
                                         .frame(maxWidth: .infinity)
@@ -4698,6 +4721,19 @@ private struct PlayerEditorSheet: View {
             } message: { action in
                 Text(action.confirmationMessage)
             }
+            .alert("Use Apple Music?", isPresented: $showAppleMusicAccessPrimer) {
+                Button("Not Now", role: .cancel) { }
+                Button("Continue") {
+                    Task {
+                        await appModel.requestAppleMusicAccess()
+                        await MainActor.run {
+                            showAppleMusicPicker = true
+                        }
+                    }
+                }
+            } message: {
+                Text("Roll Call uses Apple Music access when you choose songs, play full tracks your subscription allows, or update team playlists. You can still import local audio if you skip this.")
+            }
             .fileImporter(isPresented: $importPresented, allowedContentTypes: [.audio, .movie], allowsMultipleSelection: false) { result in
                 if case .success(let urls) = result, let url = urls.first {
                     let currentPlayer = player
@@ -4758,6 +4794,14 @@ private struct PlayerEditorSheet: View {
                     }
                 )
             }
+        }
+    }
+
+    private func presentAppleMusicPicker() {
+        if appModel.needsAppleMusicAccessPrompt {
+            showAppleMusicAccessPrimer = true
+        } else {
+            showAppleMusicPicker = true
         }
     }
 

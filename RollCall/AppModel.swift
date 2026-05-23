@@ -1013,9 +1013,16 @@ final class AppModel: ObservableObject {
         state.lastReadiness = readinessService.snapshot(for: selectedTeam)
     }
 
-    func requestAppleMusicAccess() async {
-        _ = await MusicAuthorization.request()
+    var needsAppleMusicAccessPrompt: Bool {
+        MusicAuthorization.currentStatus == .notDetermined
+    }
+
+    @discardableResult
+    func requestAppleMusicAccess() async -> MusicAuthorization.Status {
+        let status = await MusicAuthorization.request()
+        await refreshAppleMusicPlaybackCapability()
         refreshReadiness()
+        return status
     }
 
     func createBackup(reason: String) {
