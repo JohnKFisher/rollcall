@@ -30,8 +30,10 @@ Included:
 Explore after launch:
 
 - Accent Color Usage
+- Tweaks to icon? Dark Mode/Light Mode?
+- Icon for .rollcall file?
 - Team Home
-- Team identity logo
+- Team identity: logo
 - Improved Clips
 - Sample songs in "Recent"
 - Improved Hook finding
@@ -47,7 +49,7 @@ Explore after launch:
 - Improved clip creation process
 - Ability to add songs to clips
 - Rating Request
-- Improved Launch Screen
+- √ Improved Launch Screen
 
 ## Future Plus Candidates
 
