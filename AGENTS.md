@@ -270,25 +270,79 @@ For projects with meaningful versioning, milestone releases, or durable rollback
 - Do not let it become marketing copy, vague filler, or a changelog dump.
 - Update it at session end if the project state changed.
 
-## Git Workflow and Recovery
+## Git Workflow, Branches, and Worktrees
 
-- Default branch strategy is commit-to-main unless I specify otherwise. Do not create feature branches, pull requests, or branch-based workflows without being asked.
-- Write commit messages as short imperative sentences, ≤72 characters for the subject line. e.g. `Add login screen`, `Fix empty CSV export crash`. Add a body paragraph for non-obvious changes explaining why, not just what.
-- At session end, commit completed work with a clear message. Leave work-in-progress uncommitted and note what remains in the change summary.
-- If no baseline commit exists, the Ask-First Gate applies before material edits.
-- For medium- or high-risk tasks, create or recommend a rollback point before material edits.
-- Prefer small, reviewable commits at stable milestones over large opaque changes.
-- History rewrites, resets, and destructive git actions require Ask-First approval.
-- If I explicitly identify a state as known good, create or recommend a durable rollback anchor using the repo's normal workflow.
-- Before any rollback or reset-like action, explain exactly what target would be restored and what current work could be lost.
+Roll Call now uses a release-lane workflow.
+
+Branch roles:
+- `main` = stable App Store line. It must remain shippable.
+- `release/*` = active future release work, such as `release/1.1`.
+- `hotfix/*` = temporary branches created from `main` for urgent fixes.
+- Tags mark exact submitted/released builds.
+
+Worktree policy:
+- Worktrees are user-managed release workspaces, not agent-created implementation details.
+- Do not create, delete, move, or switch worktrees unless explicitly instructed.
+- Do not create Codex-managed temporary worktrees unless explicitly instructed.
+- Treat each worktree folder as its own active workspace.
+- Before editing, report:
+  - current working directory,
+  - current branch,
+  - `git status --short`.
+- If the folder/branch does not match the requested task, stop and ask.
+
+Branch/change policy:
+- Do not work directly on `main` unless explicitly asked or already operating in the stable/hotfix workflow.
+- Do not create, delete, rename, or switch branches unless explicitly instructed.
+- Do not merge, rebase, cherry-pick, reset, force-push, or rewrite history without explicit approval.
+- Do not push unless explicitly instructed.
+- Prefer small, reviewable commits at stable milestones.
+- Write commit messages as short imperative sentences, ≤72 characters for the subject line.
+- Leave work-in-progress uncommitted unless asked to commit it.
+- If committing, summarize files changed and verification performed.
+
+Hotfix policy:
+- Hotfix branches start from `main`.
+- After a hotfix is approved, it must be brought back into both:
+  - `main`
+  - the active `release/*` branch
+- Use merge when clean and appropriate.
+- Use cherry-pick when only the exact fix should be carried forward.
+- Delete temporary hotfix worktrees/branches only when explicitly instructed.
+
+Release tagging:
+- Tag every App Store-submitted build.
+- Tag format: `v<marketing-version>-build<build-number>`.
+- Example: `v1.0-build53`, `v1.0.1-build81`, `v1.1-build120`.
+- Tags should point to the exact commit archived/submitted to Apple.
+- Do not create or move tags unless explicitly instructed.
 
 ## Versioning
 
-- Use an ever-increasing build number for every commit across the life of the project.
-- Do not bump the minor or major version without my explicit approval. Bumps can be suggested with brief reasoning, but not applied automatically.
-- App marketing version and build number must come from source-controlled files, not from local caches, `.build/`, DerivedData, or other untracked machine-specific state. Before any release build, report the exact version that will be produced and stop if local state could alter it. Update versioning files in the same commit as the build change.
-- Prefer deterministic versioning that reproduces the same app version/build from the same committed source.
-- For projects that publish through CI, prefer workflows where a pushed checked-in version bump on `main` automatically creates or updates the corresponding GitHub Release. Do not require a separate manual tag push unless the project brief or decision log explicitly prefers tag-driven releases.
+- Use an ever-increasing build number across the life of the app.
+- Build numbers may skip; not every build needs to be uploaded to TestFlight or App Store Connect.
+- Never reuse a build number that may already have been uploaded.
+- Do not bump the marketing version without explicit approval.
+- Marketing version examples:
+  - `1.0`
+  - `1.0.1`
+  - `1.1`
+- Build number examples:
+  - `53`
+  - `81`
+  - `120`
+- App marketing version and build number must come from source-controlled files, not local caches, `.build/`, DerivedData, or untracked machine-specific state.
+- Before any App Store/TestFlight archive, report:
+  - current working directory,
+  - current branch,
+  - `git status --short`,
+  - marketing version,
+  - build number,
+  - latest relevant tag if any.
+- Stop if local state could alter the version/build unexpectedly.
+- Update versioning files in the same commit as the version/build change.
+- Public App Store hotfix/release archives should come from `main` unless explicitly approved otherwise.
+- Development/TestFlight builds may come from `release/*` when intentionally testing an in-progress release.
 
 ## Performance, Reliability, and Output Quality
 
