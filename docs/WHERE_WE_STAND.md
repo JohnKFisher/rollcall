@@ -4,10 +4,18 @@ Use this file as a concise project status snapshot for the current version, what
 
 ## Roll Call
 
-Current version: `1.0.0` (build `49`)
+Current version: `1.0.1` (build `56`)
 
 Status:
-- Initial `1.0.0` App Store submission candidate with a buildable iPhone app target at [RollCall.xcodeproj](/Users/jkfisher/Documents/Coding/Roll%20Call/RollCall.xcodeproj).
+- Initial `1.0.1` App Store submission candidate with a buildable iPhone app target at [RollCall.xcodeproj](/Users/jkfisher/Documents/Coding/Roll%20Call/RollCall.xcodeproj).
+- `1.0.1` build `56` bumps the checked-in app build number after adding the native `RollCallTests` foundation and keeps the marketing version unchanged.
+- Startup now chooses the first useful main tab after saved state loads: no team still enters onboarding, an empty selected team opens `Players`, and a selected team with players opens `Game Day`.
+- `1.0.1` build `54` collects the current audit hardening pass for state recovery, serialized persistence, safer imports/restores, queued package handoff, roster CSV backup/format guidance, readiness refreshes, support-bundle redaction, and future schema guards.
+- Current audit hardening preserves an unreadable saved `state.json` as a recovery copy before falling back to empty state, reducing the risk that launch-time decode failures silently destroy recoverable team data.
+- Current audit hardening also serializes app-state writes through a versioned persistence writer so rapid edits cannot let stale queued snapshots win over newer state.
+- Current audit hardening validates local and built-in cue files before Game Day selects them, so missing stored media can fall back to the built-in cheer instead of blocking live playback.
+- Current audit hardening also tightens import, recovery, and diagnostics safety: incomplete `.rollcall` packages are rejected, incoming packages retry after busy work finishes, first-launch package opens land on the import handoff, roster CSV import creates a backup and warns about duplicates, future schema versions fail explicitly, readiness refreshes on network/route/volume changes, and support bundles redact team names and IDs.
+- A native hosted XCTest target, `RollCallTests`, now provides a fast starter regression suite for `.rollcall` packages, backup/restore safety, CSV roster import parsing and duplicate warnings, player persistence, Game Day lineup ordering, and readiness checks that do not require real audio playback or device-specific state.
 - The repository has been cleaned up so the working source of truth is back on the intended `RollCall/` and `RollCall.xcodeproj/` names.
 - `1.0.0` build `49` moves Apple Music authorization off first launch: passive capability checks no longer request access, and song-picking entry points explain Apple Music access before showing the iOS permission prompt.
 - `1.0.0` build `48` updates the public README and release-facing docs to match the initial App Store submission state.
@@ -41,6 +49,7 @@ Status:
 
 What works now:
 - Team selection, duplication, and confirmed removal
+- Sensible launch routing: onboarding for no teams, `Players` for an empty selected team, and `Game Day` for a selected team with players
 - First-run welcome screen plus setup guide for creating or importing teams, with a Settings entry that can reopen onboarding at any time and a simplified post-song trim step before lineup handoff
 - Stored team accent color presets, now including Gray and Black, used by the TeamBar accent
 - Selected-team rename from the Teams panel
@@ -79,6 +88,7 @@ What works now:
 - Developer Tools screen with experimental controls and support-bundle export
 - Developer Tools now includes an experimental Apple Music team playlist sync button that updates `Roll Call - <Team Name>` from the selected team's catalog-backed Apple Music cues
 - Build-environment support now separates `Debug`, `Internal`, and `Release` configurations/schemes, with centralized `BuildEnvironment` / `FeatureFlags` guardrails so Release hides Developer Tools and experimental testing surfaces
+- `RollCallTests` can be run from Xcode with the `Roll Call Debug` scheme or from the command line using the README test command.
 - Settings > About now shows app version, build number, build environment, and an email feedback link with version details in the subject
 - Settings > About > Attributions & Licenses now includes a Special Thanks section for the girls of the Piscataway Thunder Softball Team
 - Repo README and license notice now describe the public noncommercial fork policy, commercial-permission boundary, small-snippet exception, and third-party asset attributions.
@@ -96,6 +106,7 @@ Known limitations:
 - Startup and tap responsiveness have been tightened by deferring/coalescing some follow-up work and moving snapshot restore I/O off the main actor, but this still needs an on-device feel pass to confirm the improvement.
 
 Verification:
+- Result in this testing-foundation pass: sandboxed `xcodebuild test -project RollCall.xcodeproj -scheme "Roll Call Debug" -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -derivedDataPath /private/tmp/rollcall-derived CODE_SIGNING_ALLOWED=NO` was blocked by SwiftPM cache/CoreSimulator permissions; the same command succeeded out of sandbox.
 - Result in this `1.0.0` build `49` Apple Music permission-timing pass: `xcrun swiftc -parse RollCall/Models.swift RollCall/Services.swift RollCall/AppModel.swift RollCall/RootView.swift` succeeded; `git diff --check` succeeded. Sandboxed `xcodebuild -project RollCall.xcodeproj -scheme RollCall -destination 'generic/platform=iOS' -derivedDataPath .DerivedData CODE_SIGNING_ALLOWED=NO build` was blocked by SwiftPM/module-cache write permissions, and the out-of-sandbox retry could not run because the approval path was blocked by the app's current usage limit.
 - Result in this `0.7.1` build `29` setup-audio guide pass: `xcrun swiftc -parse RollCall/Models.swift RollCall/Services.swift RollCall/AppModel.swift RollCall/RootView.swift` succeeded; sandboxed `xcodebuild -project RollCall.xcodeproj -scheme RollCall -destination 'generic/platform=iOS' -derivedDataPath .DerivedData CODE_SIGNING_ALLOWED=NO build` was blocked by SwiftPM/Xcode cache permissions; the same signing-disabled build succeeded out of sandbox. Xcode still emits the unrelated AppIntents metadata note because no AppIntents framework dependency is present.
 - Result in this `0.7.1` build `28` setup polish pass: `xcrun swiftc -parse RollCall/RootView.swift` succeeded; `git diff --check` succeeded; sandboxed `xcodebuild -project RollCall.xcodeproj -scheme RollCall -destination 'generic/platform=iOS' -derivedDataPath .DerivedData CODE_SIGNING_ALLOWED=NO build` was blocked by SwiftPM/Xcode cache permissions; the same signing-disabled build succeeded out of sandbox. Xcode still emits the unrelated AppIntents metadata note because no AppIntents framework dependency is present.
@@ -122,7 +133,7 @@ Verification:
 Recommended next priorities:
 1. Run a pristine-install simulator or device smoke pass for onboarding: create team, skip/select accent, add player, use Apple Music/local audio or Try with Cheer, open lineup orientation, hand off to Game Day, reopen Setup Guide from Settings, and import a `.rollcall` package from onboarding.
 2. Enable the MusicKit App Service for App ID `com.jkfisher.rollcall`, refresh signing/provisioning, then launch `1.0.0` on-device and do a focused smoke pass for subscribed-device full-song trimming, repeated non-zero trim starts, MediaPlayer fade-out behavior in preview and Game Day, preview-only fallback trimming, custom-intro playback, direct AirDrop `.rollcall` opening, whether Files prefers Roll Call for `.rollcall`, manual picker selection from Files, and bright-field readability with `Always Use Dark Live Screens` on and off.
-3. Add focused verification around package import/export round-trips, AirDrop/open-in-place imports, support-bundle contents, and backup retention behavior after repeated imports.
+3. Extend focused verification around AirDrop/open-in-place imports, support-bundle contents, and backup retention behavior after repeated imports.
 
 Build environment docs:
 - [BUILD_ENVIRONMENTS.md](/Users/jkfisher/Documents/Coding/Roll%20Call/docs/development/BUILD_ENVIRONMENTS.md)

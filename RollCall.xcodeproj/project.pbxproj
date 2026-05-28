@@ -16,6 +16,8 @@
 		A10000000000000000000007 /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000108 /* LaunchScreen.storyboard */; };
 		A10000000000000000000008 /* BuiltInAudio in Resources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000109 /* BuiltInAudio */; };
 		A10000000000000000000009 /* BuildEnvironment.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000110 /* BuildEnvironment.swift */; };
+		A10000000000000000000010 /* RollCallDocumentIcon-44x58.png in Resources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000111 /* RollCallDocumentIcon-44x58.png */; };
+		A10000000000000000000011 /* RollCallDocumentIcon-320x320.png in Resources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000112 /* RollCallDocumentIcon-320x320.png */; };
 		A20000000000000000000001 /* ZIPFoundation in Frameworks */ = {isa = PBXBuildFile; productRef = A20000000000000000000002 /* ZIPFoundation */; };
 		A30000000000000000000001 /* RollCallDesignSystem.swift in Sources */ = {isa = PBXBuildFile; fileRef = A30000000000000000000101 /* RollCallDesignSystem.swift */; };
 		A30000000000000000000002 /* RollCallColors.swift in Sources */ = {isa = PBXBuildFile; fileRef = A30000000000000000000102 /* RollCallColors.swift */; };
@@ -25,7 +27,25 @@
 		A30000000000000000000006 /* RollCallCardStyles.swift in Sources */ = {isa = PBXBuildFile; fileRef = A30000000000000000000106 /* RollCallCardStyles.swift */; };
 		A30000000000000000000007 /* StatusChip.swift in Sources */ = {isa = PBXBuildFile; fileRef = A30000000000000000000107 /* StatusChip.swift */; };
 		A30000000000000000000008 /* TeamBanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = A30000000000000000000108 /* TeamBanner.swift */; };
+		A40000000000000000000001 /* RollCallTestFixtures.swift in Sources */ = {isa = PBXBuildFile; fileRef = A40000000000000000000101 /* RollCallTestFixtures.swift */; };
+		A40000000000000000000002 /* TeamLineupTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A40000000000000000000102 /* TeamLineupTests.swift */; };
+		A40000000000000000000003 /* RosterCSVImportTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A40000000000000000000103 /* RosterCSVImportTests.swift */; };
+		A40000000000000000000004 /* AppStatePersistenceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A40000000000000000000104 /* AppStatePersistenceTests.swift */; };
+		A40000000000000000000005 /* PackageServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A40000000000000000000105 /* PackageServiceTests.swift */; };
+		A40000000000000000000006 /* ReadinessServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A40000000000000000000106 /* ReadinessServiceTests.swift */; };
+		A40000000000000000000007 /* BackupRestoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A40000000000000000000107 /* BackupRestoreTests.swift */; };
+		A40000000000000000000008 /* RootTabStartupTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A40000000000000000000109 /* RootTabStartupTests.swift */; };
 /* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		A40000000000000000000231 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = A10000000000000000000201 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = A10000000000000000000211;
+			remoteInfo = RollCall;
+		};
+/* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
 		A10000000000000000000101 /* RollCallApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RollCallApp.swift; sourceTree = "<group>"; };
@@ -38,6 +58,9 @@
 		A10000000000000000000108 /* LaunchScreen.storyboard */ = {isa = PBXFileReference; lastKnownFileType = file.storyboard; path = LaunchScreen.storyboard; sourceTree = "<group>"; };
 		A10000000000000000000109 /* BuiltInAudio */ = {isa = PBXFileReference; lastKnownFileType = folder; path = BuiltInAudio; sourceTree = "<group>"; };
 		A10000000000000000000110 /* BuildEnvironment.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BuildEnvironment.swift; sourceTree = "<group>"; };
+		A10000000000000000000111 /* RollCallDocumentIcon-44x58.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "RollCallDocumentIcon-44x58.png"; sourceTree = "<group>"; };
+		A10000000000000000000112 /* RollCallDocumentIcon-320x320.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "RollCallDocumentIcon-320x320.png"; sourceTree = "<group>"; };
+		A10000000000000000000113 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		A30000000000000000000101 /* RollCallDesignSystem.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RollCallDesignSystem.swift; sourceTree = "<group>"; };
 		A30000000000000000000102 /* RollCallColors.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RollCallColors.swift; sourceTree = "<group>"; };
 		A30000000000000000000103 /* RollCallTypography.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RollCallTypography.swift; sourceTree = "<group>"; };
@@ -46,6 +69,15 @@
 		A30000000000000000000106 /* RollCallCardStyles.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RollCallCardStyles.swift; sourceTree = "<group>"; };
 		A30000000000000000000107 /* StatusChip.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StatusChip.swift; sourceTree = "<group>"; };
 		A30000000000000000000108 /* TeamBanner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TeamBanner.swift; sourceTree = "<group>"; };
+		A40000000000000000000101 /* RollCallTestFixtures.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RollCallTestFixtures.swift; sourceTree = "<group>"; };
+		A40000000000000000000102 /* TeamLineupTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TeamLineupTests.swift; sourceTree = "<group>"; };
+		A40000000000000000000103 /* RosterCSVImportTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RosterCSVImportTests.swift; sourceTree = "<group>"; };
+		A40000000000000000000104 /* AppStatePersistenceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppStatePersistenceTests.swift; sourceTree = "<group>"; };
+		A40000000000000000000105 /* PackageServiceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PackageServiceTests.swift; sourceTree = "<group>"; };
+		A40000000000000000000106 /* ReadinessServiceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReadinessServiceTests.swift; sourceTree = "<group>"; };
+		A40000000000000000000107 /* BackupRestoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackupRestoreTests.swift; sourceTree = "<group>"; };
+		A40000000000000000000108 /* RollCallTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = RollCallTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		A40000000000000000000109 /* RootTabStartupTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RootTabStartupTests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -57,6 +89,13 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		A40000000000000000000221 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
@@ -64,6 +103,7 @@
 			isa = PBXGroup;
 			children = (
 				A10000000000000000000142 /* RollCall */,
+				A40000000000000000000142 /* RollCallTests */,
 				A10000000000000000000144 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -78,9 +118,12 @@
 				A10000000000000000000105 /* RootView.swift */,
 				A10000000000000000000110 /* BuildEnvironment.swift */,
 				A30000000000000000000142 /* DesignSystem */,
+				A10000000000000000000113 /* Info.plist */,
 				A10000000000000000000106 /* Assets.xcassets */,
 				A10000000000000000000108 /* LaunchScreen.storyboard */,
 				A10000000000000000000109 /* BuiltInAudio */,
+				A10000000000000000000111 /* RollCallDocumentIcon-44x58.png */,
+				A10000000000000000000112 /* RollCallDocumentIcon-320x320.png */,
 			);
 			path = RollCall;
 			sourceTree = "<group>";
@@ -89,6 +132,7 @@
 			isa = PBXGroup;
 			children = (
 				A10000000000000000000107 /* RollCall.app */,
+				A40000000000000000000108 /* RollCallTests.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -106,6 +150,29 @@
 				A30000000000000000000108 /* TeamBanner.swift */,
 			);
 			path = DesignSystem;
+			sourceTree = "<group>";
+		};
+		A40000000000000000000142 /* RollCallTests */ = {
+			isa = PBXGroup;
+			children = (
+				A40000000000000000000143 /* TestSupport */,
+				A40000000000000000000102 /* TeamLineupTests.swift */,
+				A40000000000000000000103 /* RosterCSVImportTests.swift */,
+				A40000000000000000000104 /* AppStatePersistenceTests.swift */,
+				A40000000000000000000105 /* PackageServiceTests.swift */,
+				A40000000000000000000106 /* ReadinessServiceTests.swift */,
+				A40000000000000000000107 /* BackupRestoreTests.swift */,
+				A40000000000000000000109 /* RootTabStartupTests.swift */,
+			);
+			path = RollCallTests;
+			sourceTree = "<group>";
+		};
+		A40000000000000000000143 /* TestSupport */ = {
+			isa = PBXGroup;
+			children = (
+				A40000000000000000000101 /* RollCallTestFixtures.swift */,
+			);
+			path = TestSupport;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -131,6 +198,25 @@
 			productReference = A10000000000000000000107 /* RollCall.app */;
 			productType = "com.apple.product-type.application";
 		};
+		A40000000000000000000211 /* RollCallTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = A40000000000000000000271 /* Build configuration list for PBXNativeTarget "RollCallTests" */;
+			buildPhases = (
+				A40000000000000000000223 /* Sources */,
+				A40000000000000000000221 /* Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				A40000000000000000000232 /* PBXTargetDependency */,
+			);
+			name = RollCallTests;
+			packageProductDependencies = (
+			);
+			productName = RollCallTests;
+			productReference = A40000000000000000000108 /* RollCallTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -143,6 +229,10 @@
 				TargetAttributes = {
 					A10000000000000000000211 = {
 						CreatedOnToolsVersion = 26.4.1;
+					};
+					A40000000000000000000211 = {
+						CreatedOnToolsVersion = 26.4.1;
+						TestTargetID = A10000000000000000000211;
 					};
 				};
 			};
@@ -163,6 +253,7 @@
 			projectRoot = "";
 			targets = (
 				A10000000000000000000211 /* RollCall */,
+				A40000000000000000000211 /* RollCallTests */,
 			);
 		};
 /* End PBXProject section */
@@ -175,6 +266,8 @@
 				A10000000000000000000006 /* Assets.xcassets in Resources */,
 				A10000000000000000000007 /* LaunchScreen.storyboard in Resources */,
 				A10000000000000000000008 /* BuiltInAudio in Resources */,
+				A10000000000000000000010 /* RollCallDocumentIcon-44x58.png in Resources */,
+				A10000000000000000000011 /* RollCallDocumentIcon-320x320.png in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -202,7 +295,30 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		A40000000000000000000223 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A40000000000000000000001 /* RollCallTestFixtures.swift in Sources */,
+				A40000000000000000000002 /* TeamLineupTests.swift in Sources */,
+				A40000000000000000000003 /* RosterCSVImportTests.swift in Sources */,
+				A40000000000000000000004 /* AppStatePersistenceTests.swift in Sources */,
+				A40000000000000000000005 /* PackageServiceTests.swift in Sources */,
+				A40000000000000000000006 /* ReadinessServiceTests.swift in Sources */,
+				A40000000000000000000007 /* BackupRestoreTests.swift in Sources */,
+				A40000000000000000000008 /* RootTabStartupTests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		A40000000000000000000232 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = A10000000000000000000211 /* RollCall */;
+			targetProxy = A40000000000000000000231 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
 		A10000000000000000000251 /* Debug */ = {
@@ -352,27 +468,13 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = YES;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 53;
+				CURRENT_PROJECT_VERSION = 56;
 				DEVELOPMENT_TEAM = 5Y9T5WZ4J3;
 				ENABLE_DEBUG_DYLIB = NO;
 				ENABLE_PREVIEWS = NO;
-				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_KEY_CFBundleDisplayName = "Roll Call";
-				INFOPLIST_KEY_CFBundleDocumentTypes = "<array><dict><key>CFBundleTypeName</key><string>Roll Call Package</string><key>CFBundleTypeRole</key><string>Editor</string><key>LSHandlerRank</key><string>Owner</string><key>LSItemContentTypes</key><array><string>com.jkfisher.rollcall.package</string></array></dict></array>";
-				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
-				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.sports";
-				INFOPLIST_KEY_LSSupportsOpeningDocumentsInPlace = YES;
-				INFOPLIST_KEY_NSAppleMusicUsageDescription = "Roll Call can search Apple Music songs, play full tracks when your subscription allows it, and fall back to preview clips when it does not.";
-				INFOPLIST_KEY_NSMediaLibraryUsageDescription = "Roll Call can search Apple Music songs, play full tracks when your subscription allows it, and fall back to preview clips when it does not.";
-				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Roll Call can record custom announcer intros for players.";
-				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "Roll Call can import roster photos.";
-				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
-				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
-				INFOPLIST_KEY_UILaunchScreen_Generation = NO;
-				INFOPLIST_KEY_UILaunchStoryboardName = LaunchScreen;
-				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = UIInterfaceOrientationPortrait;
-				INFOPLIST_KEY_UTExportedTypeDeclarations = "<array><dict><key>UTTypeIdentifier</key><string>com.jkfisher.rollcall.package</string><key>UTTypeDescription</key><string>Roll Call Package</string><key>UTTypeConformsTo</key><array><string>public.zip-archive</string></array><key>UTTypeTagSpecification</key><dict><key>public.filename-extension</key><array><string>rollcall</string></array></dict></dict></array>";
-				MARKETING_VERSION = 1.0.0;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = RollCall/Info.plist;
+				MARKETING_VERSION = 1.0.1;
 				PRODUCT_BUNDLE_IDENTIFIER = com.jkfisher.rollcall;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SUPPORTED_PLATFORMS = "iphonesimulator iphoneos";
@@ -388,27 +490,13 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = YES;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 53;
+				CURRENT_PROJECT_VERSION = 56;
 				DEVELOPMENT_TEAM = 5Y9T5WZ4J3;
 				ENABLE_DEBUG_DYLIB = NO;
 				ENABLE_PREVIEWS = NO;
-				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_KEY_CFBundleDisplayName = "Roll Call";
-				INFOPLIST_KEY_CFBundleDocumentTypes = "<array><dict><key>CFBundleTypeName</key><string>Roll Call Package</string><key>CFBundleTypeRole</key><string>Editor</string><key>LSHandlerRank</key><string>Owner</string><key>LSItemContentTypes</key><array><string>com.jkfisher.rollcall.package</string></array></dict></array>";
-				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
-				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.sports";
-				INFOPLIST_KEY_LSSupportsOpeningDocumentsInPlace = YES;
-				INFOPLIST_KEY_NSAppleMusicUsageDescription = "Roll Call can search Apple Music songs, play full tracks when your subscription allows it, and fall back to preview clips when it does not.";
-				INFOPLIST_KEY_NSMediaLibraryUsageDescription = "Roll Call can search Apple Music songs, play full tracks when your subscription allows it, and fall back to preview clips when it does not.";
-				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Roll Call can record custom announcer intros for players.";
-				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "Roll Call can import roster photos.";
-				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
-				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
-				INFOPLIST_KEY_UILaunchScreen_Generation = NO;
-				INFOPLIST_KEY_UILaunchStoryboardName = LaunchScreen;
-				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = UIInterfaceOrientationPortrait;
-				INFOPLIST_KEY_UTExportedTypeDeclarations = "<array><dict><key>UTTypeIdentifier</key><string>com.jkfisher.rollcall.package</string><key>UTTypeDescription</key><string>Roll Call Package</string><key>UTTypeConformsTo</key><array><string>public.zip-archive</string></array><key>UTTypeTagSpecification</key><dict><key>public.filename-extension</key><array><string>rollcall</string></array></dict></dict></array>";
-				MARKETING_VERSION = 1.0.0;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = RollCall/Info.plist;
+				MARKETING_VERSION = 1.0.1;
 				PRODUCT_BUNDLE_IDENTIFIER = com.jkfisher.rollcall;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SUPPORTED_PLATFORMS = "iphonesimulator iphoneos";
@@ -424,33 +512,92 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = YES;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 53;
+				CURRENT_PROJECT_VERSION = 56;
 				DEVELOPMENT_TEAM = 5Y9T5WZ4J3;
 				ENABLE_DEBUG_DYLIB = NO;
 				ENABLE_PREVIEWS = NO;
-				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_KEY_CFBundleDisplayName = "Roll Call";
-				INFOPLIST_KEY_CFBundleDocumentTypes = "<array><dict><key>CFBundleTypeName</key><string>Roll Call Package</string><key>CFBundleTypeRole</key><string>Editor</string><key>LSHandlerRank</key><string>Owner</string><key>LSItemContentTypes</key><array><string>com.jkfisher.rollcall.package</string></array></dict></array>";
-				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
-				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.sports";
-				INFOPLIST_KEY_LSSupportsOpeningDocumentsInPlace = YES;
-				INFOPLIST_KEY_NSAppleMusicUsageDescription = "Roll Call can search Apple Music songs, play full tracks when your subscription allows it, and fall back to preview clips when it does not.";
-				INFOPLIST_KEY_NSMediaLibraryUsageDescription = "Roll Call can search Apple Music songs, play full tracks when your subscription allows it, and fall back to preview clips when it does not.";
-				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Roll Call can record custom announcer intros for players.";
-				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "Roll Call can import roster photos.";
-				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
-				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
-				INFOPLIST_KEY_UILaunchScreen_Generation = NO;
-				INFOPLIST_KEY_UILaunchStoryboardName = LaunchScreen;
-				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = UIInterfaceOrientationPortrait;
-				INFOPLIST_KEY_UTExportedTypeDeclarations = "<array><dict><key>UTTypeIdentifier</key><string>com.jkfisher.rollcall.package</string><key>UTTypeDescription</key><string>Roll Call Package</string><key>UTTypeConformsTo</key><array><string>public.zip-archive</string></array><key>UTTypeTagSpecification</key><dict><key>public.filename-extension</key><array><string>rollcall</string></array></dict></dict></array>";
-				MARKETING_VERSION = 1.0.0;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = RollCall/Info.plist;
+				MARKETING_VERSION = 1.0.1;
 				PRODUCT_BUNDLE_IDENTIFIER = com.jkfisher.rollcall;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SUPPORTED_PLATFORMS = "iphonesimulator iphoneos";
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = INTERNAL;
 				SWIFT_VERSION = 6.0;
 				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Internal;
+		};
+		A40000000000000000000261 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 5Y9T5WZ4J3;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.jkfisher.rollcall.tests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SUPPORTED_PLATFORMS = "iphonesimulator iphoneos";
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = 1;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/RollCall.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/RollCall";
+			};
+			name = Debug;
+		};
+		A40000000000000000000262 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 5Y9T5WZ4J3;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.jkfisher.rollcall.tests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SUPPORTED_PLATFORMS = "iphonesimulator iphoneos";
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = 1;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/RollCall.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/RollCall";
+			};
+			name = Release;
+		};
+		A40000000000000000000263 /* Internal */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 5Y9T5WZ4J3;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.jkfisher.rollcall.tests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SUPPORTED_PLATFORMS = "iphonesimulator iphoneos";
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = INTERNAL;
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = 1;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/RollCall.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/RollCall";
 			};
 			name = Internal;
 		};
@@ -476,6 +623,16 @@
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
+		};
+		A40000000000000000000271 /* Build configuration list for PBXNativeTarget "RollCallTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				A40000000000000000000261 /* Debug */,
+				A40000000000000000000263 /* Internal */,
+				A40000000000000000000262 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
 		};
 /* End XCConfigurationList section */
 

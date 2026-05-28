@@ -19,7 +19,7 @@ Reviewed inputs:
 - `historical/ux/pre-redesign-baseline/VISUAL_REFERENCES.md`
 - `historical/ux/pre-redesign-baseline/KNOWN_BUGS_AND_TECH_DEBT.md`
 - `historical/ideas/roll_call_dev_notes.md`
-- `decisions/DECISIONS.md`
+- `docs/DECISIONS.md`
 - `docs/WHERE_WE_STAND.md`
 
 Important visual-documentation limitation:

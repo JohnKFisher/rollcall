@@ -4,13 +4,18 @@ import SwiftUI
 import UIKit
 import UniformTypeIdentifiers
 
-private enum RootTab: Hashable {
+enum RootTab: Hashable {
     case players
     case generalClips
     case gameDay
     case readiness
     case teams
     case settings
+
+    static func sensibleInitialTab(for team: Team?) -> RootTab {
+        guard let team, !team.players.isEmpty else { return .players }
+        return .gameDay
+    }
 }
 
 private enum PackageImportContext {
@@ -104,10 +109,14 @@ private extension View {
 }
 
 struct RootView: View {
+    private struct PlayerEditorRoute: Identifiable {
+        let id: UUID
+    }
+
     @Environment(\.colorScheme) private var deviceColorScheme
     @ObservedObject var appModel: AppModel
     @State private var newTeamName = ""
-    @State private var selectedPlayer: Player?
+    @State private var playerEditorRoute: PlayerEditorRoute?
     @State private var showExperimentalWarning = false
     @State private var packageImportPresented = false
     @State private var csvImportPresented = false
@@ -119,6 +128,7 @@ struct RootView: View {
     @State private var packageSharePresented = false
     @State private var packageImportContext: PackageImportContext = .settings
     @State private var hasEnteredOnboardingFlow = false
+    @State private var hasResolvedInitialTab = false
 
     private var errorBinding: Binding<Bool> {
         Binding(get: { appModel.lastError != nil }, set: { newValue in if !newValue { appModel.lastError = nil } })
@@ -139,11 +149,35 @@ struct RootView: View {
         .liveSide
     }
 
+    private func presentPlayerEditor(for player: Player) {
+        playerEditorRoute = PlayerEditorRoute(id: player.id)
+    }
+
+    private func playerForEditorRoute(_ route: PlayerEditorRoute) -> Player? {
+        appModel.selectedTeam?.players.first(where: { $0.id == route.id })
+    }
+
+    private func resolveInitialTabIfNeeded() {
+        guard !hasResolvedInitialTab else { return }
+        hasResolvedInitialTab = true
+        selectedTab = RootTab.sensibleInitialTab(for: appModel.selectedTeam)
+    }
+
+    @ViewBuilder
+    private func playerEditorSheet(for route: PlayerEditorRoute) -> some View {
+        if let player = playerForEditorRoute(route) {
+            PlayerEditorSheet(appModel: appModel, player: player)
+        } else {
+            ContentUnavailableView("Player Not Found", systemImage: "person.crop.circle.badge.exclamationmark", description: Text("The selected player is no longer on the current team."))
+        }
+    }
+
     var body: some View {
         rootContent
             .tint(.orange)
             .task {
                 await appModel.finishLaunchingIfNeeded()
+                resolveInitialTabIfNeeded()
             }
             .onOpenURL { url in
                 appModel.handleIncomingPackage(url)
@@ -152,6 +186,10 @@ struct RootView: View {
                 if !shouldShowOnboarding {
                     hasEnteredOnboardingFlow = false
                 }
+            }
+            .onChange(of: appModel.completedPackageImportTeamID) { _, importedTeamID in
+                guard importedTeamID != nil else { return }
+                selectedTab = .teams
             }
             .overlay(alignment: .top) {
                 if appModel.isBusy {
@@ -198,32 +236,31 @@ struct RootView: View {
                     Text("Remove the selected team from this device. Existing exports and backups stay untouched.")
                 }
             }
+            .sheet(item: Binding(get: { appModel.pendingPackageImport }, set: { appModel.pendingPackageImport = $0 })) { pending in
+                PackageImportConfirmationSheet(
+                    pending: pending,
+                    onImport: {
+                        Task { await appModel.confirmPendingPackageImport() }
+                    },
+                    onCancel: {
+                        appModel.cancelPendingPackageImport()
+                    }
+                )
+                .interactiveDismissDisabled()
+            }
             .sheet(item: Binding(get: { appModel.pendingRosterImport }, set: { appModel.pendingRosterImport = $0 })) { pending in
-                NavigationStack {
-                    List {
-                        Section("Importing \(pending.rows.count) players from \(pending.sourceName)") {
-                            ForEach(pending.rows) { player in
-                                HStack {
-                                    Text(player.displayName)
-                                    Spacer()
-                                    if !player.uniformNumber.isEmpty {
-                                        Text("#\(player.uniformNumber)")
-                                            .foregroundStyle(.secondary)
-                                    }
-                                }
-                            }
-                        }
+                let duplicateCount = pending.duplicateCount(comparedTo: appModel.selectedTeam?.players ?? [])
+                RosterImportPreviewSheet(
+                    pending: pending,
+                    duplicateCount: duplicateCount,
+                    duplicateMessage: PendingRosterImport.duplicateMessage(count: duplicateCount),
+                    onCancel: {
+                        appModel.discardPendingRosterImport()
+                    },
+                    onImport: {
+                        Task { await appModel.applyPendingRosterImport() }
                     }
-                    .navigationTitle("Roster Preview")
-                    .toolbar {
-                        ToolbarItem(placement: .topBarLeading) {
-                            Button("Cancel") { appModel.discardPendingRosterImport() }
-                        }
-                        ToolbarItem(placement: .topBarTrailing) {
-                            Button("Import") { appModel.applyPendingRosterImport() }
-                        }
-                    }
-                }
+                )
             }
             .sheet(isPresented: $packageImportPresented) {
                 RollCallPackageImportSheet(
@@ -233,9 +270,9 @@ struct RootView: View {
                         Task {
                             switch context {
                             case .settings:
-                                await appModel.importPackage(from: url)
+                                await appModel.preparePackageImportConfirmation(from: url, opensOnboardingHandoff: false)
                             case .onboarding:
-                                await appModel.importPackageFromOnboarding(from: url)
+                                await appModel.preparePackageImportConfirmation(from: url, opensOnboardingHandoff: true)
                             }
                         }
                     },
@@ -243,6 +280,9 @@ struct RootView: View {
                         packageImportPresented = false
                     }
                 )
+            }
+            .sheet(item: $playerEditorRoute) { route in
+                playerEditorSheet(for: route)
             }
             .fileImporter(isPresented: $csvImportPresented, allowedContentTypes: [.commaSeparatedText, .text], allowsMultipleSelection: false) { result in
                 if case .success(let urls) = result, let url = urls.first {
@@ -328,7 +368,7 @@ struct RootView: View {
                             let isCustomIntroMissing = player.customAnnouncerRelativePath != nil && !hasCustomIntro
                             let isPresent = player.isPresent
                             Button {
-                                selectedPlayer = player
+                                presentPlayerEditor(for: player)
                             } label: {
                                 PlayerRosterRow(
                                     player: player,
@@ -362,9 +402,6 @@ struct RootView: View {
             }
             .scrollDismissesKeyboard(.interactively)
             .dismissesKeyboardOnTap()
-            .sheet(item: $selectedPlayer) { player in
-                PlayerEditorSheet(appModel: appModel, player: player)
-            }
         }
     }
 
@@ -680,20 +717,20 @@ struct RootView: View {
                         ReadinessPlayerAudioCard(
                             checks: playerAudioReadinessChecks(from: readiness.checks),
                             playerForCheck: playerForReadinessCheck,
-                            onEditPlayer: { selectedPlayer = $0 }
+                            onEditPlayer: presentPlayerEditor
                         )
 
                         ReadinessEnhancementsCard(
                             checks: announcementReadinessChecks(from: readiness.checks),
                             playerAudioChecks: playerAudioReadinessChecks(from: readiness.checks),
                             playerForCheck: playerForReadinessCheck,
-                            onEditPlayer: { selectedPlayer = $0 }
+                            onEditPlayer: presentPlayerEditor
                         )
 
                         ReadinessOptionalUpgradesCard(
                             checks: optionalUpgradeReadinessChecks(from: readiness.checks),
                             playerForCheck: playerForReadinessCheck,
-                            onEditPlayer: { selectedPlayer = $0 }
+                            onEditPlayer: presentPlayerEditor
                         )
 
                         ReadinessGameDayChecksCard(
@@ -717,9 +754,6 @@ struct RootView: View {
             .toolbar(.hidden, for: .navigationBar)
             .safeAreaInset(edge: .top, spacing: 0) {
                 rootTeamBannerHeader()
-            }
-            .sheet(item: $selectedPlayer) { player in
-                PlayerEditorSheet(appModel: appModel, player: player)
             }
         }
     }
@@ -760,6 +794,9 @@ struct RootView: View {
                                         .frame(maxWidth: .infinity)
                                 }
                                 .buttonStyle(RollCallButtonStyle(family: .secondary, surface: .standard))
+
+                                Text("Roster CSV format: name, number. Use a header row or simple two-column rows; player number is optional.")
+                                    .rollCallText(.helperText)
                             }
                         }
                     }
@@ -894,7 +931,7 @@ struct RootView: View {
                 VStack(alignment: .leading, spacing: RollCallSpacingTier.large.value) {
                     SettingsSectionGroup(
                         title: "Team Package",
-                        helperText: "Share the selected team or bring in a .rollcall package from another device."
+                        helperText: "Share the selected team or add a new team from a .rollcall package."
                     ) {
                         VStack(spacing: RollCallSpacingTier.standard.value) {
                             Button {
@@ -927,8 +964,8 @@ struct RootView: View {
                                 packageImportPresented = true
                             } label: {
                                 SettingsRowLabel(
-                                    title: "Import .rollcall Package",
-                                    detail: "Import a shared team package.",
+                                    title: "Import Team from .rollcall Package",
+                                    detail: "Adds the shared team as a new team. Existing teams stay unchanged.",
                                     systemImage: "tray.and.arrow.down.fill"
                                 )
                             }
@@ -1034,13 +1071,13 @@ struct RootView: View {
 
                             Divider()
 
-                            Text("Copyright John Kenneth Fisher")
+                            Text("© 2026 Sidelark Labs; John Kenneth Fisher")
                                 .rollCallText(.helperText)
 
-                            Link(destination: URL(string: "https://github.com/JohnKFisher/roll-call")!) {
+                            Link(destination: URL(string: "https://sidelarklabs.com/rollcall/")!) {
                                 SettingsRowLabel(
-                                    title: "GitHub: JohnKFisher/roll-call",
-                                    detail: "Open the public project page.",
+                                    title: "Roll Call Website",
+                                    detail: "sidelarklabs.com/rollcall",
                                     systemImage: "link"
                                 )
                             }
@@ -1400,7 +1437,7 @@ private struct OnboardingRootView: View {
                 StatusChip(text: "Setup Guide", role: .neutral, systemImage: "sparkles", emphasis: .subdued)
                 Text("What would you like to set up?")
                     .rollCallText(.screenTitle)
-                Text("Use the guide again for a new team or import a .rollcall file from another user.")
+                Text("Use the guide again for a new team or add a team from another user's .rollcall file.")
                     .rollCallText(.body)
 
                 Button {
@@ -1414,7 +1451,7 @@ private struct OnboardingRootView: View {
                 Button {
                     onImportPackage()
                 } label: {
-                    Label("Import a .rollcall File", systemImage: "tray.and.arrow.down.fill")
+                    Label("Add Team from .rollcall File", systemImage: "tray.and.arrow.down.fill")
                         .frame(maxWidth: .infinity)
                 }
                 .rollCallButtonStyle(.secondary)
@@ -1459,7 +1496,7 @@ private struct OnboardingRootView: View {
                 Button {
                     onImportPackage()
                 } label: {
-                    Label("Import a .rollcall File from Another User", systemImage: "tray.and.arrow.down.fill")
+                    Label("Add Team from Another User's .rollcall File", systemImage: "tray.and.arrow.down.fill")
                         .frame(maxWidth: .infinity)
                 }
                 .rollCallButtonStyle(.secondary)
@@ -2867,13 +2904,13 @@ private struct AttributionsView: View {
             VStack(alignment: .leading, spacing: RollCallSpacingTier.large.value) {
                 SettingsSectionGroup(title: "Roll Call") {
                     VStack(alignment: .leading, spacing: RollCallSpacingTier.standard.value) {
-                        Text("Copyright 2026 John Kenneth Fisher")
+                        Text("© 2026 Sidelark Labs; John Kenneth Fisher")
                             .rollCallText(.body)
 
-                        Link(destination: URL(string: "https://github.com/JohnKFisher/roll-call")!) {
+                        Link(destination: URL(string: "https://github.com/JohnKFisher/rollcall")!) {
                             SettingsRowLabel(
                                 title: "Public GitHub Project",
-                                detail: "github.com/JohnKFisher/roll-call",
+                                detail: "github.com/JohnKFisher/rollcall",
                                 systemImage: "link"
                             )
                         }
@@ -2888,7 +2925,7 @@ private struct AttributionsView: View {
                     VStack(alignment: .leading, spacing: RollCallSpacingTier.standard.value) {
                         SettingsRowLabel(
                             title: "Mixkit Sound Effects",
-                            detail: "Licensed under the Mixkit Sound Effects Free License. The reviewed Mixkit pages say attribution is not required, but Roll Call credits Mixkit here.",
+                            detail: "Licensed under the Mixkit Sound Effects Free License.",
                             systemImage: "waveform"
                         )
 
@@ -3006,6 +3043,150 @@ private struct SettingsIcon: View {
             .background(Color.rollCall(role).opacity(0.13))
             .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
             .accessibilityHidden(true)
+    }
+}
+
+private struct PackageImportConfirmationSheet: View {
+    let pending: PendingPackageImport
+    let onImport: () -> Void
+    let onCancel: () -> Void
+
+    private var teamName: String {
+        let trimmed = pending.team.name.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? "Unnamed Team" : trimmed
+    }
+
+    private var formattedExportDate: String {
+        pending.manifest.exportedAt.formatted(date: .abbreviated, time: .shortened)
+    }
+
+    var body: some View {
+        NavigationStack {
+            List {
+                Section {
+                    VStack(alignment: .leading, spacing: RollCallSpacingTier.tight.value) {
+                        Label("You are importing team \(teamName).", systemImage: "shippingbox.fill")
+                            .font(.headline)
+                            .foregroundStyle(Color.rollCall(.accent))
+                            .fixedSize(horizontal: false, vertical: true)
+
+                        Text("Roll Call will add this as a new team and save a backup first. Existing teams stay unchanged.")
+                            .rollCallText(.body)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    .padding(.vertical, 4)
+                }
+
+                Section("Package") {
+                    PackageImportStatRow(title: "Source", value: pending.manifest.deviceLabel)
+                    PackageImportStatRow(title: "Exported", value: formattedExportDate)
+                    PackageImportStatRow(title: "Version", value: pending.manifest.appVersion)
+                }
+
+                Section("Team Contents") {
+                    PackageImportStatRow(title: "Players", value: "\(pending.playerCount)")
+                    PackageImportStatRow(title: "Players with Audio", value: "\(pending.playersWithAudioCount)")
+                    PackageImportStatRow(title: "Apple Music Cues", value: "\(pending.appleMusicCueCount)")
+                    PackageImportStatRow(title: "Local Audio Cues", value: "\(pending.localAudioCueCount)")
+                    PackageImportStatRow(title: "Built-In Cue Fallbacks", value: "\(pending.builtInCueCount)")
+                    PackageImportStatRow(title: "Player Photos", value: "\(pending.photoCount)")
+                    PackageImportStatRow(title: "Announcement Cues", value: "\(pending.customAnnouncementCount)")
+                    PackageImportStatRow(title: "General Clips", value: "\(pending.team.builtInClips.count)")
+                }
+            }
+            .navigationTitle("Import Team?")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Don’t Import", role: .cancel) {
+                        onCancel()
+                    }
+                }
+
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Import") {
+                        onImport()
+                    }
+                    .fontWeight(.semibold)
+                }
+            }
+        }
+    }
+}
+
+private struct PackageImportStatRow: View {
+    let title: String
+    let value: String
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 12) {
+            Text(title)
+                .foregroundStyle(.secondary)
+            Spacer(minLength: 12)
+            Text(value)
+                .fontWeight(.semibold)
+                .multilineTextAlignment(.trailing)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .rollCallText(.body)
+    }
+}
+
+private struct RosterImportPreviewSheet: View {
+    let pending: PendingRosterImport
+    let duplicateCount: Int
+    let duplicateMessage: String
+    let onCancel: () -> Void
+    let onImport: () -> Void
+
+    private var sectionTitle: String {
+        "Importing \(pending.rows.count) players from \(pending.sourceName)"
+    }
+
+    var body: some View {
+        NavigationStack {
+            List {
+                Section {
+                    Text("This will add \(pending.rows.count) players to the selected team. Roll Call will save a backup first.")
+                        .rollCallText(.body)
+                    Text("CSV format: use a header row with name and number, or simple two-column rows. Player number is optional.")
+                        .rollCallText(.helperText)
+                    if duplicateCount > 0 {
+                        Label(duplicateMessage, systemImage: "exclamationmark.triangle.fill")
+                            .rollCallText(.helperText)
+                            .foregroundStyle(Color.rollCall(.warning))
+                    }
+                }
+
+                Section(sectionTitle) {
+                    ForEach(pending.rows) { player in
+                        HStack {
+                            Text(player.displayName)
+                            Spacer()
+                            if !player.uniformNumber.isEmpty {
+                                Text("#\(player.uniformNumber)")
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                    }
+                }
+            }
+            .navigationTitle("Roster Preview")
+            .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button("Cancel") {
+                        onCancel()
+                    }
+                }
+
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Import") {
+                        onImport()
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -3803,6 +3984,7 @@ private struct GameDayPlayerGrid: View {
                 .buttonStyle(.plain)
                 .animation(.easeInOut(duration: 0.16), value: isActive)
                 .accessibilityElement(children: .ignore)
+                .accessibilityAddTraits(.isButton)
                 .accessibilityLabel(tileAccessibilityLabel(for: player, tileState: tileState))
                 .accessibilityValue(tileAccessibilityValue(for: player, isActive: isActive))
                 .accessibilityHint(tileAccessibilityHint(for: player, isActive: isActive))
@@ -4002,6 +4184,7 @@ private struct LineupEditorSheet: View {
 
 private struct RecoveryCenterView: View {
     @ObservedObject var appModel: AppModel
+    @State private var backupPendingRestore: SnapshotRecord?
 
     var body: some View {
         List {
@@ -4028,7 +4211,7 @@ private struct RecoveryCenterView: View {
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
                             Button("Restore Backup") {
-                                Task { await appModel.restoreBackup(snapshot) }
+                                backupPendingRestore = snapshot
                             }
                             .buttonStyle(.bordered)
                         }
@@ -4038,6 +4221,16 @@ private struct RecoveryCenterView: View {
             }
         }
         .navigationTitle("Recovery & Backups")
+        .alert(item: $backupPendingRestore) { snapshot in
+            Alert(
+                title: Text("Restore Backup?"),
+                message: Text("This will replace your current teams, players, and clips with the selected backup while keeping your current settings. Roll Call will save a safety backup first."),
+                primaryButton: .cancel(),
+                secondaryButton: .destructive(Text("Restore Backup")) {
+                    Task { await appModel.restoreBackup(snapshot) }
+                }
+            )
+        }
     }
 }
 
@@ -4184,7 +4377,7 @@ private struct DeveloperToolsView: View {
                                 Label("Share Latest Support Bundle", systemImage: "square.and.arrow.up")
                             }
                         }
-                        Text("Support bundles include app version, schema version, feature flags, readiness results, and playback diagnostics. Imported media and other user content are excluded.")
+                        Text("Support bundles include app version, schema version, feature flags, readiness results, playback diagnostics, and redacted team counts. Team names, player names, IDs, media, and other user-created content are excluded.")
                             .font(.footnote)
                             .foregroundStyle(.secondary)
                     }
@@ -4453,6 +4646,7 @@ private struct PlayerEditorSheet: View {
     @State private var showAdvancedTrim = false
     @State private var liveScrubTask: Task<Void, Never>?
     @State private var pendingClearAction: PendingClearAction?
+    @State private var showDiscardChangesConfirmation = false
     @State private var isStartTrimEditingEnabled = false
     @FocusState private var focusedField: Field?
 
@@ -4563,6 +4757,9 @@ private struct PlayerEditorSheet: View {
                         }
                         .font(.subheadline.weight(.semibold))
 
+                        Text("Song choices and imported audio save right away. Use Save for name, number, photo, and trim edits.")
+                            .rollCallText(.helperText)
+
                         if player.cue != nil {
                             Button {
                                 pendingClearAction = .song
@@ -4645,6 +4842,9 @@ private struct PlayerEditorSheet: View {
                             .rollCallButtonStyle(.quiet)
                             .foregroundStyle(Color.rollCall(.destructive))
                         }
+
+                        Text("Recording or clearing an Announcement Cue saves right away.")
+                            .rollCallText(.helperText)
                     }
                     .rollCallCard(.utility)
                 } header: {
@@ -4693,11 +4893,10 @@ private struct PlayerEditorSheet: View {
             .scrollDismissesKeyboard(.interactively)
             .dismissesKeyboardOnTap()
             .toolbar {
-                ToolbarItem(placement: .topBarLeading) { Button("Close") { dismiss() } }
+                ToolbarItem(placement: .topBarLeading) { Button("Close") { closeEditor() } }
                 ToolbarItem(placement: .topBarTrailing) {
                     Button("Save") {
-                        appModel.updatePlayer(player)
-                        dismiss()
+                        saveAndDismiss()
                     }
                 }
             }
@@ -4730,6 +4929,14 @@ private struct PlayerEditorSheet: View {
                 }
             } message: { action in
                 Text(action.confirmationMessage)
+            }
+            .alert("Discard Changes?", isPresented: $showDiscardChangesConfirmation) {
+                Button("Keep Editing", role: .cancel) { }
+                Button("Discard Changes", role: .destructive) {
+                    dismiss()
+                }
+            } message: {
+                Text("Closing now will lose unsaved name, number, photo, and trim edits. Song, imported audio, and Announcement Cue changes are already saved.")
             }
             .alert("Use Apple Music?", isPresented: $showAppleMusicAccessPrimer) {
                 Button("Not Now", role: .cancel) { }
@@ -4979,6 +5186,28 @@ private struct PlayerEditorSheet: View {
         }
         pendingClearAction = nil
         refreshPlayerFromModel()
+    }
+
+    private var savedPlayer: Player? {
+        appModel.selectedTeam?.players.first(where: { $0.id == player.id })
+    }
+
+    private var hasUnsavedChanges: Bool {
+        savedPlayer != player
+    }
+
+    private func closeEditor() {
+        focusedField = nil
+        if hasUnsavedChanges {
+            showDiscardChangesConfirmation = true
+        } else {
+            dismiss()
+        }
+    }
+
+    private func saveAndDismiss() {
+        appModel.updatePlayer(player)
+        dismiss()
     }
 
     private func secondsText(_ value: Double) -> String {

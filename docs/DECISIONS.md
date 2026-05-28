@@ -2,6 +2,16 @@
 
 Use this file as a concise decision log for project-specific architectural, behavioral, tooling, and scope decisions.
 
+## 2026-05-28
+
+- Approved: after stored state loads, Roll Call should open populated teams on `Game Day`, empty selected teams on `Players`, and preserve the no-team onboarding path.
+  Rationale: a team with players is most likely ready for live use, while an empty team needs the roster-building surface first.
+  Status: approved
+
+- Approved: Roll Call uses a native hosted XCTest target named `RollCallTests` for fast core-logic regression coverage before adding UI tests.
+  Rationale: the highest-risk seams are package import/export, backups/restores, CSV import validation, persistence, lineup ordering, and readiness logic; those are best protected by small unit tests that avoid real audio playback, network state, device volume, and simulator-specific UI timing.
+  Status: approved
+
 ## 2026-05-23
 
 - Approved: Apple Music authorization must be requested only from explicit Apple Music actions, not from passive first-launch capability refresh.

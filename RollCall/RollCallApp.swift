@@ -3,7 +3,8 @@ import UniformTypeIdentifiers
 
 extension UTType {
     static var rollCallPackage: UTType {
-        UTType(exportedAs: "com.jkfisher.rollcall.package", conformingTo: .zip)
+        UTType("com.jkfisher.rollcall.package")
+            ?? UTType(exportedAs: "com.jkfisher.rollcall.package", conformingTo: .data)
     }
 }
 
