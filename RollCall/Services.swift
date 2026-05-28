@@ -11,6 +11,8 @@ enum AppError: LocalizedError {
     case missingPreview
     case featureDisabled
     case invalidImport
+    case unsupportedImportVersion
+    case unsupportedSavedStateVersion
     case invalidSearchTerm
     case musicSearchUnavailable
     case musicAuthorizationRequired
@@ -38,6 +40,10 @@ enum AppError: LocalizedError {
             return "Experimental local copies are disabled in Settings."
         case .invalidImport:
             return "That file could not be imported."
+        case .unsupportedImportVersion:
+            return "That package was created by a newer Roll Call version. Update Roll Call, then try importing it again."
+        case .unsupportedSavedStateVersion:
+            return "Saved Roll Call data was created by a newer app version. Update Roll Call to recover that data."
         case .invalidSearchTerm:
             return "Enter a song title, artist, or both before searching."
         case .musicSearchUnavailable:
@@ -141,8 +147,8 @@ struct AudioAssetService: Sendable {
         try? FileManager.default.removeItem(at: url)
     }
 
-    func storeCustomAnnouncerRecording(from sourceURL: URL, playerID: UUID, displayName: String) throws -> LocalAudioSource {
-        let relativePath = "custom-intro-\(playerID.uuidString.lowercased()).caf"
+    func storeCustomAnnouncerRecording(from sourceURL: URL, playerID: UUID, displayName: String, relativePath preferredRelativePath: String? = nil) throws -> LocalAudioSource {
+        let relativePath = preferredRelativePath ?? "custom-intro-\(playerID.uuidString.lowercased()).caf"
         let destination = try AppPaths.assetsDirectory().appendingPathComponent(relativePath)
         let recordedData = try Data(contentsOf: sourceURL)
         guard !recordedData.isEmpty else {
@@ -157,6 +163,10 @@ struct AudioAssetService: Sendable {
             throw AppError.customIntroSaveFailed("flat saved asset was not visible at \(relativePath)")
         }
         return try localAudioSource(for: destination, displayName: displayName, hiddenOriginNote: nil, relativePath: relativePath)
+    }
+
+    func freshCustomAnnouncerRelativePath() -> String {
+        "\(UUID().uuidString).caf"
     }
 
     func storeCopiedAsset(from sourceURL: URL, suggestedExtension: String?, displayName: String, hiddenOriginNote: HiddenOriginNote?) throws -> LocalAudioSource {
@@ -185,6 +195,10 @@ struct AudioAssetService: Sendable {
     func assetExists(relativePath: String) -> Bool {
         guard let url = try? assetURL(relativePath: relativePath) else { return false }
         return FileManager.default.fileExists(atPath: url.path)
+    }
+
+    func builtInClipExists(source: BuiltInClipSource) -> Bool {
+        assetExists(relativePath: builtInClipRelativePath(for: source))
     }
 
     private func localAudioSource(for url: URL, displayName: String, hiddenOriginNote: HiddenOriginNote?, relativePath: String? = nil) throws -> LocalAudioSource {
@@ -507,7 +521,6 @@ struct PlaybackSupportDiagnostics: Codable, Equatable {
 
 private struct SupportBundlePayload: Codable {
     struct TeamSummary: Codable {
-        var id: UUID
         var name: String
         var playerCount: Int
         var presentPlayerCount: Int
@@ -517,7 +530,7 @@ private struct SupportBundlePayload: Codable {
     var generatedAt: Date
     var appVersion: String
     var schemaVersion: Int
-    var selectedTeamID: UUID?
+    var selectedTeamIndex: Int?
     var settings: AppSettings
     var experimental: ExperimentalSettings
     var readiness: ReadinessStatus?
@@ -536,7 +549,8 @@ private protocol AppleMusicCatalogPlaybackControlling: AnyObject {
         setsInitialVolumeToMax: Bool
     ) async throws
     func setVolume(_ volume: Float)
-    func stop()
+    func restoreVolume()
+    func stop(restoresVolume: Bool)
 }
 
 @MainActor
@@ -597,10 +611,15 @@ private final class MediaPlayerCatalogPlaybackController: AppleMusicCatalogPlayb
         setPlayerVolume(fadeAnchorVolume * clamped)
     }
 
-    func stop() {
+    func restoreVolume() {
+        guard volumeAutomationEnabledForCurrentCue else { return }
+        setPlayerVolume(fadeAnchorVolume)
+    }
+
+    func stop(restoresVolume: Bool = true) {
         player.stop()
-        if volumeAutomationEnabledForCurrentCue {
-            setPlayerVolume(fadeAnchorVolume)
+        if restoresVolume {
+            restoreVolume()
         }
     }
 
@@ -634,6 +653,7 @@ final class CuePlaybackEngine: NSObject, ObservableObject {
     private var previewPlayer: AVAudioPlayer?
     private var lastStartDate: Date?
     private var lastStartedCueID: UUID?
+    private var volumeAutomationEnabledForCurrentCue = false
 
     init(
         audioAssetService: AudioAssetService,
@@ -661,6 +681,7 @@ final class CuePlaybackEngine: NSObject, ObservableObject {
         }
         stop()
         activeCueID = cue.id
+        volumeAutomationEnabledForCurrentCue = fadeOutVolumeAutomationEnabled
         lastStartDate = Date()
         lastStartedCueID = cue.id
         try await playCueSequence(
@@ -687,6 +708,7 @@ final class CuePlaybackEngine: NSObject, ObservableObject {
         }
         stop()
         self.activeCueID = activeCueID
+        volumeAutomationEnabledForCurrentCue = fadeOutVolumeAutomationEnabled
         lastStartDate = Date()
         lastStartedCueID = activeCueID
 
@@ -779,15 +801,25 @@ final class CuePlaybackEngine: NSObject, ObservableObject {
         stopTask?.cancel()
         stopTask = nil
         announcerPlayer?.stop()
+        if volumeAutomationEnabledForCurrentCue {
+            announcerPlayer?.volume = 1
+        }
         announcerPlayer = nil
         audioPlayer?.stop()
+        if volumeAutomationEnabledForCurrentCue {
+            audioPlayer?.volume = 1
+        }
         audioPlayer = nil
         remotePlayer?.pause()
+        if volumeAutomationEnabledForCurrentCue {
+            remotePlayer?.volume = 1
+        }
         remotePlayer = nil
-        catalogPlaybackController.stop()
+        catalogPlaybackController.stop(restoresVolume: true)
         previewPlayer?.stop()
         previewPlayer = nil
         activeCueID = nil
+        volumeAutomationEnabledForCurrentCue = false
     }
 
     private func playCueSequence(
@@ -1094,7 +1126,14 @@ final class CuePlaybackEngine: NSObject, ObservableObject {
             catalogPlaybackController.setVolume(Float(step) / 8)
             try? await Task.sleep(for: .seconds(duration / 8))
         }
-        stop()
+        catalogPlaybackController.setVolume(0)
+        catalogPlaybackController.stop(restoresVolume: false)
+        activeCueID = nil
+        volumeAutomationEnabledForCurrentCue = false
+        try? await Task.sleep(for: .seconds(0.25))
+        guard !Task.isCancelled else { return }
+        catalogPlaybackController.restoreVolume()
+        stopTask = nil
     }
 }
 
@@ -1115,12 +1154,18 @@ final class ReadinessService {
     private let monitor = NWPathMonitor()
     private let queue = DispatchQueue(label: "RollCall.Readiness")
     private var pathStatus: NWPath.Status = .requiresConnection
+    var onPathStatusChange: (() -> Void)?
 
     init(audioAssetService: AudioAssetService) {
         self.audioAssetService = audioAssetService
         monitor.pathUpdateHandler = { [weak self] path in
             Task { @MainActor [weak self] in
-                self?.pathStatus = path.status
+                guard let self else { return }
+                let previousStatus = self.pathStatus
+                self.pathStatus = path.status
+                if previousStatus != path.status {
+                    self.onPathStatusChange?()
+                }
             }
         }
         monitor.start(queue: queue)
@@ -1297,11 +1342,29 @@ struct PackageService: Sendable {
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601
         var manifest = try decoder.decode(TeamPackageManifest.self, from: Data(contentsOf: manifestURL))
+        guard manifest.schemaVersion <= AppState.currentSchemaVersion else { throw AppError.unsupportedImportVersion }
 
         if try isDirectory(packageRootURL) {
             let packageAssetsURL = packageRootURL.appendingPathComponent("Assets", isDirectory: true)
             manifest.team = try importAssets(for: manifest.team, from: packageAssetsURL, audioAssetService: audioAssetService)
         }
+        return manifest
+    }
+
+    func preview(packageURL: URL) throws -> TeamPackageManifest {
+        let extractedDirectory = try extractedDirectoryIfNeeded(for: packageURL)
+        defer {
+            if let extractedDirectory {
+                try? FileManager.default.removeItem(at: extractedDirectory)
+            }
+        }
+
+        let packageRootURL = extractedDirectory ?? packageURL
+        let manifestURL = try manifestURL(for: packageRootURL)
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        let manifest = try decoder.decode(TeamPackageManifest.self, from: Data(contentsOf: manifestURL))
+        guard manifest.schemaVersion <= AppState.currentSchemaVersion else { throw AppError.unsupportedImportVersion }
         return manifest
     }
 
@@ -1351,20 +1414,22 @@ struct PackageService: Sendable {
         selectedTeam: Team?,
         diagnostics: PlaybackSupportDiagnostics
     ) throws -> URL {
-        let teamSummaries = state.teams.map { team in
+        let teamSummaries = state.teams.enumerated().map { index, team in
             SupportBundlePayload.TeamSummary(
-                id: team.id,
-                name: team.name,
+                name: "Team \(index + 1)",
                 playerCount: team.players.count,
                 presentPlayerCount: team.presentPlayersInBattingOrder.count,
                 builtInClipCount: team.builtInClips.count
             )
         }
+        let selectedTeamIndex = selectedTeam.flatMap { selectedTeam in
+            state.teams.firstIndex(where: { $0.id == selectedTeam.id })
+        }
         let payload = SupportBundlePayload(
             generatedAt: .now,
             appVersion: state.appVersion,
             schemaVersion: state.schemaVersion,
-            selectedTeamID: selectedTeam?.id,
+            selectedTeamIndex: selectedTeamIndex,
             settings: state.settings,
             experimental: state.experimental,
             readiness: state.lastReadiness,
@@ -1476,8 +1541,7 @@ struct PackageService: Sendable {
     }
 
     private func importLocalAudio(_ source: LocalAudioSource, from packageAssetsDirectory: URL, audioAssetService: AudioAssetService) throws -> LocalAudioSource {
-        let sourceURL = packageAssetsDirectory.appendingPathComponent(source.relativePath)
-        guard FileManager.default.fileExists(atPath: sourceURL.path) else { return source }
+        guard let sourceURL = try packageAssetURLIfPresent(relativePath: source.relativePath, from: packageAssetsDirectory) else { throw AppError.invalidImport }
         var imported = try audioAssetService.storeCopiedAsset(
             from: sourceURL,
             suggestedExtension: sourceURL.pathExtension,
@@ -1491,8 +1555,7 @@ struct PackageService: Sendable {
 
     private func importGeneratedAudioIfPresent(relativePath: String?, from packageAssetsDirectory: URL, audioAssetService: AudioAssetService) throws -> String? {
         guard let relativePath else { return nil }
-        let sourceURL = packageAssetsDirectory.appendingPathComponent(relativePath)
-        guard FileManager.default.fileExists(atPath: sourceURL.path) else { return nil }
+        guard let sourceURL = try packageAssetURLIfPresent(relativePath: relativePath, from: packageAssetsDirectory) else { return nil }
         let imported = try audioAssetService.storeCopiedAsset(
             from: sourceURL,
             suggestedExtension: sourceURL.pathExtension,
@@ -1503,8 +1566,7 @@ struct PackageService: Sendable {
     }
 
     private func importPhotoIfPresent(relativePath: String, from packageAssetsDirectory: URL) throws -> String? {
-        let sourceURL = packageAssetsDirectory.appendingPathComponent(relativePath)
-        guard FileManager.default.fileExists(atPath: sourceURL.path) else { return nil }
+        guard let sourceURL = try packageAssetURLIfPresent(relativePath: relativePath, from: packageAssetsDirectory) else { return nil }
         let ext = sourceURL.pathExtension.isEmpty ? "jpg" : sourceURL.pathExtension
         let destinationURL = try AppPaths.assetURL(relativePath: "\(UUID().uuidString).\(ext)")
         if FileManager.default.fileExists(atPath: destinationURL.path) {
@@ -1512,6 +1574,32 @@ struct PackageService: Sendable {
         }
         try FileManager.default.copyItem(at: sourceURL, to: destinationURL)
         return destinationURL.lastPathComponent
+    }
+
+    private func packageAssetURLIfPresent(relativePath: String, from packageAssetsDirectory: URL) throws -> URL? {
+        let fileName = try validatedPackageAssetFileName(relativePath)
+        let assetURL = packageAssetsDirectory.appendingPathComponent(fileName, isDirectory: false)
+        let packageAssetsPath = packageAssetsDirectory.standardizedFileURL.path
+        let assetPath = assetURL.standardizedFileURL.path
+        guard assetPath.hasPrefix(packageAssetsPath + "/") else { throw AppError.invalidImport }
+        guard FileManager.default.fileExists(atPath: assetURL.path) else { return nil }
+        let values = try assetURL.resourceValues(forKeys: [.isRegularFileKey, .isSymbolicLinkKey])
+        guard values.isRegularFile == true, values.isSymbolicLink != true else { throw AppError.invalidImport }
+        return assetURL
+    }
+
+    private func validatedPackageAssetFileName(_ relativePath: String) throws -> String {
+        let fileName = relativePath.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !fileName.isEmpty,
+              fileName == URL(fileURLWithPath: fileName).lastPathComponent,
+              !fileName.hasPrefix("."),
+              fileName != ".",
+              fileName != "..",
+              !fileName.contains("/"),
+              !fileName.contains("\\") else {
+            throw AppError.invalidImport
+        }
+        return fileName
     }
 
     private func isDirectory(_ url: URL) throws -> Bool {

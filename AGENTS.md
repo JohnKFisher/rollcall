@@ -52,7 +52,7 @@ For tiny / low-risk tasks:
 - do not automatically load project status, decision logs, or philosophy docs unless clearly relevant.
 
 For normal / risky tasks, read relevant startup docs if they exist:
-- `decisions/DECISIONS.md`
+- `docs/DECISIONS.md`
 - `docs/WHERE_WE_STAND.md`
 - current project brief or milestone plan
 
@@ -73,7 +73,7 @@ Use these docs to avoid contradicting approved decisions, current state, known r
 
 ## Ask-First Gate
 
-Stop and ask first unless the behavior is already clearly approved by the project brief, the decision log (`decisions/DECISIONS.md`), the current milestone plan, or an explicit user instruction.
+Stop and ask first unless the behavior is already clearly approved by the project brief, the decision log (`docs/DECISIONS.md`), the current milestone plan, or an explicit user instruction.
 
 Especially ask before:
 - destructive actions or irreversible outputs,
@@ -164,7 +164,7 @@ For anything non-trivial, risky, ambiguous, broad, user-visible, or behavior-cha
 Also:
 - call out meaningful uncertainty or hidden risk,
 - note likely impact on performance, reliability, compatibility, output quality, or user data,
-- check `decisions/DECISIONS.md` for relevant prior decisions before proposing something that may have already been decided,
+- check `docs/DECISIONS.md` for relevant prior decisions before proposing something that may have already been decided,
 - state which conditional rule files were reviewed and why. If none, say "none."
 
 ### Verification Output
@@ -245,7 +245,7 @@ Prefer the smallest plausible fix first.
 
 ## Decision Log
 
-Maintain `decisions/DECISIONS.md` as a living decision log for the project.
+Maintain `docs/DECISIONS.md` as a living decision log for the project.
 
 **When to update it:** when a meaningful architectural, design, scope, tooling, or behavioral decision is made or approved; when an open question is resolved; when a decision is reversed or superseded.
 

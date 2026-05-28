@@ -15,7 +15,7 @@ This file combines confirmed issues, provisional areas, transitional logic, and 
 
 ### 2. Apple Music feature correctness depends on external Apple configuration
 
-- Source: `docs/WHERE_WE_STAND.md`, `decisions/DECISIONS.md`
+- Source: `docs/WHERE_WE_STAND.md`, `docs/DECISIONS.md`
 - Detail:
   - MusicKit App Service and signing/provisioning are required for the intended full-song path
 - Risk:
@@ -51,7 +51,7 @@ This file combines confirmed issues, provisional areas, transitional logic, and 
 
 ### 6. Apple Music local-copy path is intentionally experimental
 
-- Source: `RollCall/RootView.swift`, `RollCall/AppModel.swift`, `decisions/DECISIONS.md`
+- Source: `RollCall/RootView.swift`, `RollCall/AppModel.swift`, `docs/DECISIONS.md`
 - Detail:
   - hidden behind an explicit developer-facing toggle
   - not the primary product path
@@ -137,7 +137,7 @@ These are candidates, not confirmed-safe removals.
 
 ### 16. Announcer product history is visible in code/data
 
-- `decisions/DECISIONS.md` includes a superseded announcer decision and a later approval removing built-in voice from the product for now.
+- `docs/DECISIONS.md` includes a superseded announcer decision and a later approval removing built-in voice from the product for now.
 - Model and renderer code still retain older announcer concepts.
 - This is not necessarily wrong, but it is a current-state inconsistency future redesigners need to know about.
 

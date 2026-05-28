@@ -27,7 +27,7 @@ What this package is not:
 - not proof that every runtime path was validated on-device in this session.
 
 Verification status for this documentation pass:
-- Core source and project metadata were inspected directly: `RollCall/RootView.swift`, `RollCall/AppModel.swift`, `RollCall/Services.swift`, `RollCall/Models.swift`, `RollCall/RollCallApp.swift`, `RollCall.xcodeproj/project.pbxproj`, `decisions/DECISIONS.md`, `docs/WHERE_WE_STAND.md`, `ATTRIBUTIONS.md`, `RollCall/LaunchScreen.storyboard`.
+- Core source and project metadata were inspected directly: `RollCall/RootView.swift`, `RollCall/AppModel.swift`, `RollCall/Services.swift`, `RollCall/Models.swift`, `RollCall/RollCallApp.swift`, `RollCall.xcodeproj/project.pbxproj`, `docs/DECISIONS.md`, `docs/WHERE_WE_STAND.md`, `ATTRIBUTIONS.md`, `RollCall/LaunchScreen.storyboard`.
 - A simulator screenshot/build pass was attempted through XcodeBuildMCP and failed twice before launch due `ZIPFoundation` module resolution/compiler-target incompatibility in the local build environment, so this package contains code-derived visual documentation rather than live screen captures.
 
 Recommended reading order:

@@ -44,7 +44,7 @@ Explore after launch:
 - Recovery / Recently Deleted
 - Archive, only if team clutter becomes real
 - Ongoing Presentation polish
-- Better sharing convenience
+- Better sharing convenience (new vs overwrite?)
 - Improved song selection process
 - Improved clip creation process
 - Ability to add songs to clips

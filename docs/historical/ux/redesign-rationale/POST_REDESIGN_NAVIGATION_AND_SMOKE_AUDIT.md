@@ -6,7 +6,7 @@ Status:
 - Focused on post-redesign navigation, grouping, and obvious smoke-level UX friction
 
 Reviewed sources:
-- `decisions/DECISIONS.md`
+- `docs/DECISIONS.md`
 - `docs/WHERE_WE_STAND.md`
 - `historical/ideas/roll_call_dev_notes.md`
 - `historical/ux/redesign-rationale/TARGET_UI_DIRECTION.md`
@@ -82,7 +82,7 @@ Severity:
 
 Likely file(s) touched:
 - `RollCall/RootView.swift`
-- Possibly `decisions/DECISIONS.md` if the owner approves a durable navigation decision
+- Possibly `docs/DECISIONS.md` if the owner approves a durable navigation decision
 
 Owner approval needed:
 - Yes. Tab order and default selected tab are user-visible product behavior.

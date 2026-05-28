@@ -6,7 +6,7 @@ Status:
 - Intended as a stabilization queue, not a redesign plan
 
 Reviewed sources:
-- `decisions/DECISIONS.md`
+- `docs/DECISIONS.md`
 - `docs/WHERE_WE_STAND.md`
 - `historical/ux/redesign-rationale/TARGET_UI_DIRECTION.md`
 - `historical/ux/redesign-rationale/VISUAL_LANGUAGE_SYSTEM.md`

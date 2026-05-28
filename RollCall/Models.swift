@@ -676,6 +676,8 @@ struct DeviceIdentity: Codable, Equatable {
 }
 
 struct AppState: Codable, Equatable {
+    static let currentSchemaVersion = 5
+
     var schemaVersion: Int
     var appVersion: String
     var deviceIdentity: DeviceIdentity
@@ -753,7 +755,7 @@ struct AppState: Codable, Equatable {
     }
 
     static let empty = AppState(
-        schemaVersion: 5,
+        schemaVersion: currentSchemaVersion,
         appVersion: AppMetadata.appVersion,
         deviceIdentity: DeviceIdentity(label: "This iPhone"),
         selectedTeamID: nil,
@@ -776,8 +778,69 @@ struct TeamPackageManifest: Codable {
     var team: Team
 }
 
+struct PendingPackageImport: Identifiable {
+    let id = UUID()
+    var url: URL
+    var manifest: TeamPackageManifest
+    var opensOnboardingHandoff: Bool
+
+    var team: Team {
+        manifest.team
+    }
+
+    var playerCount: Int {
+        team.players.count
+    }
+
+    var playersWithAudioCount: Int {
+        team.players.filter { $0.cue != nil }.count
+    }
+
+    var appleMusicCueCount: Int {
+        team.players.filter {
+            if case .appleMusic? = $0.cue?.source {
+                return true
+            }
+            return false
+        }.count
+    }
+
+    var localAudioCueCount: Int {
+        team.players.filter {
+            if case .localAudio? = $0.cue?.source {
+                return true
+            }
+            return false
+        }.count
+    }
+
+    var builtInCueCount: Int {
+        team.players.filter {
+            if case .builtInClip? = $0.cue?.source {
+                return true
+            }
+            return false
+        }.count
+    }
+
+    var photoCount: Int {
+        team.players.filter { $0.photoRelativePath != nil }.count
+    }
+
+    var customAnnouncementCount: Int {
+        team.players.filter { $0.customAnnouncerRelativePath != nil }.count
+    }
+}
+
 enum AppPaths {
+    nonisolated(unsafe) static var testBaseDirectoryOverride: URL?
+
     static func baseDirectory() throws -> URL {
+        if let testBaseDirectoryOverride {
+            try FileManager.default.createDirectory(at: testBaseDirectoryOverride, withIntermediateDirectories: true)
+            return testBaseDirectoryOverride
+        }
+
         let base = try FileManager.default.url(for: .applicationSupportDirectory, in: .userDomainMask, appropriateFor: nil, create: true)
         let url = base.appendingPathComponent("RollCall", isDirectory: true)
         try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
@@ -786,6 +849,11 @@ enum AppPaths {
 
     static func stateURL() throws -> URL {
         try baseDirectory().appendingPathComponent("state.json")
+    }
+
+    static func unreadableStateRecoveryURL() throws -> URL {
+        let fileName = "state-unreadable-\(UUID().uuidString).json"
+        return try baseDirectory().appendingPathComponent(fileName)
     }
 
     static func assetsDirectory() throws -> URL {

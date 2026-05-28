@@ -1,6 +1,6 @@
 # Roll Call — Application Overview
 
-This document gives a non-code AI everything it needs to discuss the Roll Call app at a product level: what it is, who it's for, how the screens fit together, what the user can do on each one, and the principles that constrain future change. It is current as of build 53 / version 1.0.0.
+This document gives a non-code AI everything it needs to discuss the Roll Call app at a product level: what it is, who it's for, how the screens fit together, what the user can do on each one, and the principles that constrain future change. It is current as of build 56 / version 1.0.1.
 
 If you are an AI reading this to help with planning: assume the human you are talking to is the sole developer and product owner. They want help thinking through changes, tradeoffs, and priorities — not generating code. Quote back the principles in this document when they conflict with a proposal.
 
@@ -55,7 +55,7 @@ The guide has four numbered milestones rendered as a breadcrumb at the top: **Te
 
 Setup Guide steps:
 
-1. **Team** — name the team, pick an accent color from eight presets (Roll Call Orange, Red, Gold, Green, Blue, Purple, Gray, Black). Or "Import a .rollcall File from Another User" instead.
+1. **Team** — name the team, pick an accent color from eight presets (Roll Call Orange, Red, Gold, Green, Blue, Purple, Gray, Black). Or "Add Team from Another User's .rollcall File" instead.
 2. **Player** — add a first player (name required, uniform number optional). On returning to this step later, this screen becomes "Review your first/second/third player." for editing.
 3. **Audio** — assign walkup audio. Primary choice is "Add Song" (Apple Music). Secondary is "Use Local Audio". A "Try with a Crowd Cheering" option lets the user defer audio entirely and use the built-in cheer fallback. After audio is assigned, the screen turns into a simple trim selector (start point + length chips: 6, 8, 10, 12, 15 seconds, plus a Preview button).
 4. **Lineup** — two variants:
@@ -66,7 +66,7 @@ Opening the lineup (during the guide or later) shows the **Lineup Editor sheet**
 
 ### Setup Guide can also be entered for additional teams later
 
-From Settings, "Open Setup Guide" launches a **manual chooser** variant first: "What would you like to set up?" with two choices: "Create New Team" (re-runs the guide) or "Import a .rollcall File" (jumps to file picker). The first run skips this chooser and goes straight into team creation.
+From Settings, "Open Setup Guide" launches a **manual chooser** variant first: "What would you like to set up?" with two choices: "Create New Team" (re-runs the guide) or "Add Team from .rollcall File" (jumps to file picker). The first run skips this chooser and goes straight into team creation.
 
 Back navigation in the guide is bidirectional — there is a Back chevron in the toolbar, and Close is available once at least one team exists (with a confirmation: "Close Setup Guide?").
 
@@ -145,7 +145,7 @@ There is no percentage score, no Bronze/Silver/Gold, no red player errors. A pla
 
 A scroll view of grouped sections:
 
-- **Team Package** — Export Selected Team, Share Latest .rollcall Package (only shows once an export exists), Import .rollcall Package.
+- **Team Package** — Export Selected Team, Share Latest .rollcall Package (only shows once an export exists), Add Team from .rollcall Package.
 - **Setup Guide** — Open Setup Guide (returns user to the guided flow for a new or imported team).
 - **Game Day** — three toggles: Always Use Dark Live Screens (default on), Game Day Haptics, Volume Automation (off by default; lets Roll Call adjust system volume for fades).
 - **Recovery** — navigation into Recovery & Backups (manual backup creation, restore from a backup list; automatic backups are made before package imports).
@@ -270,9 +270,9 @@ Discovery is preferred over pressure. Announcer intros are surfaced post-success
 
 ### `.rollcall` packages
 
-A `.rollcall` file is a portable archive of a single team: roster, cues, photos, custom announcer recordings, team identity, session state. Created from Settings → Export Selected Team. Imported via Settings → Import .rollcall Package, or by sending the file to the device (Files, AirDrop, etc.).
+A `.rollcall` file is a portable archive of a single team: roster, cues, photos, custom announcer recordings, team identity, session state. Created from Settings -> Export Selected Team. Added via Settings -> Add Team from .rollcall Package, or by sending the file to the device (Files, AirDrop, etc.).
 
-Import shows a confirmation sheet before applying, with an option to import as a new team or replace existing data. Imports automatically create a recovery backup first.
+Import adds the package as a new team and leaves existing teams unchanged. Imports automatically create a recovery backup first.
 
 ### Roster CSV import
 

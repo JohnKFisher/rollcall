@@ -10,6 +10,34 @@ struct PendingRosterImport: Identifiable {
     let id = UUID()
     let sourceName: String
     let rows: [Player]
+
+    func duplicateCount(comparedTo existingPlayers: [Player]) -> Int {
+        let existingKeys = Set(existingPlayers.map(Self.duplicateKey).filter { !$0.isEmpty })
+        var importedKeys = Set<String>()
+        var duplicateCount = 0
+
+        for player in rows {
+            let key = Self.duplicateKey(for: player)
+            guard !key.isEmpty else { continue }
+            if existingKeys.contains(key) || !importedKeys.insert(key).inserted {
+                duplicateCount += 1
+            }
+        }
+
+        return duplicateCount
+    }
+
+    static func duplicateMessage(count: Int) -> String {
+        let noun = count == 1 ? "player" : "players"
+        return "\(count) possible duplicate \(noun) found by matching name and number."
+    }
+
+    private static func duplicateKey(for player: Player) -> String {
+        let name = player.displayName.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        let number = player.uniformNumber.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard !name.isEmpty else { return "" }
+        return "\(name)#\(number)"
+    }
 }
 
 struct SupportBundleExport: Identifiable {
@@ -251,6 +279,8 @@ final class AppModel: ObservableObject {
     @Published var lastError: String?
     @Published var exportURL: URL?
     @Published var pendingRosterImport: PendingRosterImport?
+    @Published var pendingPackageImport: PendingPackageImport?
+    @Published var completedPackageImportTeamID: UUID?
     @Published var supportBundle: SupportBundleExport?
     @Published var announcerRegenerationStatus: AnnouncerRegenerationStatus?
     @Published private(set) var isAppleMusicPlaylistSyncing = false
@@ -258,12 +288,17 @@ final class AppModel: ObservableObject {
     @Published private(set) var appleMusicPlaybackCapability: AppleMusicPlaybackCapability = .unknown
     @Published private(set) var customAnnouncerRecordingPhase: CustomAnnouncerRecordingPhase = .idle
     private var hasFinishedLaunching = false
-    private var persistTask: Task<Void, Never>?
+    private let persistenceWriter = StatePersistenceWriter()
+    private var persistSequence = 0
     private var readinessRefreshTask: Task<Void, Never>?
+    private var audioRouteChangeTask: Task<Void, Never>?
+    private var outputVolumeObservation: NSKeyValueObservation?
     private var prewarmTask: Task<Void, Never>?
     private var startupWarmupTask: Task<Void, Never>?
     private var announcerRegenerationTask: Task<Void, Never>?
     private var pendingIncomingPackageURLs: [URL] = []
+    private var isPreparingIncomingPackagePreview = false
+    private var initialStateLoadWarning: String?
 
     let audioAssetService = AudioAssetService()
     let musicCatalogService = MusicCatalogService()
@@ -282,16 +317,22 @@ final class AppModel: ObservableObject {
         FeatureFlags.assertReleaseSafety()
         self.playbackEngine = CuePlaybackEngine(audioAssetService: audioAssetService, musicCatalogService: musicCatalogService)
         self.readinessService = ReadinessService(audioAssetService: audioAssetService)
-        self.state = (try? Self.load()) ?? {
-            var state = AppState.empty
-            state.deviceIdentity = DeviceIdentity(label: UIDevice.current.name)
-            return state
-        }()
+        let loadResult = Self.loadInitialState()
+        self.state = loadResult.state
+        self.initialStateLoadWarning = loadResult.warning
         self.state.appVersion = AppMetadata.appVersion
         self.state.schemaVersion = max(self.state.schemaVersion, AppState.empty.schemaVersion)
+        self.readinessService.onPathStatusChange = { [weak self] in
+            self?.scheduleReadinessRefresh()
+        }
+        observeReadinessInputs()
         FeatureFlags.assertReleaseSafety(featureFlags)
         normalizeSelectedTeamIfNeeded()
         normalizeAllTeams()
+        reconcileOnboardingForExistingTeamIfNeeded()
+        if let initialStateLoadWarning {
+            lastError = initialStateLoadWarning
+        }
         persist()
     }
 
@@ -320,7 +361,7 @@ final class AppModel: ObservableObject {
             refreshReadiness()
             scheduleStartupGameDayWarmup()
             persist()
-            await importPendingIncomingPackagesIfNeeded()
+            await preparePendingIncomingPackageIfNeeded()
         } catch {
             lastError = error.localizedDescription
         }
@@ -332,7 +373,7 @@ final class AppModel: ObservableObject {
             return
         }
         pendingIncomingPackageURLs.append(url)
-        Task { await self.importPendingIncomingPackagesIfNeeded() }
+        Task { await self.preparePendingIncomingPackageIfNeeded() }
     }
 
     var selectedTeam: Team? {
@@ -341,6 +382,16 @@ final class AppModel: ObservableObject {
 
     var shouldShowOnboarding: Bool {
         state.teams.isEmpty || state.onboarding.activeFlow != nil || !state.onboarding.isComplete
+    }
+
+    private func reconcileOnboardingForExistingTeamIfNeeded() {
+        guard !state.onboarding.isComplete,
+              state.onboarding.activeFlow == .automatic,
+              state.teams.contains(where: { !$0.players.isEmpty }) else {
+            return
+        }
+
+        state.onboarding = .completed()
     }
 
     var onboardingTeam: Team? {
@@ -515,9 +566,11 @@ final class AppModel: ObservableObject {
 
     func updatePlayer(_ player: Player) {
         guard let teamIndex, let playerIndex = state.teams[teamIndex].players.firstIndex(where: { $0.id == player.id }) else { return }
+        let previousPlayer = state.teams[teamIndex].players[playerIndex]
         state.teams[teamIndex].players[playerIndex] = player
         state.teams[teamIndex].modifiedAt = .now
         normalizeLineup(for: teamIndex)
+        removeAssetsNoLongerReferenced(from: previousPlayer, to: player)
         prewarmNextBatterCue()
         scheduleReadinessRefresh()
         persist()
@@ -526,7 +579,7 @@ final class AppModel: ObservableObject {
     func removePlayer(_ player: Player) {
         guard let teamIndex, let playerIndex = state.teams[teamIndex].players.firstIndex(where: { $0.id == player.id }) else { return }
         let removed = state.teams[teamIndex].players.remove(at: playerIndex)
-        removeStoredAssets(for: removed)
+        removeStoredAssetsIfUnreferenced(for: removed)
         state.teams[teamIndex].modifiedAt = .now
         normalizeLineup(for: teamIndex)
         prewarmNextBatterCue()
@@ -627,10 +680,14 @@ final class AppModel: ObservableObject {
             let recordedURL = try await customAnnouncerRecorder.stopRecording()
             let asset: LocalAudioSource
             do {
+                let replacementRelativePath = self.assetIsReferenced(relativePath: player.customAnnouncerRelativePath, byAnyPlayerOtherThan: player.id)
+                    ? self.audioAssetService.freshCustomAnnouncerRelativePath()
+                    : nil
                 asset = try audioAssetService.storeCustomAnnouncerRecording(
                     from: recordedURL,
                     playerID: player.id,
                     displayName: "\(player.displayName)-custom-announcer",
+                    relativePath: replacementRelativePath
                 )
             } catch {
                 throw AppError.customIntroSaveFailed("recorded file could not be reopened. \(customIntroFileSummary(for: recordedURL)); reader error: \(customIntroErrorSummary(error))")
@@ -640,9 +697,6 @@ final class AppModel: ObservableObject {
             }
             try? FileManager.default.removeItem(at: recordedURL)
             var updated = player
-            if player.customAnnouncerRelativePath != asset.relativePath {
-                audioAssetService.removeAsset(relativePath: player.customAnnouncerRelativePath)
-            }
             updated.customAnnouncerRelativePath = asset.relativePath
             updatePlayer(updated)
             try configurePlaybackAudioSession()
@@ -676,7 +730,6 @@ final class AppModel: ObservableObject {
 
     func clearCustomAnnouncer(for player: Player) {
         var updated = player
-        audioAssetService.removeAsset(relativePath: player.customAnnouncerRelativePath)
         updated.customAnnouncerRelativePath = nil
         updatePlayer(updated)
     }
@@ -947,13 +1000,45 @@ final class AppModel: ObservableObject {
         await performPackageImport(from: url, opensOnboardingHandoff: true)
     }
 
+    func preparePackageImportConfirmation(from url: URL, opensOnboardingHandoff: Bool) async {
+        do {
+            let scoped = url.startAccessingSecurityScopedResource()
+            defer {
+                if scoped { url.stopAccessingSecurityScopedResource() }
+            }
+            let manifest = try packageService.preview(packageURL: url)
+            pendingPackageImport = PendingPackageImport(
+                url: url,
+                manifest: manifest,
+                opensOnboardingHandoff: opensOnboardingHandoff
+            )
+        } catch {
+            lastError = error.localizedDescription
+        }
+    }
+
+    func confirmPendingPackageImport() async {
+        guard let pendingPackageImport else { return }
+        self.pendingPackageImport = nil
+        await performPackageImport(
+            from: pendingPackageImport.url,
+            opensOnboardingHandoff: pendingPackageImport.opensOnboardingHandoff
+        )
+        await preparePendingIncomingPackageIfNeeded()
+    }
+
+    func cancelPendingPackageImport() {
+        pendingPackageImport = nil
+        Task { await self.preparePendingIncomingPackageIfNeeded() }
+    }
+
     private func performPackageImport(from url: URL, opensOnboardingHandoff: Bool) async {
         await busy {
             let scoped = url.startAccessingSecurityScopedResource()
             defer {
                 if scoped { url.stopAccessingSecurityScopedResource() }
             }
-            self.createBackup(reason: "Automatic backup before package import")
+            try await self.createBackupBeforeRiskyOperation(reason: "Automatic backup before package import")
             let manifest = try self.packageService.import(packageURL: url, audioAssetService: self.audioAssetService)
             var imported = manifest.team
             imported.id = UUID()
@@ -962,13 +1047,9 @@ final class AppModel: ObservableObject {
             self.state.selectedTeamID = imported.id
             self.normalizeLineup(for: self.state.teams.count - 1)
             if opensOnboardingHandoff {
-                self.state.onboarding.completedAt = .now
-                self.state.onboarding.activeFlow = .importHandoff
-                self.state.onboarding.activeTeamID = imported.id
-                self.state.onboarding.importHandoffTeamID = imported.id
-                self.state.onboarding.didChooseCheerFallback = false
-                self.state.onboarding.didSeeLineup = true
+                self.state.onboarding = .completed()
             }
+            self.completedPackageImportTeamID = imported.id
             self.persist()
         }
     }
@@ -993,16 +1074,18 @@ final class AppModel: ObservableObject {
         }
     }
 
-    func applyPendingRosterImport() {
-        guard let teamIndex, let pendingRosterImport else { return }
-        state.teams[teamIndex].players.append(contentsOf: pendingRosterImport.rows)
-        state.teams[teamIndex].session.battingOrder.append(contentsOf: pendingRosterImport.rows.map(\.id))
-        state.teams[teamIndex].modifiedAt = .now
-        normalizeLineup(for: teamIndex)
-        self.pendingRosterImport = nil
-        prewarmNextBatterCue()
-        scheduleReadinessRefresh()
-        persist()
+    func applyPendingRosterImport() async {
+        await busy {
+            guard let teamIndex = self.teamIndex, let pendingRosterImport = self.pendingRosterImport else { return }
+            try await self.createBackupBeforeRiskyOperation(reason: "Automatic backup before roster CSV import")
+            self.state.teams[teamIndex].players.append(contentsOf: pendingRosterImport.rows)
+            self.state.teams[teamIndex].session.battingOrder.append(contentsOf: pendingRosterImport.rows.map(\.id))
+            self.state.teams[teamIndex].modifiedAt = .now
+            self.normalizeLineup(for: teamIndex)
+            self.pendingRosterImport = nil
+            self.prewarmNextBatterCue()
+            self.scheduleReadinessRefresh()
+        }
     }
 
     func discardPendingRosterImport() {
@@ -1039,6 +1122,13 @@ final class AppModel: ObservableObject {
                 self.lastError = error.localizedDescription
             }
         }
+    }
+
+    private func createBackupBeforeRiskyOperation(reason: String) async throws {
+        let snapshotState = state
+        let snapshotRecord = try await writeBackupRecord(for: snapshotState, reason: reason).get()
+        insertBackupRecord(snapshotRecord)
+        persist()
     }
 
     private func writeBackupRecord(for snapshotState: AppState, reason: String) async -> Result<SnapshotRecord, Error> {
@@ -1139,11 +1229,11 @@ final class AppModel: ObservableObject {
         selectedTeam?.builtInClips ?? []
     }
 
-    private func cueForPlayerPlayback(_ player: Player) -> Cue? {
-        if let cue = player.cue {
+    private func playableCueForPlayerPlayback(_ player: Player) -> Cue? {
+        if let cue = player.cue, cueIsPlayable(cue) {
             return cue
         }
-        return fallbackCue(for: player)
+        return fallbackCue(for: player, cueID: playbackID(for: player))
     }
 
     private func fallbackCue(for player: Player, cueID: UUID? = nil) -> Cue? {
@@ -1151,14 +1241,29 @@ final class AppModel: ObservableObject {
         if let fallbackClip = BuiltInClip.firstMatchingSourceID(defaultNoSongFallbackBuiltInClipSourceID, in: teamBuiltIns) {
             var cue = fallbackClip.cue
             cue.id = cueID ?? player.id
-            return cue
+            if cueIsPlayable(cue) {
+                return cue
+            }
         }
         if let fallbackClip = BuiltInClip.firstMatchingSourceID(defaultNoSongFallbackBuiltInClipSourceID, in: BuiltInClip.defaults) {
             var cue = fallbackClip.cue
             cue.id = cueID ?? player.id
-            return cue
+            if cueIsPlayable(cue) {
+                return cue
+            }
         }
         return nil
+    }
+
+    private func cueIsPlayable(_ cue: Cue) -> Bool {
+        switch cue.source {
+        case .appleMusic:
+            return true
+        case .localAudio(let source):
+            return audioAssetService.assetExists(relativePath: source.relativePath)
+        case .builtInClip(let source):
+            return audioAssetService.builtInClipExists(source: source)
+        }
     }
 
     private func playbackPlan(for player: Player) -> PlayerPlaybackPlan? {
@@ -1172,10 +1277,10 @@ final class AppModel: ObservableObject {
             guard let fallbackCue = fallbackCue(for: player, cueID: playbackID(for: player)) else { return nil }
             return .cue(cue: fallbackCue, announcerRelativePath: nil)
         case .announcerAndSong:
-            guard let cue = cueForPlayerPlayback(player) else { return nil }
+            guard let cue = playableCueForPlayerPlayback(player) else { return nil }
             return .cue(cue: cue, announcerRelativePath: announcerRelativePath)
         case .songOnly:
-            guard let cue = cueForPlayerPlayback(player) else { return nil }
+            guard let cue = playableCueForPlayerPlayback(player) else { return nil }
             return .cue(cue: cue, announcerRelativePath: nil)
         }
     }
@@ -1244,13 +1349,47 @@ final class AppModel: ObservableObject {
         state.teams[teamIndex].session.nextBatterIndex = presentCount == 0 ? 0 : min(max(state.teams[teamIndex].session.nextBatterIndex, 0), presentCount - 1)
     }
 
-    private func removeStoredAssets(for player: Player) {
-        audioAssetService.removeAsset(relativePath: player.photoRelativePath)
-        audioAssetService.removeAsset(relativePath: player.customAnnouncerRelativePath)
-        audioAssetService.removeAsset(relativePath: player.generatedBuiltInAnnouncerRelativePath)
-        if case .localAudio(let source)? = player.cue?.source {
-            audioAssetService.removeAsset(relativePath: source.relativePath)
+    private func removeStoredAssetsIfUnreferenced(for player: Player) {
+        storedAssetRelativePaths(for: player).forEach(removeAssetIfUnreferenced(relativePath:))
+    }
+
+    private func removeAssetsNoLongerReferenced(from previousPlayer: Player, to updatedPlayer: Player) {
+        let updatedPaths = Set(storedAssetRelativePaths(for: updatedPlayer))
+        storedAssetRelativePaths(for: previousPlayer)
+            .filter { !updatedPaths.contains($0) }
+            .forEach(removeAssetIfUnreferenced(relativePath:))
+    }
+
+    private func removeAssetIfUnreferenced(relativePath: String) {
+        guard !assetIsReferenced(relativePath: relativePath) else { return }
+        audioAssetService.removeAsset(relativePath: relativePath)
+    }
+
+    private func assetIsReferenced(relativePath: String?, byAnyPlayerOtherThan ignoredPlayerID: UUID? = nil) -> Bool {
+        guard let relativePath else { return false }
+        return state.teams.contains { team in
+            team.players.contains { player in
+                guard player.id != ignoredPlayerID else { return false }
+                return storedAssetRelativePaths(for: player).contains(relativePath)
+            }
         }
+    }
+
+    private func storedAssetRelativePaths(for player: Player) -> [String] {
+        var paths: [String] = []
+        if let photoRelativePath = player.photoRelativePath {
+            paths.append(photoRelativePath)
+        }
+        if let customAnnouncerRelativePath = player.customAnnouncerRelativePath {
+            paths.append(customAnnouncerRelativePath)
+        }
+        if let generatedBuiltInAnnouncerRelativePath = player.generatedBuiltInAnnouncerRelativePath {
+            paths.append(generatedBuiltInAnnouncerRelativePath)
+        }
+        if case .localAudio(let source)? = player.cue?.source {
+            paths.append(source.relativePath)
+        }
+        return paths
     }
 
     private func alphabeticalBattingOrder(for players: [Player]) -> [UUID] {
@@ -1311,21 +1450,34 @@ final class AppModel: ObservableObject {
         }
     }
 
+    private func observeReadinessInputs() {
+        audioRouteChangeTask = Task { [weak self] in
+            let notifications = NotificationCenter.default.notifications(named: AVAudioSession.routeChangeNotification)
+            for await _ in notifications {
+                await MainActor.run {
+                    self?.scheduleReadinessRefresh()
+                }
+            }
+        }
+
+        outputVolumeObservation = AVAudioSession.sharedInstance().observe(\.outputVolume, options: [.new]) { [weak self] _, _ in
+            Task { @MainActor in
+                self?.scheduleReadinessRefresh()
+            }
+        }
+    }
+
     private func persist() {
         let snapshot = state
-        persistTask?.cancel()
-        persistTask = Task(priority: .utility) {
-            let errorDescription = await Task.detached(priority: .utility) { () -> String? in
-                do {
-                    try Self.write(snapshot)
-                    return nil
-                } catch {
-                    return error.localizedDescription
-                }
-            }.value
+        persistSequence += 1
+        let sequence = persistSequence
+        Task(priority: .utility) { [persistenceWriter] in
+            let errorDescription = await persistenceWriter.enqueue(snapshot, sequence: sequence)
 
             if let errorDescription {
-                self.lastError = errorDescription
+                await MainActor.run {
+                    self.lastError = errorDescription
+                }
             }
         }
     }
@@ -1336,7 +1488,51 @@ final class AppModel: ObservableObject {
         return try decoder.decode(AppState.self, from: Data(contentsOf: AppPaths.stateURL()))
     }
 
-    nonisolated private static func write(_ state: AppState) throws {
+    private static func loadInitialState() -> (state: AppState, warning: String?) {
+        do {
+            let stateURL = try AppPaths.stateURL()
+            guard FileManager.default.fileExists(atPath: stateURL.path) else {
+                return (freshEmptyState(), nil)
+            }
+            let loadedState = try load()
+            guard loadedState.schemaVersion <= AppState.currentSchemaVersion else {
+                return (
+                    freshEmptyState(),
+                    preserveUnreadableStateFile(
+                        loadError: AppError.unsupportedSavedStateVersion
+                    )
+                )
+            }
+            return (loadedState, nil)
+        } catch {
+            let recoveryMessage = preserveUnreadableStateFile(loadError: error)
+            return (freshEmptyState(), recoveryMessage)
+        }
+    }
+
+    private static func freshEmptyState() -> AppState {
+        var state = AppState.empty
+        state.deviceIdentity = DeviceIdentity(label: UIDevice.current.name)
+        return state
+    }
+
+    private static func preserveUnreadableStateFile(loadError: Error) -> String {
+        let fallbackMessage = "Roll Call could not load saved app data. Your previous state file could not be decoded, so Roll Call preserved a recovery copy before starting from an empty state. Error: \(loadError.localizedDescription)"
+
+        do {
+            let stateURL = try AppPaths.stateURL()
+            guard FileManager.default.fileExists(atPath: stateURL.path) else {
+                return fallbackMessage
+            }
+            let recoveryURL = try AppPaths.unreadableStateRecoveryURL()
+            try FileManager.default.copyItem(at: stateURL, to: recoveryURL)
+            return "Roll Call could not load saved app data. A recovery copy was saved as \(recoveryURL.lastPathComponent) before Roll Call started from an empty state. Error: \(loadError.localizedDescription)"
+        } catch {
+            return "\(fallbackMessage) Recovery copy failed: \(error.localizedDescription)"
+        }
+    }
+
+    nonisolated fileprivate static func write(_ state: AppState) throws {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
         encoder.dateEncodingStrategy = .iso8601
@@ -1345,7 +1541,12 @@ final class AppModel: ObservableObject {
 
     private func busy(_ operation: @escaping () async throws -> Void) async {
         isBusy = true
-        defer { isBusy = false }
+        defer {
+            isBusy = false
+            if !pendingIncomingPackageURLs.isEmpty {
+                Task { await self.preparePendingIncomingPackageIfNeeded() }
+            }
+        }
         do {
             try await operation()
             refreshReadiness()
@@ -1355,11 +1556,33 @@ final class AppModel: ObservableObject {
         }
     }
 
-    private func importPendingIncomingPackagesIfNeeded() async {
-        guard hasFinishedLaunching, !isBusy else { return }
-        while !pendingIncomingPackageURLs.isEmpty {
+    private func preparePendingIncomingPackageIfNeeded() async {
+        guard hasFinishedLaunching,
+              !isBusy,
+              pendingPackageImport == nil,
+              !isPreparingIncomingPackagePreview else {
+            return
+        }
+
+        isPreparingIncomingPackagePreview = true
+        defer { isPreparingIncomingPackagePreview = false }
+
+        while pendingPackageImport == nil, !pendingIncomingPackageURLs.isEmpty {
             let nextURL = pendingIncomingPackageURLs.removeFirst()
-            await performPackageImport(from: nextURL, opensOnboardingHandoff: false)
+            do {
+                let scoped = nextURL.startAccessingSecurityScopedResource()
+                defer {
+                    if scoped { nextURL.stopAccessingSecurityScopedResource() }
+                }
+                let manifest = try packageService.preview(packageURL: nextURL)
+                pendingPackageImport = PendingPackageImport(
+                    url: nextURL,
+                    manifest: manifest,
+                    opensOnboardingHandoff: !state.onboarding.isComplete
+                )
+            } catch {
+                lastError = error.localizedDescription
+            }
         }
     }
 
@@ -1694,6 +1917,33 @@ private struct GeneratedAnnouncerAsset {
     var relativePath: String
     var resolvedVoiceIdentifier: String?
     var voiceLanguageCode: String?
+}
+
+private actor StatePersistenceWriter {
+    private var latestSequence = 0
+    private var pending: (state: AppState, sequence: Int)?
+    private var isWriting = false
+
+    func enqueue(_ state: AppState, sequence: Int) async -> String? {
+        guard sequence >= latestSequence else { return nil }
+        latestSequence = sequence
+        pending = (state, sequence)
+
+        guard !isWriting else { return nil }
+        isWriting = true
+        defer { isWriting = false }
+
+        var latestError: String?
+        while let next = pending {
+            pending = nil
+            do {
+                try AppModel.write(next.state)
+            } catch {
+                latestError = error.localizedDescription
+            }
+        }
+        return latestError
+    }
 }
 
 private extension TeamAnnouncerProfile {
