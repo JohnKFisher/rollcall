@@ -29,9 +29,10 @@ Included:
 
 Explore after launch:
 
+- Local Music Files
 - Accent Color Usage
 - Tweaks to icon? Dark Mode/Light Mode?
-- Icon for .rollcall file?
+- √ Icon for .rollcall file?
 - Team Home
 - Team identity: logo
 - Improved Clips

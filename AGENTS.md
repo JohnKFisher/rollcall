@@ -1,4 +1,4 @@
-# AGENTS.md — Universal Project Rules
+# AGENTS.md — Roll Call Project Rules
 
 This file is the single source of truth for AI coding agents across this project. It is read by both OpenAI Codex (natively) and Claude Code (via `CLAUDE.md` pointer).
 Work safely, conservatively, and transparently.
@@ -343,6 +343,49 @@ Release tagging:
 - Update versioning files in the same commit as the version/build change.
 - Public App Store hotfix/release archives should come from `main` unless explicitly approved otherwise.
 - Development/TestFlight builds may come from `release/*` when intentionally testing an in-progress release.
+
+## Working Changelog
+
+When making user-facing changes, maintain a working changelog file that can later be used to draft the public release notes.
+
+- Write entries to docs/working-changelog.md.
+- Treat this file as internal release-note source material, not polished public copy.
+- Update it as changes are made, not only at the end of a release.
+- Use moderately non-technical language: clear enough for a normal user to understand, but still specific enough that the change can be traced back to the actual work.
+- Focus on what changed for the user, what is safer, clearer, faster, more reliable, or easier to understand.
+- Avoid implementation details unless they are needed to explain the user impact.
+- Do not include commit hashes, branch names, internal refactor notes, code architecture details, or speculative future plans.
+- Group related small fixes into a single entry when they are part of the same user-facing improvement.
+- Prefer plain language such as “Roll Call now warns you before importing possible duplicate roster rows” instead of “Added duplicate-row validation to CSV parsing pipeline.”
+- If a change is purely internal and has no user-visible effect, either omit it or record it under an “Internal / Maintenance” section only if it may matter during release review.
+- If a change affects existing users, note whether it changes behavior, protects existing data, improves recovery, or reduces confusion.
+- If a change might need special mention in the public changelog, mark it with [public candidate].
+- If a change is uncertain, incomplete, or still being tested, mark it with [needs review].
+
+Use this format:
+
+"# Working Changelog
+
+Internal notes for building public-facing changelogs. Keep entries understandable to non-technical users, but not fully polished.
+
+## Unreleased
+
+### Added
+- 
+
+### Changed
+- 
+
+### Fixed
+- 
+
+### Reliability / Data Safety
+- 
+
+### Internal / Maintenance
+- "
+
+When completing a task, review whether the work should add or update an entry in docs/working-changelog.md. If the changelog file does not exist yet, create it using the format above.
 
 ## Performance, Reliability, and Output Quality
 
