@@ -11,6 +11,119 @@ enum RollCallColorRole: CaseIterable {
     case neutralStructure
 }
 
+enum TeamAccentThemeTone {
+    case primary
+    case fill
+    case subtle
+    case onFill
+}
+
+struct TeamAccentTheme: Equatable {
+    let preset: TeamAccentPreset
+
+    static let rollCallDefault = TeamAccentTheme(preset: .rollCallOrange)
+
+    func uiColor(
+        _ tone: TeamAccentThemeTone = .primary,
+        surface: RollCallSurfaceVariant = .standard
+    ) -> UIColor {
+        let uiColor: UIColor
+
+        switch (preset, tone) {
+        case (.rollCallOrange, .primary), (.rollCallOrange, .fill), (.rollCallOrange, .subtle):
+            uiColor = .systemOrange
+        case (.rollCallOrange, .onFill):
+            uiColor = .white
+
+        case (.red, .primary), (.red, .fill), (.red, .subtle):
+            uiColor = .systemRed
+        case (.red, .onFill):
+            uiColor = .white
+
+        case (.gold, .primary):
+            uiColor = UIColor { traits in
+                traits.userInterfaceStyle == .dark
+                    ? .systemYellow
+                    : UIColor(red: 0.58, green: 0.38, blue: 0.00, alpha: 1.00)
+            }
+        case (.gold, .fill), (.gold, .subtle):
+            uiColor = .systemYellow
+        case (.gold, .onFill):
+            uiColor = .black
+
+        case (.green, .primary), (.green, .fill), (.green, .subtle):
+            uiColor = .systemGreen
+        case (.green, .onFill):
+            uiColor = .white
+
+        case (.blue, .primary), (.blue, .fill), (.blue, .subtle):
+            uiColor = .systemBlue
+        case (.blue, .onFill):
+            uiColor = .white
+
+        case (.purple, .primary), (.purple, .fill), (.purple, .subtle):
+            uiColor = .systemPurple
+        case (.purple, .onFill):
+            uiColor = .white
+
+        case (.gray, .primary), (.gray, .subtle):
+            uiColor = UIColor { traits in
+                traits.userInterfaceStyle == .dark ? .systemGray2 : .systemGray
+            }
+        case (.gray, .fill):
+            uiColor = UIColor { traits in
+                traits.userInterfaceStyle == .dark ? .systemGray3 : .systemGray
+            }
+        case (.gray, .onFill):
+            uiColor = .white
+
+        case (.black, .primary), (.black, .fill):
+            uiColor = UIColor { traits in
+                traits.userInterfaceStyle == .dark
+                    ? .systemGray2
+                    : UIColor(red: 0.06, green: 0.06, blue: 0.07, alpha: 1.00)
+            }
+        case (.black, .subtle):
+            uiColor = UIColor { traits in
+                traits.userInterfaceStyle == .dark
+                    ? .systemGray3
+                    : UIColor(red: 0.06, green: 0.06, blue: 0.07, alpha: 1.00)
+            }
+        case (.black, .onFill):
+            uiColor = UIColor { traits in
+                traits.userInterfaceStyle == .dark ? .black : .white
+            }
+        }
+
+        return uiColor
+    }
+
+    func color(
+        _ tone: TeamAccentThemeTone = .primary,
+        surface: RollCallSurfaceVariant = .standard
+    ) -> Color {
+        let color = Color(uiColor: uiColor(tone, surface: surface))
+        return color
+    }
+}
+
+private struct TeamAccentThemeKey: EnvironmentKey {
+    static let defaultValue = TeamAccentTheme.rollCallDefault
+}
+
+extension EnvironmentValues {
+    var rollCallTeamAccentTheme: TeamAccentTheme {
+        get { self[TeamAccentThemeKey.self] }
+        set { self[TeamAccentThemeKey.self] = newValue }
+    }
+}
+
+extension View {
+    func rollCallTeamAccentTheme(_ theme: TeamAccentTheme) -> some View {
+        environment(\.rollCallTeamAccentTheme, theme)
+    }
+}
+
 extension Color {
     static func rollCall(
         _ role: RollCallColorRole,
@@ -46,6 +159,32 @@ extension Color {
         case (.neutralStructure, .live):
             return Color(uiColor: .separator)
         }
+    }
+}
+
+extension TeamAccentPreset {
+    var title: String {
+        switch self {
+        case .rollCallOrange: return "Orange"
+        case .red: return "Red"
+        case .gold: return "Gold"
+        case .green: return "Green"
+        case .blue: return "Blue"
+        case .purple: return "Purple"
+        case .gray: return "Gray"
+        case .black: return "Black"
+        }
+    }
+
+    var theme: TeamAccentTheme {
+        TeamAccentTheme(preset: self)
+    }
+
+    func color(
+        _ tone: TeamAccentThemeTone = .primary,
+        surface: RollCallSurfaceVariant = .standard
+    ) -> Color {
+        theme.color(tone, surface: surface)
     }
 }
 

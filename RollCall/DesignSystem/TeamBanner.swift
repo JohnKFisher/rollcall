@@ -24,6 +24,8 @@ struct TeamBanner: View {
     let accentColor: Color?
     let variant: TeamBannerVariant
 
+    @Environment(\.rollCallTeamAccentTheme) private var teamAccentTheme
+
     init(
         teamName: String?,
         secondaryStatus: TeamBannerSecondaryStatus? = nil,
@@ -84,7 +86,7 @@ struct TeamBanner: View {
     }
 
     private var resolvedAccent: Color {
-        accentColor ?? Color.rollCall(.accent, surface: surface)
+        accentColor ?? teamAccentTheme.color(.primary, surface: surface)
     }
 
     private var background: Color {

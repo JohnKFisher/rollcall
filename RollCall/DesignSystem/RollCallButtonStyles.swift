@@ -11,8 +11,19 @@ enum RollCallButtonFamily: CaseIterable {
 struct RollCallButtonStyle: ButtonStyle {
     let family: RollCallButtonFamily
     let surface: RollCallSurfaceVariant
+    let teamAccentTheme: TeamAccentTheme
 
     @Environment(\.isEnabled) private var isEnabled
+
+    init(
+        family: RollCallButtonFamily,
+        surface: RollCallSurfaceVariant,
+        teamAccentTheme: TeamAccentTheme = .rollCallDefault
+    ) {
+        self.family = family
+        self.surface = surface
+        self.teamAccentTheme = teamAccentTheme
+    }
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
@@ -50,7 +61,7 @@ struct RollCallButtonStyle: ButtonStyle {
         let base: Color
         switch family {
         case .primary:
-            base = Color.rollCall(.accent, surface: surface)
+            base = teamAccentTheme.color(.fill, surface: surface)
         case .secondary:
             base = Color.rollCall(.neutralSurface, surface: surface)
         case .quiet:
@@ -65,8 +76,10 @@ struct RollCallButtonStyle: ButtonStyle {
 
     private var foreground: Color {
         switch family {
-        case .primary, .destructive, .liveControl:
+        case .destructive, .liveControl:
             return .white
+        case .primary:
+            return teamAccentTheme.color(.onFill, surface: surface)
         case .secondary, .quiet:
             return Color(uiColor: .label)
         }
@@ -93,12 +106,27 @@ struct RollCallButtonStyle: ButtonStyle {
     }
 }
 
+private struct RollCallButtonStyleModifier: ViewModifier {
+    let family: RollCallButtonFamily
+    let surface: RollCallSurfaceVariant
+
+    @Environment(\.rollCallTeamAccentTheme) private var teamAccentTheme
+
+    func body(content: Content) -> some View {
+        content.buttonStyle(RollCallButtonStyle(
+            family: family,
+            surface: surface,
+            teamAccentTheme: teamAccentTheme
+        ))
+    }
+}
+
 extension Button {
     func rollCallButtonStyle(
         _ family: RollCallButtonFamily,
         surface: RollCallSurfaceVariant = .standard
     ) -> some View {
-        buttonStyle(RollCallButtonStyle(family: family, surface: surface))
+        modifier(RollCallButtonStyleModifier(family: family, surface: surface))
     }
 }
 

@@ -2,6 +2,17 @@
 
 Use this file as a concise decision log for project-specific architectural, behavioral, tooling, and scope decisions.
 
+
+## 2026-05-31
+
+- Approved: team color drives a protected derived accent palette across selected-team UI, while semantic colors such as warning, destructive, ready, disabled, and live playback remain independent.
+  Rationale: team identity should feel present throughout setup and Game Day without making gray, black, gold, or dark-mode surfaces unreadable; Gray and Black behave as adaptive neutral identity themes rather than literal raw colors everywhere.
+  Status: approved
+
+- Approved: the selected-team accent wash should apply to app page backgrounds, not only Game Day and Clips.
+  Rationale: team identity should feel coherent across setup and utility pages while the wash remains low-opacity and system-background-first so normal iOS readability and appearance rules still hold.
+  Status: approved
+
 ## 2026-05-28
 
 - Approved: after stored state loads, Roll Call should open populated teams on `Game Day`, empty selected teams on `Players`, and preserve the no-team onboarding path.

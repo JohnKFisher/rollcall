@@ -7,6 +7,7 @@ Use this file as a concise project status snapshot for the current version, what
 Current version: `1.0.1` (build `56`)
 
 Status:
+- The `1.1/accents` lane now makes selected team colors drive a protected accent palette across app-wide tint, primary actions, selected controls, team identity surfaces, and page background accent washes while keeping semantic colors independent.
 - Initial `1.0.1` App Store submission candidate with a buildable iPhone app target at [RollCall.xcodeproj](/Users/jkfisher/Documents/Coding/Roll%20Call/RollCall.xcodeproj).
 - `1.0.1` build `56` bumps the checked-in app build number after adding the native `RollCallTests` foundation and keeps the marketing version unchanged.
 - Startup now chooses the first useful main tab after saved state loads: no team still enters onboarding, an empty selected team opens `Players`, and a selected team with players opens `Game Day`.
@@ -51,7 +52,7 @@ What works now:
 - Team selection, duplication, and confirmed removal
 - Sensible launch routing: onboarding for no teams, `Players` for an empty selected team, and `Game Day` for a selected team with players
 - First-run welcome screen plus setup guide for creating or importing teams, with a Settings entry that can reopen onboarding at any time and a simplified post-song trim step before lineup handoff
-- Stored team accent color presets, now including Gray and Black, used by the TeamBar accent
+- Stored team accent color presets, now including Gray and Black, drive a protected app-wide accent theme for the selected team; no-team screens fall back to Roll Call orange
 - Selected-team rename from the Teams panel
 - Player roster editing
 - Today’s lineup editing with present-player tracking, next-batter flow, persisted manual order, and one-tap A-Z / number sorting
@@ -72,11 +73,11 @@ What works now:
 - Cue fade-out timing now runs before app-driven stop cleanup for local audio and preview-based Apple Music playback, with the short tail guard preserving the audible end of the cue.
 - Settings now includes a `Volume Automation` switch so Roll Call can either manage cue volume for fades or leave playback volume untouched; Game Day hides the low-volume warning while this automation is enabled.
 - Advanced Trim now notes that Fade Out timing is only used when `Volume Automation` is enabled in Settings.
-- Settings now includes a default-on `Always Use Dark Live Screens` switch. Setup screens always follow the device appearance; `Game Day`, `Clips`, and the Game Day lineup sheet render dark when the device is dark or the setting is on, otherwise they render in normal Light Mode. Both live screens share a reusable system-background gradient with a centralized accent tint for future editability.
+- Settings now includes a default-on `Always Use Dark Live Screens` switch. Setup screens always follow the device appearance; `Game Day`, `Clips`, and the Game Day lineup sheet render dark when the device is dark or the setting is on, otherwise they render in normal Light Mode. App pages share a reusable system-background gradient using the selected team's protected accent tint, with a slightly stronger wash on live screens and Roll Call orange as the no-team fallback.
 - Subscribed full-song Apple Music playback now routes through an internal MediaPlayer application-player path so the same Apple Music cue can attempt stepped fade-out in trim preview, cue preview, and Game Day without changing the cue model
 - Experimental Apple Music local-copy flag and one-way conversion action
 - Main tab roots now use a pinned, full-width TeamBar at the top of the screen instead of repeating panel-name headers; Game Day keeps its dark live-side board with a top announcer-mode picker, compact live warning strip, Now Batting hero, On Deck area, centered `Prev / Edit Lineup / Next` row, divider before the grid, and obvious active tap-to-stop state
-- General Clips tab using the shared cue engine with bundled licensed crowd clips tracked in `ATTRIBUTIONS.md`, now visually aligned with Game Day through the same live-side gradient background.
+- General Clips tab using the shared cue engine with bundled licensed crowd clips tracked in `ATTRIBUTIONS.md`, visually aligned with Game Day through the stronger live-side version of the shared accent-wash background.
 - Readiness confidence dashboard with player-specific audio as Ready, Announcement Cues as Enhanced, missing player audio as a non-blocking need, optional polish separated from readiness, direct player repair routing, and before-start device checks kept separate from player status
 - `.rollcall` package export/import with bundled local media, custom intro audio, and roster photos
 - `.rollcall` export now produces a zipped single-file archive (with backward-compatible import support for older directory-style packages)
