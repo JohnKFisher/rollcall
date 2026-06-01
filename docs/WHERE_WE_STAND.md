@@ -9,6 +9,7 @@ Current version: `1.0.1` (build `56`)
 Status:
 - Initial `1.0.1` App Store submission candidate with a buildable iPhone app target at [RollCall.xcodeproj](/Users/jkfisher/Documents/Coding/Roll%20Call/RollCall.xcodeproj).
 - The hotfix/iOS17 lane lowers the checked-in app and test deployment target to iOS 17.0 without changing the marketing version, build number, bundle ID, entitlements, dependencies, permissions, or feature behavior.
+- The hotfix/iOS17 lane now includes a Game Day playback cleanup fix so stale fade-out or preview stop tasks cannot stop a newer batter cue after quick live taps.
 - `1.0.1` build `56` bumps the checked-in app build number after adding the native `RollCallTests` foundation and keeps the marketing version unchanged.
 - Startup now chooses the first useful main tab after saved state loads: no team still enters onboarding, an empty selected team opens `Players`, and a selected team with players opens `Game Day`.
 - `1.0.1` build `54` collects the current audit hardening pass for state recovery, serialized persistence, safer imports/restores, queued package handoff, roster CSV backup/format guidance, readiness refreshes, support-bundle redaction, and future schema guards.
@@ -70,6 +71,7 @@ What works now:
 - Apple Music cue caps, subscription-aware full-song playback, metadata hydration for full-song trim timelines, and cue prewarming hooks
 - Apple Music full-song playback now forces the current cue trim start when replaying catalog songs, to avoid stale start-position behavior on reused selections
 - Game Day playback now gives local, preview, and catalog song cues a short tail guard before app-driven stop/fade cleanup, and Announcement Cues are sequenced from actual playback completion instead of a fixed duration sleep.
+- Game Day playback cleanup now belongs to the cue session that scheduled it, so an older fade-out or preview task cannot stop a newer batter cue after quick Next/play actions.
 - Cue fade-out timing now runs before app-driven stop cleanup for local audio and preview-based Apple Music playback, with the short tail guard preserving the audible end of the cue.
 - Settings now includes a `Volume Automation` switch so Roll Call can either manage cue volume for fades or leave playback volume untouched; Game Day hides the low-volume warning while this automation is enabled.
 - Advanced Trim now notes that Fade Out timing is only used when `Volume Automation` is enabled in Settings.
@@ -96,6 +98,7 @@ What works now:
 
 Known limitations:
 - iOS 17.0 is now the checked-in minimum deployment target. The app builds for iOS 17.0, passed the hosted test suite on iOS 17.5 and iOS 18.6 simulators, and launched to the welcome screen on iOS 17.5, but a full hands-on iOS 17 flow smoke is still required before treating this hotfix as App Store-ready.
+- A physical iPad running iOS 17 reported Game Day silence after the first batter and one possible Next-button stall. The current hotfix addresses the most likely stale playback-cleanup race, but that exact iPad Game Day flow still needs a repeat smoke test before release confidence.
 - Waveforms and per-cue gain remain intentionally deferred.
 - Physical-device installs now depend on a valid local Apple development provisioning profile for `com.jkfisher.rollcall`; full-song Apple Music also requires the MusicKit App Service to be enabled for that App ID in Apple Developer.
 - Apple Music full-song trimming now depends on a device account state and MusicKit App Service configuration that this environment cannot emulate, so it still needs an on-device feel pass with and without an active Apple Music playback subscription after App ID registration/provisioning refresh.
@@ -108,6 +111,9 @@ Known limitations:
 - Startup and tap responsiveness have been tightened by deferring/coalescing some follow-up work and moving snapshot restore I/O off the main actor, but this still needs an on-device feel pass to confirm the improvement.
 
 Verification:
+- Result in this iOS 17 Game Day playback pass: final `git diff --check` and `xcrun swiftc -parse RollCall/Models.swift RollCall/Services.swift RollCall/AppModel.swift RollCall/RootView.swift RollCall/RollCallApp.swift RollCall/BuildEnvironment.swift RollCall/DesignSystem/RollCallDesignSystem.swift RollCall/DesignSystem/RollCallColors.swift RollCall/DesignSystem/RollCallTypography.swift RollCall/DesignSystem/RollCallSpacing.swift RollCall/DesignSystem/RollCallButtonStyles.swift RollCall/DesignSystem/RollCallCardStyles.swift RollCall/DesignSystem/StatusChip.swift RollCall/DesignSystem/TeamBanner.swift` succeeded.
+- Result in this iOS 17 Game Day playback pass: `xcodebuild -project RollCall.xcodeproj -scheme "Roll Call Debug" -destination 'generic/platform=iOS' -derivedDataPath /private/tmp/rollcall-ios17-gameday-dd CODE_SIGNING_ALLOWED=NO build` succeeded out of sandbox after the session-token/reentrancy guard change, then a final main-actor callback cleanup was parse-checked. A follow-up full build after that warning cleanup was blocked by the local approval/usage limit.
+- Result in this iOS 17 Game Day playback pass: `xcodebuild test -project RollCall.xcodeproj -scheme "Roll Call Debug" -destination 'platform=iOS Simulator,name=iPhone 15 Pro,OS=17.5' -derivedDataPath /private/tmp/rollcall-ios17-gameday-test CODE_SIGNING_ALLOWED=NO` succeeded out of sandbox before the final reentrancy and main-actor callback cleanup; that final code still needs a full Xcode build/test or on-device smoke when approval capacity is available.
 - Result in this iOS 17 hotfix pass: `xcodebuild -project RollCall.xcodeproj -scheme "Roll Call Debug" -destination 'generic/platform=iOS' -derivedDataPath /private/tmp/rollcall-ios17-dd CODE_SIGNING_ALLOWED=NO build` succeeded out of sandbox with the checked-in iOS 17.0 deployment target. The same build failed in sandbox before compile because SwiftPM/Xcode could not write normal user-cache diagnostics.
 - Result in this iOS 17 hotfix pass: `xcodebuild test -project RollCall.xcodeproj -scheme "Roll Call Debug" -destination 'platform=iOS Simulator,name=iPhone 15 Pro,OS=17.5' -derivedDataPath /private/tmp/rollcall-ios17-test CODE_SIGNING_ALLOWED=NO` succeeded out of sandbox on the installed iOS 17.5 simulator runtime.
 - Result in this iOS 17 hotfix pass: `xcodebuild test -project RollCall.xcodeproj -scheme "Roll Call Debug" -destination 'platform=iOS Simulator,name=iPhone 16 Pro,OS=18.6' -derivedDataPath /private/tmp/rollcall-ios18-test CODE_SIGNING_ALLOWED=NO` also succeeded out of sandbox for same-suite newer-iOS comparison.
