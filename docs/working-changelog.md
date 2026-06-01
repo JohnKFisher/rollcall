@@ -7,6 +7,9 @@ Internal notes for building public-facing changelogs. Keep entries understandabl
 ### Added
 - [public candidate] Roll Call can now be installed on iPhones running iOS 17 or later.
 - [public candidate] Team colors now shape Roll Call's accent styling across the app, including Game Day, Clips, setup progress, primary actions, and selected controls.
+- [public candidate] Added an optional Keep Screen Awake setting so Game Day and Clips can prevent auto-lock during live use, with a battery-use note in Settings.
+- [public candidate] Added an in-app What's New sheet for update notes, with a Settings > About entry and a Full Changelog link.
+- [public candidate] Teams can now update a managed Apple Music playlist from their Apple Music song cues, with a preview of included and skipped songs before anything changes.
 
 
 ### Changed

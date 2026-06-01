@@ -35,6 +35,7 @@
 		A40000000000000000000006 /* ReadinessServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A40000000000000000000106 /* ReadinessServiceTests.swift */; };
 		A40000000000000000000007 /* BackupRestoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A40000000000000000000107 /* BackupRestoreTests.swift */; };
 		A40000000000000000000008 /* RootTabStartupTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A40000000000000000000109 /* RootTabStartupTests.swift */; };
+		A40000000000000000000009 /* TeamAppleMusicPlaylistSummaryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A40000000000000000000110 /* TeamAppleMusicPlaylistSummaryTests.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -78,6 +79,7 @@
 		A40000000000000000000107 /* BackupRestoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackupRestoreTests.swift; sourceTree = "<group>"; };
 		A40000000000000000000108 /* RollCallTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = RollCallTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		A40000000000000000000109 /* RootTabStartupTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RootTabStartupTests.swift; sourceTree = "<group>"; };
+		A40000000000000000000110 /* TeamAppleMusicPlaylistSummaryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TeamAppleMusicPlaylistSummaryTests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -163,6 +165,7 @@
 				A40000000000000000000106 /* ReadinessServiceTests.swift */,
 				A40000000000000000000107 /* BackupRestoreTests.swift */,
 				A40000000000000000000109 /* RootTabStartupTests.swift */,
+				A40000000000000000000110 /* TeamAppleMusicPlaylistSummaryTests.swift */,
 			);
 			path = RollCallTests;
 			sourceTree = "<group>";
@@ -307,6 +310,7 @@
 				A40000000000000000000006 /* ReadinessServiceTests.swift in Sources */,
 				A40000000000000000000007 /* BackupRestoreTests.swift in Sources */,
 				A40000000000000000000008 /* RootTabStartupTests.swift in Sources */,
+				A40000000000000000000009 /* TeamAppleMusicPlaylistSummaryTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -468,13 +472,13 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = YES;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 56;
+				CURRENT_PROJECT_VERSION = 57;
 				DEVELOPMENT_TEAM = 5Y9T5WZ4J3;
 				ENABLE_DEBUG_DYLIB = NO;
 				ENABLE_PREVIEWS = NO;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = RollCall/Info.plist;
-				MARKETING_VERSION = 1.0.1;
+				MARKETING_VERSION = 1.1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.jkfisher.rollcall;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SUPPORTED_PLATFORMS = "iphonesimulator iphoneos";
@@ -490,13 +494,13 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = YES;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 56;
+				CURRENT_PROJECT_VERSION = 57;
 				DEVELOPMENT_TEAM = 5Y9T5WZ4J3;
 				ENABLE_DEBUG_DYLIB = NO;
 				ENABLE_PREVIEWS = NO;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = RollCall/Info.plist;
-				MARKETING_VERSION = 1.0.1;
+				MARKETING_VERSION = 1.1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.jkfisher.rollcall;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SUPPORTED_PLATFORMS = "iphonesimulator iphoneos";
@@ -512,13 +516,13 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = YES;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 56;
+				CURRENT_PROJECT_VERSION = 57;
 				DEVELOPMENT_TEAM = 5Y9T5WZ4J3;
 				ENABLE_DEBUG_DYLIB = NO;
 				ENABLE_PREVIEWS = NO;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = RollCall/Info.plist;
-				MARKETING_VERSION = 1.0.1;
+				MARKETING_VERSION = 1.1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.jkfisher.rollcall;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SUPPORTED_PLATFORMS = "iphonesimulator iphoneos";

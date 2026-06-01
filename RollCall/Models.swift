@@ -8,6 +8,7 @@ enum AppMetadata {
     static let appVersion = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0.0.0"
     static let buildNumber = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "0"
     static let customIntroStorageMarker = "flat-custom-intro-v2"
+    static let whatsNewReleaseID = "\(appVersion) (\(buildNumber))"
 }
 
 enum CueSource: Codable, Equatable {
@@ -393,27 +394,32 @@ struct AppSettings: Codable, Equatable {
     var hapticsEnabled: Bool
     var fadeOutVolumeAutomationEnabled: Bool
     var alwaysUseDarkLiveMode: Bool
+    var keepScreenAwakeDuringLiveUse: Bool
 
     static let `default` = AppSettings(
         hapticsEnabled: true,
         fadeOutVolumeAutomationEnabled: false,
-        alwaysUseDarkLiveMode: true
+        alwaysUseDarkLiveMode: true,
+        keepScreenAwakeDuringLiveUse: false
     )
 
     enum CodingKeys: String, CodingKey {
         case hapticsEnabled
         case fadeOutVolumeAutomationEnabled
         case alwaysUseDarkLiveMode
+        case keepScreenAwakeDuringLiveUse
     }
 
     init(
         hapticsEnabled: Bool,
         fadeOutVolumeAutomationEnabled: Bool,
-        alwaysUseDarkLiveMode: Bool
+        alwaysUseDarkLiveMode: Bool,
+        keepScreenAwakeDuringLiveUse: Bool
     ) {
         self.hapticsEnabled = hapticsEnabled
         self.fadeOutVolumeAutomationEnabled = fadeOutVolumeAutomationEnabled
         self.alwaysUseDarkLiveMode = alwaysUseDarkLiveMode
+        self.keepScreenAwakeDuringLiveUse = keepScreenAwakeDuringLiveUse
     }
 
     init(from decoder: Decoder) throws {
@@ -421,6 +427,7 @@ struct AppSettings: Codable, Equatable {
         hapticsEnabled = try container.decodeIfPresent(Bool.self, forKey: .hapticsEnabled) ?? true
         fadeOutVolumeAutomationEnabled = try container.decodeIfPresent(Bool.self, forKey: .fadeOutVolumeAutomationEnabled) ?? false
         alwaysUseDarkLiveMode = try container.decodeIfPresent(Bool.self, forKey: .alwaysUseDarkLiveMode) ?? true
+        keepScreenAwakeDuringLiveUse = try container.decodeIfPresent(Bool.self, forKey: .keepScreenAwakeDuringLiveUse) ?? false
     }
 }
 
@@ -687,6 +694,7 @@ struct AppState: Codable, Equatable {
     var experimental: ExperimentalSettings
     var settings: AppSettings
     var lastReadiness: ReadinessStatus?
+    var lastSeenWhatsNewReleaseID: String?
     var recentAppleMusicSelections: [RecentAppleMusicSelection]
     var trimDefaults: TrimDefaults
     var onboarding: OnboardingState
@@ -701,6 +709,7 @@ struct AppState: Codable, Equatable {
         case experimental
         case settings
         case lastReadiness
+        case lastSeenWhatsNewReleaseID
         case recentAppleMusicSelections
         case trimDefaults
         case onboarding
@@ -716,6 +725,7 @@ struct AppState: Codable, Equatable {
         experimental: ExperimentalSettings,
         settings: AppSettings,
         lastReadiness: ReadinessStatus?,
+        lastSeenWhatsNewReleaseID: String?,
         recentAppleMusicSelections: [RecentAppleMusicSelection],
         trimDefaults: TrimDefaults,
         onboarding: OnboardingState
@@ -729,6 +739,7 @@ struct AppState: Codable, Equatable {
         self.experimental = experimental
         self.settings = settings
         self.lastReadiness = lastReadiness
+        self.lastSeenWhatsNewReleaseID = lastSeenWhatsNewReleaseID
         self.recentAppleMusicSelections = recentAppleMusicSelections
         self.trimDefaults = trimDefaults
         self.onboarding = onboarding
@@ -745,6 +756,7 @@ struct AppState: Codable, Equatable {
         experimental = try container.decodeIfPresent(ExperimentalSettings.self, forKey: .experimental) ?? .default
         settings = try container.decodeIfPresent(AppSettings.self, forKey: .settings) ?? .default
         lastReadiness = try container.decodeIfPresent(ReadinessStatus.self, forKey: .lastReadiness)
+        lastSeenWhatsNewReleaseID = try container.decodeIfPresent(String.self, forKey: .lastSeenWhatsNewReleaseID)
         recentAppleMusicSelections = try container.decodeIfPresent([RecentAppleMusicSelection].self, forKey: .recentAppleMusicSelections) ?? []
         trimDefaults = try container.decodeIfPresent(TrimDefaults.self, forKey: .trimDefaults) ?? .default
         if let decodedOnboarding = try container.decodeIfPresent(OnboardingState.self, forKey: .onboarding) {
@@ -764,6 +776,7 @@ struct AppState: Codable, Equatable {
         experimental: .default,
         settings: .default,
         lastReadiness: nil,
+        lastSeenWhatsNewReleaseID: AppMetadata.whatsNewReleaseID,
         recentAppleMusicSelections: [],
         trimDefaults: .default,
         onboarding: .notStarted

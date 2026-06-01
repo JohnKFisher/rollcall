@@ -3,6 +3,20 @@
 Use this file as a concise decision log for project-specific architectural, behavioral, tooling, and scope decisions.
 
 
+## 2026-06-01
+
+- Approved: promote Apple Music team playlist creation to a free 1.1 team-management feature, with a preview before update, all-team scope, exact-name managed playlist replacement, deduped songs, skipped-cue explanations, and unresolved-song recovery before any partial replacement.
+  Rationale: the feature is already useful as a practical convenience, belongs with team-level actions until Team Home exists, and should be honest about overwriting Roll Call's managed Apple Music playlist without presenting itself as sharing, export, or backup.
+  Status: approved
+
+- Approved: in-app What's New uses bundled Swift summary content grouped by explicit minor-release family, triggers once per version/build for existing users, waits for a safe non-live tab, and remains reopenable from Settings > About.
+  Rationale: release notes should be visible enough for useful updates, quiet during Game Day/Clips/import/onboarding flows, testable by build number, available offline, and backed by a full changelog web link rather than remote-fed app content.
+  Status: approved
+
+- Approved: Keep Screen Awake is a global, default-off setting that prevents auto-lock only while Roll Call is active on Game Day or Clips, with no live-screen indicator.
+  Rationale: the feature protects field use without silently changing battery behavior across the whole app, and Clips shares the current live-screen treatment until the later Game Day/Clips revamp revisits the boundary.
+  Status: approved
+
 ## 2026-05-31
 
 - Approved: team color drives a protected derived accent palette across selected-team UI, while semantic colors such as warning, destructive, ready, disabled, and live playback remain independent.
@@ -89,7 +103,7 @@ Use this file as a concise decision log for project-specific architectural, beha
 
 - Approved: Developer Tools may include an experimental Apple Music team playlist sync button that creates or fully replaces the exact-name playlist `Roll Call - <Team Name>` for the selected team.
   Rationale: the feature should stay out of normal app flows while giving coaches a quick Apple Music playlist mirror of the selected team's catalog-backed song cues; local, built-in, missing, preview-only, and duplicate cues are skipped.
-  Status: approved
+  Status: superseded by the 2026-06-01 free 1.1 team-management playlist decision
 
 ## 2026-05-16
 

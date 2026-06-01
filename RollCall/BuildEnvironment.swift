@@ -62,16 +62,11 @@ struct FeatureFlags: Equatable {
         showExperimentalFeatures && experimental.appleMusicLocalCopyEnabled
     }
 
-    var appleMusicTeamPlaylistSyncEnabled: Bool {
-        showExperimentalFeatures && experimental.appleMusicTeamPlaylistSyncEnabled
-    }
-
     static func assertReleaseSafety(_ flags: FeatureFlags = .currentBuildDefaults) {
         guard flags.isReleaseBuild else { return }
         precondition(!flags.showDeveloperSettings, "Release builds must not show Developer Settings.")
         precondition(!flags.showExperimentalFeatures, "Release builds must not show experimental features.")
         precondition(!flags.unlockPremiumForTesting, "Release builds must not unlock premium testing.")
         precondition(!flags.appleMusicLocalCopyEnabled, "Release builds must not enable Apple Music local-copy experiments.")
-        precondition(!flags.appleMusicTeamPlaylistSyncEnabled, "Release builds must not enable Apple Music playlist experiments.")
     }
 }

@@ -270,6 +270,12 @@ struct MusicSearchResult: Identifiable {
     var isCatalogBacked: Bool = true
 }
 
+struct ResolvedTeamPlaylistSongs {
+    var songs: [Song]
+    var resolvedSongIDs: [String]
+    var unresolvedSongIDs: [String]
+}
+
 enum AppleMusicPlaybackCapability: Equatable {
     case unknown
     case previewOnly
@@ -358,9 +364,20 @@ struct MusicCatalogService: Sendable {
         let status = try await authorizedStatus()
         guard status == .authorized else { throw AppError.musicAuthorizationRequired }
 
-        let songs = try await catalogSongs(for: songIDs)
-        guard !songs.isEmpty else { throw AppError.noAppleMusicTeamCues }
+        let resolved = try await catalogSongs(for: songIDs)
+        guard !resolved.songs.isEmpty else { throw AppError.noAppleMusicTeamCues }
+        try await replaceTeamPlaylist(name: name, songs: resolved.songs)
+    }
 
+    func resolveTeamPlaylistSongs(songIDs: [String]) async throws -> ResolvedTeamPlaylistSongs {
+        let status = try await authorizedStatus()
+        guard status == .authorized else { throw AppError.musicAuthorizationRequired }
+
+        return try await catalogSongs(for: songIDs)
+    }
+
+    func replaceTeamPlaylist(name: String, songs: [Song]) async throws {
+        guard !songs.isEmpty else { throw AppError.noAppleMusicTeamCues }
         let playlist = try await existingLibraryPlaylist(named: name)
         do {
             if let playlist {
@@ -402,16 +419,26 @@ struct MusicCatalogService: Sendable {
         return response.items.first
     }
 
-    private func catalogSongs(for songIDs: [String]) async throws -> [Song] {
+    private func catalogSongs(for songIDs: [String]) async throws -> ResolvedTeamPlaylistSongs {
         var songs: [Song] = []
+        var resolvedSongIDs: [String] = []
+        var unresolvedSongIDs: [String] = []
         for songID in songIDs {
             var request = MusicCatalogResourceRequest<Song>(matching: \.id, equalTo: MusicItemID(songID))
             request.limit = 1
             let response = try await request.response()
-            guard let song = response.items.first else { continue }
-            songs.append(song)
+            if let song = response.items.first {
+                songs.append(song)
+                resolvedSongIDs.append(songID)
+            } else {
+                unresolvedSongIDs.append(songID)
+            }
         }
-        return songs
+        return ResolvedTeamPlaylistSongs(
+            songs: songs,
+            resolvedSongIDs: resolvedSongIDs,
+            unresolvedSongIDs: unresolvedSongIDs
+        )
     }
 
     private func searchWithMusicKit(term: String) async throws -> [MusicSearchResult] {

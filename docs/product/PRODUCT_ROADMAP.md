@@ -46,9 +46,9 @@ This release should not become a dumping ground for every easy idea. It should r
   - Should be opt-in or clearly explained if it affects battery life.
 
 - **Playlist creation from team songs**
-  - Promote from experiment if stable.
-  - Let users create a playlist from team songs as a convenience feature.
-  - This is included in 1.1 because it already exists experimentally.
+  - Promoted from experiment as a free 1.1 team-management convenience feature.
+  - Lets users update a managed Apple Music playlist from the team's Apple Music song cues.
+  - Shows included/skipped songs before updating and makes clear that manual edits to Roll Call's managed playlist may be overwritten.
 
 - **Rating request**
   - Add only if it is polite and well-timed.
@@ -392,9 +392,9 @@ The exact version number depends on timing and product strategy. These should no
 - **Advanced templates**
   - Event/game templates, special announcements, or presentation templates.
 
-- **Playlist creation from team songs**
-  - Already planned for 1.1 as a practical feature because it exists experimentally.
-  - Could still have future premium expansions if appropriate, but the basic version should not be moved here if it remains simple.
+- **Advanced playlist tools**
+  - Could include future premium expansions such as alternate playlist types, lineup-only variants, or richer Apple Music management if demand appears.
+  - The basic team-song playlist remains a free 1.1 feature.
 
 - **Make Local Copy of Apple Music selection / Save Apple Music clip as local file**
   - Treat these as the same general idea.

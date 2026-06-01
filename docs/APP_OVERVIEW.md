@@ -1,6 +1,6 @@
 # Roll Call — Application Overview
 
-This document gives a non-code AI everything it needs to discuss the Roll Call app at a product level: what it is, who it's for, how the screens fit together, what the user can do on each one, and the principles that constrain future change. It is current as of build 56 / version 1.0.1.
+This document gives a non-code AI everything it needs to discuss the Roll Call app at a product level: what it is, who it's for, how the screens fit together, what the user can do on each one, and the principles that constrain future change. It is current as of build 57 / version 1.1.0.
 
 If you are an AI reading this to help with planning: assume the human you are talking to is the sole developer and product owner. They want help thinking through changes, tradeoffs, and priorities — not generating code. Quote back the principles in this document when they conflict with a proposal.
 
@@ -10,7 +10,7 @@ If you are an AI reading this to help with planning: assume the human you are ta
 
 Roll Call is an iPhone app for **youth-sports walk-up cues**. The coach (or a parent, sibling, helper) sets up a roster ahead of time. When a player comes to bat (or step onto the field, or up to the line — it is sport-agnostic), the user taps the player's tile and the app plays that player's chosen audio cue: usually a short trimmed clip of their walk-up song, optionally introduced by a recorded "Now batting, number 17, Ellie..." announcement.
 
-It is iPhone-first, completely free in 1.0, has no required account, no ads, no social features, and no cloud backend. All data lives on device. Teams can be exported as `.rollcall` packages and imported on another device, but that is a manual sharing model, not automated sync.
+It is iPhone-first, currently free, has no required account, no ads, no social features, and no cloud backend. All data lives on device. Teams can be exported as `.rollcall` packages and imported on another device, but that is a manual sharing model, not automated sync.
 
 ### The product priorities, in order
 
@@ -123,7 +123,7 @@ If no team is selected, the tab shows a ContentUnavailable view nudging the user
 
 Three sections:
 
-- **Selected Team** — the active team's summary card, an Accent Preset Grid for changing color, and a "Team Actions" menu (Rename, Duplicate, Import Roster CSV, Remove).
+- **Selected Team** — the active team's summary card, an Accent Preset Grid for changing color, and a "Team Actions" menu (Rename, Duplicate, Update Apple Music Playlist, Import Roster CSV, Remove).
 - **Create Team** — single text field and "Create Team" button.
 - **Teams** — list of every team on device with selection state.
 
@@ -345,7 +345,6 @@ Be very cautious when proposing features that step on these lines.
 - Batch editing
 - Save Apple Music clip as a local file (currently feature-flagged Experimental)
 - Lyric-based song selection
-- Playlist creation from team songs
 - Multiple intro/song presets per player
 - Premium presentation packs
 - Cloud sync (low priority)

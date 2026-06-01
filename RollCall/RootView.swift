@@ -23,6 +23,46 @@ private enum PackageImportContext {
     case onboarding
 }
 
+private enum WhatsNewPresentation: Identifiable {
+    case automatic
+    case manual
+
+    var id: String {
+        switch self {
+        case .automatic: return "automatic"
+        case .manual: return "manual"
+        }
+    }
+}
+
+private struct WhatsNewRelease: Identifiable {
+    var id: String { version }
+    let version: String
+    let bullets: [String]
+}
+
+private struct WhatsNewBundle {
+    let family: String
+    let releases: [WhatsNewRelease]
+    let fullChangelogURL: URL
+
+    static let current = WhatsNewBundle(
+        family: "1.1",
+        releases: [
+            WhatsNewRelease(
+                version: "1.1",
+                bullets: [
+                    "Team colors now shape more of Roll Call, including Game Day, Clips, setup progress, primary actions, and selected controls.",
+                    "Keep Screen Awake can prevent auto-lock while Game Day or Clips is open.",
+                    "Teams can update a managed Apple Music playlist from their Apple Music song cues.",
+                    "Game Day playback is more reliable when moving quickly between batters."
+                ]
+            )
+        ],
+        fullChangelogURL: URL(string: "https://sidelarklabs.com/rollcall/support/roll-call-support")!
+    )
+}
+
 private struct PlayingSpeakerSymbol: View {
     let systemImage: String
     var color: Color?
@@ -188,6 +228,7 @@ struct RootView: View {
     }
 
     @Environment(\.colorScheme) private var deviceColorScheme
+    @Environment(\.scenePhase) private var scenePhase
     @ObservedObject var appModel: AppModel
     @State private var newTeamName = ""
     @State private var playerEditorRoute: PlayerEditorRoute?
@@ -203,6 +244,8 @@ struct RootView: View {
     @State private var packageImportContext: PackageImportContext = .settings
     @State private var hasEnteredOnboardingFlow = false
     @State private var hasResolvedInitialTab = false
+    @State private var whatsNewPresentation: WhatsNewPresentation?
+    @State private var teamPlaylistPreview: TeamAppleMusicPlaylistSummary?
 
     private var errorBinding: Binding<Bool> {
         Binding(get: { appModel.lastError != nil }, set: { newValue in if !newValue { appModel.lastError = nil } })
@@ -213,6 +256,45 @@ struct RootView: View {
             return .dark
         }
         return .light
+    }
+
+    private var shouldKeepScreenAwake: Bool {
+        guard scenePhase == .active else { return false }
+        guard appModel.state.settings.keepScreenAwakeDuringLiveUse else { return false }
+        return selectedTab == .gameDay || selectedTab == .generalClips
+    }
+
+    private var isSafeNonLiveTabForWhatsNew: Bool {
+        switch selectedTab {
+        case .players, .readiness, .teams, .settings:
+            return true
+        case .gameDay, .generalClips:
+            return false
+        }
+    }
+
+    private var hasBlockingWhatsNewPresentation: Bool {
+        appModel.isBusy
+            || appModel.lastError != nil
+            || appModel.pendingPackageImport != nil
+            || appModel.pendingRosterImport != nil
+            || showExperimentalWarning
+            || packageImportPresented
+            || csvImportPresented
+            || playerEditorRoute != nil
+            || showLineupEditor
+            || showRenameTeamAlert
+            || showRemoveTeamConfirmation
+            || packageSharePresented
+            || whatsNewPresentation != nil
+            || teamPlaylistPreview != nil
+    }
+
+    private var canPresentAutomaticWhatsNew: Bool {
+        appModel.hasUnseenWhatsNew
+            && !appModel.shouldShowOnboarding
+            && isSafeNonLiveTabForWhatsNew
+            && !hasBlockingWhatsNewPresentation
     }
 
     private var clipsSurface: RollCallSurfaceVariant {
@@ -229,6 +311,39 @@ struct RootView: View {
 
     private func presentPlayerEditor(for player: Player) {
         playerEditorRoute = PlayerEditorRoute(id: player.id)
+    }
+
+    private func updateIdleTimer() {
+        UIApplication.shared.isIdleTimerDisabled = shouldKeepScreenAwake
+    }
+
+    private func presentAutomaticWhatsNewIfPossible() {
+        guard canPresentAutomaticWhatsNew else { return }
+        whatsNewPresentation = .automatic
+    }
+
+    private func handleRosterImportResult(_ result: Result<[URL], Error>) {
+        guard case .success(let urls) = result, let url = urls.first else { return }
+        Task { await appModel.prepareRosterImport(from: url) }
+    }
+
+    private func finishLaunchingTask() async {
+        await appModel.finishLaunchingIfNeeded()
+        resolveInitialTabIfNeeded()
+        presentAutomaticWhatsNewIfPossible()
+    }
+
+    private func handlePackageImportPick(_ url: URL) {
+        let context = packageImportContext
+        packageImportPresented = false
+        Task {
+            switch context {
+            case .settings:
+                await appModel.preparePackageImportConfirmation(from: url, opensOnboardingHandoff: false)
+            case .onboarding:
+                await appModel.preparePackageImportConfirmation(from: url, opensOnboardingHandoff: true)
+            }
+        }
     }
 
     private func playerForEditorRoute(_ route: PlayerEditorRoute) -> Player? {
@@ -251,13 +366,14 @@ struct RootView: View {
     }
 
     var body: some View {
+        rootLifecycleContent
+    }
+
+    private var rootBaseContent: some View {
         rootContent
             .rollCallTeamAccentTheme(selectedTeamAccentTheme)
             .tint(selectedTeamAccentTheme.color(.primary))
-            .task {
-                await appModel.finishLaunchingIfNeeded()
-                resolveInitialTabIfNeeded()
-            }
+            .task { await finishLaunchingTask() }
             .onOpenURL { url in
                 appModel.handleIncomingPackage(url)
             }
@@ -270,6 +386,11 @@ struct RootView: View {
                 guard importedTeamID != nil else { return }
                 selectedTab = .teams
             }
+            .onChange(of: canPresentAutomaticWhatsNew) { _, canPresent in
+                if canPresent {
+                    presentAutomaticWhatsNewIfPossible()
+                }
+            }
             .overlay(alignment: .top) {
                 if appModel.isBusy {
                     ProgressView("Working…")
@@ -279,6 +400,10 @@ struct RootView: View {
                         .padding(.top, 8)
                 }
             }
+    }
+
+    private var rootAlertContent: some View {
+        rootBaseContent
             .alert("Experimental Apple Music Local Copies", isPresented: $showExperimentalWarning) {
                 Button("Enable") {
                     appModel.setShowExperimentalFeatures(true)
@@ -315,6 +440,10 @@ struct RootView: View {
                     Text("Remove the selected team from this device. Existing exports and backups stay untouched.")
                 }
             }
+    }
+
+    private var rootSheetContent: some View {
+        rootAlertContent
             .sheet(item: Binding(get: { appModel.pendingPackageImport }, set: { appModel.pendingPackageImport = $0 })) { pending in
                 PackageImportConfirmationSheet(
                     pending: pending,
@@ -343,18 +472,7 @@ struct RootView: View {
             }
             .sheet(isPresented: $packageImportPresented) {
                 RollCallPackageImportSheet(
-                    onPick: { url in
-                        let context = packageImportContext
-                        packageImportPresented = false
-                        Task {
-                            switch context {
-                            case .settings:
-                                await appModel.preparePackageImportConfirmation(from: url, opensOnboardingHandoff: false)
-                            case .onboarding:
-                                await appModel.preparePackageImportConfirmation(from: url, opensOnboardingHandoff: true)
-                            }
-                        }
-                    },
+                    onPick: handlePackageImportPick,
                     onCancel: {
                         packageImportPresented = false
                     }
@@ -363,10 +481,45 @@ struct RootView: View {
             .sheet(item: $playerEditorRoute) { route in
                 playerEditorSheet(for: route)
             }
+            .sheet(item: $whatsNewPresentation) { presentation in
+                WhatsNewSheet(
+                    bundle: .current,
+                    onDone: {
+                        appModel.markCurrentWhatsNewSeen()
+                        whatsNewPresentation = nil
+                    }
+                )
+            }
+            .sheet(item: $teamPlaylistPreview) { summary in
+                TeamAppleMusicPlaylistPreviewSheet(
+                    appModel: appModel,
+                    summary: summary,
+                    onDone: {
+                        teamPlaylistPreview = nil
+                    }
+                )
+            }
             .fileImporter(isPresented: $csvImportPresented, allowedContentTypes: [.commaSeparatedText, .text], allowsMultipleSelection: false) { result in
-                if case .success(let urls) = result, let url = urls.first {
-                    Task { await appModel.prepareRosterImport(from: url) }
-                }
+                handleRosterImportResult(result)
+            }
+    }
+
+    private var rootLifecycleContent: some View {
+        rootSheetContent
+            .onAppear {
+                updateIdleTimer()
+            }
+            .onDisappear {
+                UIApplication.shared.isIdleTimerDisabled = false
+            }
+            .onChange(of: selectedTab) { _, _ in
+                updateIdleTimer()
+            }
+            .onChange(of: scenePhase) { _, _ in
+                updateIdleTimer()
+            }
+            .onChange(of: appModel.state.settings.keepScreenAwakeDuringLiveUse) { _, _ in
+                updateIdleTimer()
             }
     }
 
@@ -879,6 +1032,10 @@ struct RootView: View {
                                         showRenameTeamAlert = true
                                     }
                                     Button("Duplicate Selected Team") { appModel.duplicateTeam() }
+                                    Button("Update Apple Music Playlist") {
+                                        appModel.clearAppleMusicPlaylistStatus()
+                                        teamPlaylistPreview = appModel.selectedTeamAppleMusicPlaylistSummary()
+                                    }
                                     Button("Import Roster CSV") { csvImportPresented = true }
                                     Button("Remove Selected Team", role: .destructive) {
                                         showRemoveTeamConfirmation = true
@@ -1116,6 +1273,18 @@ struct RootView: View {
                         .tint(selectedTeamAccentTheme.color(.primary))
 
                         Toggle(isOn: Binding(
+                            get: { appModel.state.settings.keepScreenAwakeDuringLiveUse },
+                            set: { appModel.setKeepScreenAwakeDuringLiveUse($0) }
+                        )) {
+                            SettingsRowLabel(
+                                title: "Keep Screen Awake",
+                                detail: "Prevent auto-lock while Game Day or Clips is open. This can use more battery.",
+                                systemImage: "lock.open.iphone"
+                            )
+                        }
+                        .tint(selectedTeamAccentTheme.color(.primary))
+
+                        Toggle(isOn: Binding(
                             get: { appModel.state.settings.fadeOutVolumeAutomationEnabled },
                             set: { appModel.setFadeOutVolumeAutomationEnabled($0) }
                         )) {
@@ -1186,6 +1355,17 @@ struct RootView: View {
                                     title: "Email Feedback",
                                     detail: "Send feedback to the developer with bugs and suggestions so we can smooth any rough edges.",
                                     systemImage: "envelope.fill"
+                                )
+                            }
+                            .buttonStyle(.plain)
+
+                            Button {
+                                whatsNewPresentation = .manual
+                            } label: {
+                                SettingsRowLabel(
+                                    title: "What's New",
+                                    detail: "See the latest Roll Call update notes.",
+                                    systemImage: "sparkles"
                                 )
                             }
                             .buttonStyle(.plain)
@@ -2928,6 +3108,317 @@ private struct TeamsEmptyState: View {
     }
 }
 
+private struct TeamAppleMusicPlaylistPreviewSheet: View {
+    @ObservedObject var appModel: AppModel
+    let summary: TeamAppleMusicPlaylistSummary
+    let onDone: () -> Void
+
+    @Environment(\.dismiss) private var dismiss
+
+    private var matchingRecovery: AppleMusicPlaylistRecovery? {
+        guard appModel.appleMusicPlaylistRecovery?.summary.id == summary.id else { return nil }
+        return appModel.appleMusicPlaylistRecovery
+    }
+
+    private var primaryButtonTitle: String {
+        if appModel.isAppleMusicPlaylistSyncing {
+            return "Updating Playlist"
+        }
+        if matchingRecovery != nil {
+            if matchingRecovery?.availableSongIDs.isEmpty == true {
+                return "No Available Songs"
+            }
+            return "Continue With Available Songs"
+        }
+        return "Update Playlist"
+    }
+
+    private var canRunPrimaryAction: Bool {
+        guard !appModel.isAppleMusicPlaylistSyncing else { return false }
+        if let matchingRecovery {
+            return !matchingRecovery.availableSongIDs.isEmpty
+        }
+        return summary.canUpdatePlaylist
+    }
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: RollCallSpacingTier.large.value) {
+                    header
+                    managedPlaylistWarning
+                    includedSection
+                    duplicateSection
+                    skippedSection
+                    recoverySection
+                    statusSection
+                    actionButtons
+                }
+                .padding(16)
+                .padding(.bottom, RollCallSpacingTier.large.value)
+            }
+            .accentWashBackground()
+            .navigationTitle("Apple Music Playlist")
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Done") {
+                        close()
+                    }
+                }
+            }
+        }
+    }
+
+    private var header: some View {
+        SectionCard {
+            VStack(alignment: .leading, spacing: RollCallSpacingTier.tight.value) {
+                StatusChip(text: "Team Playlist", role: .neutral, systemImage: "music.note.list", emphasis: .subdued)
+                Text(summary.playlistName)
+                    .rollCallText(.primaryIdentity)
+                    .lineLimit(3)
+                Text("Roll Call will build this Apple Music playlist from \(summary.teamName)'s Apple Music song cues.")
+                    .rollCallText(.helperText)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+
+    private var managedPlaylistWarning: some View {
+        SectionCard {
+            HStack(alignment: .top, spacing: RollCallSpacingTier.tight.value) {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .foregroundStyle(Color.rollCall(.warning))
+                    .accessibilityHidden(true)
+                Text("Roll Call manages and replaces this playlist. Manual edits to this Apple Music playlist may be overwritten when you update it.")
+                    .rollCallText(.helperText)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var includedSection: some View {
+        PlaylistPreviewSection(
+            title: "\(summary.includedSongs.count) \(summary.includedSongs.count == 1 ? "Song" : "Songs") Included",
+            helperText: summary.canUpdatePlaylist ? "Apple Music catalog songs are added once." : "Choose Apple Music songs for players before updating this playlist."
+        ) {
+            if summary.includedSongs.isEmpty {
+                PlaylistEmptyMessage(text: "No Apple Music songs to add yet.")
+            } else {
+                VStack(spacing: 0) {
+                    ForEach(Array(summary.includedSongs.enumerated()), id: \.element.id) { index, song in
+                        if index > 0 { Divider() }
+                        PlaylistSongRow(song: song)
+                    }
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var duplicateSection: some View {
+        if !summary.duplicateSongs.isEmpty {
+            PlaylistPreviewSection(
+                title: "\(summary.duplicateSongs.count) \(summary.duplicateSongs.count == 1 ? "Duplicate" : "Duplicates") Added Once",
+                helperText: "Players can share a song; the Apple Music playlist only needs one copy."
+            ) {
+                VStack(spacing: 0) {
+                    ForEach(Array(summary.duplicateSongs.enumerated()), id: \.element.playerID) { index, song in
+                        if index > 0 { Divider() }
+                        PlaylistSongRow(song: song)
+                    }
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var skippedSection: some View {
+        if !summary.skippedCues.isEmpty {
+            PlaylistPreviewSection(
+                title: "\(summary.skippedCues.count) \(summary.skippedCues.count == 1 ? "Cue" : "Cues") Skipped",
+                helperText: "This Apple Music playlist is a convenience list, not export, sharing, or backup."
+            ) {
+                VStack(spacing: 0) {
+                    ForEach(Array(summary.skippedCues.enumerated()), id: \.element.id) { index, cue in
+                        if index > 0 { Divider() }
+                        PlaylistSkippedCueRow(cue: cue)
+                    }
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var recoverySection: some View {
+        if let recovery = matchingRecovery {
+            PlaylistPreviewSection(
+                title: "Apple Music Could Not Find \(recovery.unresolvedSongs.count)",
+                helperText: "Cancel leaves the Apple Music playlist unchanged. Continue replaces it with the songs Apple Music found."
+            ) {
+                VStack(spacing: 0) {
+                    ForEach(Array(recovery.unresolvedSongs.enumerated()), id: \.element.id) { index, song in
+                        if index > 0 { Divider() }
+                        PlaylistSongRow(song: song)
+                    }
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var statusSection: some View {
+        if appModel.isAppleMusicPlaylistSyncing {
+            SectionCard {
+                HStack(spacing: RollCallSpacingTier.tight.value) {
+                    ProgressView()
+                    Text("Updating Apple Music playlist...")
+                        .rollCallText(.helperText)
+                }
+            }
+        } else if let status = appModel.appleMusicPlaylistSyncStatus {
+            SectionCard {
+                Text(status)
+                    .rollCallText(.helperText)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+        }
+    }
+
+    private var actionButtons: some View {
+        VStack(spacing: RollCallSpacingTier.tight.value) {
+            Button {
+                if let recovery = matchingRecovery {
+                    Task { await appModel.continueAppleMusicPlaylistUpdate(recovery) }
+                } else {
+                    Task { await appModel.syncAppleMusicPlaylist(summary: summary) }
+                }
+            } label: {
+                Label(primaryButtonTitle, systemImage: matchingRecovery == nil ? "music.note.list" : "checkmark.circle")
+                    .frame(maxWidth: .infinity)
+            }
+            .rollCallButtonStyle(.primary)
+            .disabled(!canRunPrimaryAction)
+
+            if matchingRecovery != nil {
+                Button {
+                    appModel.cancelAppleMusicPlaylistRecovery()
+                } label: {
+                    Label("Cancel Update", systemImage: "xmark.circle")
+                        .frame(maxWidth: .infinity)
+                }
+                .rollCallButtonStyle(.secondary)
+                .disabled(appModel.isAppleMusicPlaylistSyncing)
+            }
+        }
+    }
+
+    private func close() {
+        appModel.clearAppleMusicPlaylistStatus()
+        onDone()
+        dismiss()
+    }
+}
+
+private struct PlaylistPreviewSection<Content: View>: View {
+    let title: String
+    let helperText: String
+    let content: Content
+
+    init(
+        title: String,
+        helperText: String,
+        @ViewBuilder content: () -> Content
+    ) {
+        self.title = title
+        self.helperText = helperText
+        self.content = content()
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: RollCallSpacingTier.tight.value) {
+            VStack(alignment: .leading, spacing: 3) {
+                Text(title)
+                    .rollCallText(.sectionTitle)
+                Text(helperText)
+                    .rollCallText(.helperText)
+            }
+            .padding(.horizontal, 2)
+
+            SectionCard {
+                content
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+        }
+    }
+}
+
+private struct PlaylistSongRow: View {
+    let song: TeamAppleMusicPlaylistSongRow
+
+    var body: some View {
+        HStack(alignment: .top, spacing: RollCallSpacingTier.tight.value) {
+            Image(systemName: "music.note")
+                .foregroundStyle(Color.rollCall(.ready))
+                .frame(width: 26, height: 26)
+                .accessibilityHidden(true)
+
+            VStack(alignment: .leading, spacing: 3) {
+                Text(song.title)
+                    .rollCallText(.cardTitle)
+                    .lineLimit(2)
+                Text(song.artistName)
+                    .rollCallText(.helperText)
+                    .lineLimit(2)
+                Text(song.playerName)
+                    .rollCallText(.helperText)
+                    .lineLimit(1)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .padding(.vertical, RollCallSpacingTier.tight.value)
+    }
+}
+
+private struct PlaylistSkippedCueRow: View {
+    let cue: TeamAppleMusicPlaylistSkippedCue
+
+    var body: some View {
+        HStack(alignment: .top, spacing: RollCallSpacingTier.tight.value) {
+            Image(systemName: "minus.circle")
+                .foregroundStyle(.secondary)
+                .frame(width: 26, height: 26)
+                .accessibilityHidden(true)
+
+            VStack(alignment: .leading, spacing: 3) {
+                Text(cue.playerName)
+                    .rollCallText(.cardTitle)
+                    .lineLimit(2)
+                if let title = cue.title {
+                    Text(cue.artistName.map { "\(title) - \($0)" } ?? title)
+                        .rollCallText(.helperText)
+                        .lineLimit(2)
+                }
+                Text(cue.reason.explanation)
+                    .rollCallText(.helperText)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .padding(.vertical, RollCallSpacingTier.tight.value)
+    }
+}
+
+private struct PlaylistEmptyMessage: View {
+    let text: String
+
+    var body: some View {
+        Text(text)
+            .rollCallText(.helperText)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.vertical, RollCallSpacingTier.tight.value)
+    }
+}
+
 private extension ReadinessState {
     var readinessLabel: String {
         switch self {
@@ -3011,6 +3502,60 @@ private struct SettingsSectionGroup<Content: View>: View {
             SectionCard {
                 content
                     .frame(maxWidth: .infinity, alignment: .leading)
+            }
+        }
+    }
+}
+
+private struct WhatsNewSheet: View {
+    let bundle: WhatsNewBundle
+    let onDone: () -> Void
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: RollCallSpacingTier.large.value) {
+                    VStack(alignment: .leading, spacing: RollCallSpacingTier.tight.value) {
+                        Text("What's New in Roll Call \(bundle.family)")
+                            .rollCallText(.screenTitle)
+                        Text("Current version: \(AppMetadata.appVersion) (\(AppMetadata.buildNumber))")
+                            .rollCallText(.helperText)
+                    }
+
+                    ForEach(bundle.releases) { release in
+                        SettingsSectionGroup(title: release.version) {
+                            VStack(alignment: .leading, spacing: RollCallSpacingTier.standard.value) {
+                                ForEach(release.bullets, id: \.self) { bullet in
+                                    HStack(alignment: .top, spacing: RollCallSpacingTier.tight.value) {
+                                        Image(systemName: "checkmark.circle.fill")
+                                            .foregroundStyle(Color.rollCall(.ready))
+                                            .padding(.top, 2)
+                                        Text(bullet)
+                                            .rollCallText(.body)
+                                            .fixedSize(horizontal: false, vertical: true)
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    Link(destination: bundle.fullChangelogURL) {
+                        SettingsRowLabel(
+                            title: "Full Changelog",
+                            detail: "Open the complete Roll Call update notes on the web.",
+                            systemImage: "safari.fill"
+                        )
+                    }
+                    .buttonStyle(.plain)
+                }
+                .padding(RollCallSpacingTier.large.value)
+            }
+            .accentWashBackground()
+            .navigationTitle("What's New")
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Done", action: onDone)
+                }
             }
         }
     }
@@ -4385,7 +4930,6 @@ private struct RecoveryCenterView: View {
 private struct DeveloperToolsView: View {
     @ObservedObject var appModel: AppModel
     @Binding var showExperimentalWarning: Bool
-    @State private var showTeamPlaylistWarning = false
 
     private var flags: FeatureFlags {
         appModel.featureFlags
@@ -4404,6 +4948,7 @@ private struct DeveloperToolsView: View {
                     Section("Build Environment") {
                         LabeledContent("Environment", value: flags.environment.rawValue)
                         LabeledContent("App Version", value: "\(AppMetadata.appVersion) (\(AppMetadata.buildNumber))")
+                        LabeledContent("What's New Seen", value: appModel.state.lastSeenWhatsNewReleaseID ?? "Not seen")
                     }
 
                     Section("Environment Gates") {
@@ -4467,56 +5012,13 @@ private struct DeveloperToolsView: View {
                         }
                         .disabled(!flags.showExperimentalFeatures)
 
-                        Toggle(isOn: Binding(
-                            get: { appModel.state.experimental.appleMusicTeamPlaylistSyncEnabled },
-                            set: { appModel.setAppleMusicTeamPlaylistSyncEnabled($0) }
-                        )) {
-                            SettingsRowLabel(
-                                title: "Apple Music Team Playlist Sync",
-                                detail: "Allows a selected team to update the exact-name Apple Music playlist Roll Call - <Team Name>.",
-                                systemImage: "music.note.list"
-                            )
-                        }
-                        .disabled(!flags.showExperimentalFeatures)
-                    }
-
-                    if flags.appleMusicTeamPlaylistSyncEnabled {
-                        Section("Experimental Actions") {
-                            Button {
-                                if appModel.state.experimental.appleMusicTeamPlaylistAcknowledgedAt == nil {
-                                    showTeamPlaylistWarning = true
-                                } else {
-                                    Task { await appModel.syncSelectedTeamAppleMusicPlaylist() }
-                                }
-                            } label: {
-                                if appModel.isAppleMusicPlaylistSyncing {
-                                    Label("Updating Apple Music Team Playlist", systemImage: "music.note.list")
-                                } else {
-                                    Label("Update Apple Music Team Playlist", systemImage: "music.note.list")
-                                }
-                            }
-                            .disabled(appModel.isAppleMusicPlaylistSyncing || appModel.selectedTeam == nil)
-
-                            Text("Creates or replaces \"Roll Call - <Team Name>\" in Apple Music using this team's Apple Music song cues only.")
-                                .font(.footnote)
-                                .foregroundStyle(.secondary)
-
-                            if appModel.isAppleMusicPlaylistSyncing {
-                                HStack {
-                                    ProgressView()
-                                    Text("Updating Apple Music playlist...")
-                                        .foregroundStyle(.secondary)
-                                }
-                                .font(.footnote)
-                            } else if let status = appModel.appleMusicPlaylistSyncStatus {
-                                Text(status)
-                                    .font(.footnote)
-                                    .foregroundStyle(.secondary)
-                            }
-                        }
                     }
 
                     Section("Diagnostics") {
+                        Button("Reset What's New Prompt") {
+                            appModel.resetWhatsNewSeenForTesting()
+                        }
+
                         Button("Generate Support Bundle") {
                             Task { await appModel.exportSupportBundle() }
                         }
@@ -4535,15 +5037,6 @@ private struct DeveloperToolsView: View {
         }
         .accentWashBackground()
         .navigationTitle("Developer Tools")
-        .alert("Experimental Apple Music Playlist Sync", isPresented: $showTeamPlaylistWarning) {
-            Button("Update Playlist") {
-                appModel.acknowledgeExperimentalTeamPlaylistSync()
-                Task { await appModel.syncSelectedTeamAppleMusicPlaylist() }
-            }
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text("Roll Call will create or update the exact-name Apple Music playlist for the selected team and replace that playlist's songs with the team's current Apple Music cues.")
-        }
     }
 }
 

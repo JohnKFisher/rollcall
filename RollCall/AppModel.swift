@@ -70,6 +70,137 @@ enum CustomAnnouncerRecordingPhase: Equatable {
     case stopping(UUID)
 }
 
+struct TeamAppleMusicPlaylistSongRow: Equatable, Identifiable {
+    var id: String { songID }
+    var playerID: UUID
+    var playerName: String
+    var songID: String
+    var title: String
+    var artistName: String
+}
+
+enum TeamAppleMusicPlaylistSkipReason: String, Equatable {
+    case missingCue
+    case localAudio
+    case builtInClip
+    case previewOnlyAppleMusic
+
+    var explanation: String {
+        switch self {
+        case .missingCue:
+            return "No song cue selected"
+        case .localAudio:
+            return "Local audio cannot be added to Apple Music"
+        case .builtInClip:
+            return "Built-in clips cannot be added to Apple Music"
+        case .previewOnlyAppleMusic:
+            return "Preview-only Apple Music selections cannot be added"
+        }
+    }
+}
+
+struct TeamAppleMusicPlaylistSkippedCue: Equatable, Identifiable {
+    var id: UUID { playerID }
+    var playerID: UUID
+    var playerName: String
+    var title: String?
+    var artistName: String?
+    var reason: TeamAppleMusicPlaylistSkipReason
+}
+
+struct TeamAppleMusicPlaylistSummary: Equatable, Identifiable {
+    var id: UUID { teamID }
+    var teamID: UUID
+    var teamName: String
+    var playlistName: String
+    var includedSongs: [TeamAppleMusicPlaylistSongRow]
+    var skippedCues: [TeamAppleMusicPlaylistSkippedCue]
+    var duplicateSongs: [TeamAppleMusicPlaylistSongRow]
+
+    var songIDs: [String] {
+        includedSongs.map(\.songID)
+    }
+
+    var canUpdatePlaylist: Bool {
+        !includedSongs.isEmpty
+    }
+
+    init(team: Team) {
+        teamID = team.id
+        teamName = team.name
+        playlistName = "Roll Call - \(team.name)"
+
+        var seenSongIDs = Set<String>()
+        var included: [TeamAppleMusicPlaylistSongRow] = []
+        var skipped: [TeamAppleMusicPlaylistSkippedCue] = []
+        var duplicates: [TeamAppleMusicPlaylistSongRow] = []
+
+        for player in team.players {
+            guard let cue = player.cue else {
+                skipped.append(TeamAppleMusicPlaylistSkippedCue(
+                    playerID: player.id,
+                    playerName: player.displayName,
+                    title: nil,
+                    artistName: nil,
+                    reason: .missingCue
+                ))
+                continue
+            }
+
+            switch cue.source {
+            case .appleMusic(let source):
+                let row = TeamAppleMusicPlaylistSongRow(
+                    playerID: player.id,
+                    playerName: player.displayName,
+                    songID: source.songID,
+                    title: source.title,
+                    artistName: source.artistName
+                )
+                if source.isCatalogBacked == false {
+                    skipped.append(TeamAppleMusicPlaylistSkippedCue(
+                        playerID: player.id,
+                        playerName: player.displayName,
+                        title: source.title,
+                        artistName: source.artistName,
+                        reason: .previewOnlyAppleMusic
+                    ))
+                } else if seenSongIDs.insert(source.songID).inserted {
+                    included.append(row)
+                } else {
+                    duplicates.append(row)
+                }
+            case .localAudio(let source):
+                skipped.append(TeamAppleMusicPlaylistSkippedCue(
+                    playerID: player.id,
+                    playerName: player.displayName,
+                    title: source.displayName,
+                    artistName: nil,
+                    reason: .localAudio
+                ))
+            case .builtInClip(let source):
+                skipped.append(TeamAppleMusicPlaylistSkippedCue(
+                    playerID: player.id,
+                    playerName: player.displayName,
+                    title: source.displayName,
+                    artistName: nil,
+                    reason: .builtInClip
+                ))
+            }
+        }
+
+        includedSongs = included
+        skippedCues = skipped
+        duplicateSongs = duplicates
+    }
+}
+
+struct AppleMusicPlaylistRecovery: Equatable, Identifiable {
+    var id = UUID()
+    var summary: TeamAppleMusicPlaylistSummary
+    var unresolvedSongs: [TeamAppleMusicPlaylistSongRow]
+    var availableSongIDs: [String]
+}
+
 fileprivate struct RenderedAnnouncerAudio {
     var data: Data
     var resolvedVoiceIdentifier: String?
@@ -285,6 +416,7 @@ final class AppModel: ObservableObject {
     @Published var announcerRegenerationStatus: AnnouncerRegenerationStatus?
     @Published private(set) var isAppleMusicPlaylistSyncing = false
     @Published private(set) var appleMusicPlaylistSyncStatus: String?
+    @Published private(set) var appleMusicPlaylistRecovery: AppleMusicPlaylistRecovery?
     @Published private(set) var appleMusicPlaybackCapability: AppleMusicPlaybackCapability = .unknown
     @Published private(set) var customAnnouncerRecordingPhase: CustomAnnouncerRecordingPhase = .idle
     private var hasFinishedLaunching = false
@@ -311,6 +443,10 @@ final class AppModel: ObservableObject {
 
     var featureFlags: FeatureFlags {
         FeatureFlags(environment: .current, experimental: state.experimental)
+    }
+
+    var hasUnseenWhatsNew: Bool {
+        state.lastSeenWhatsNewReleaseID != AppMetadata.whatsNewReleaseID
     }
 
     init() {
@@ -904,6 +1040,21 @@ final class AppModel: ObservableObject {
         persist()
     }
 
+    func setKeepScreenAwakeDuringLiveUse(_ isEnabled: Bool) {
+        state.settings.keepScreenAwakeDuringLiveUse = isEnabled
+        persist()
+    }
+
+    func markCurrentWhatsNewSeen() {
+        state.lastSeenWhatsNewReleaseID = AppMetadata.whatsNewReleaseID
+        persist()
+    }
+
+    func resetWhatsNewSeenForTesting() {
+        state.lastSeenWhatsNewReleaseID = nil
+        persist()
+    }
+
     func setGameDayAnnouncerMode(_ mode: GameDayAnnouncerMode) {
         guard let teamIndex else { return }
         state.teams[teamIndex].session.gameDayAnnouncerMode = mode
@@ -940,29 +1091,37 @@ final class AppModel: ObservableObject {
         persist()
     }
 
-    func setAppleMusicTeamPlaylistSyncEnabled(_ isEnabled: Bool) {
-        state.experimental.appleMusicTeamPlaylistSyncEnabled = isEnabled
-        persist()
+    func selectedTeamAppleMusicPlaylistSummary() -> TeamAppleMusicPlaylistSummary? {
+        guard let team = selectedTeam else { return nil }
+        return TeamAppleMusicPlaylistSummary(team: team)
     }
 
-    func acknowledgeExperimentalTeamPlaylistSync() {
-        state.experimental.appleMusicTeamPlaylistAcknowledgedAt = .now
-        persist()
+    func clearAppleMusicPlaylistStatus() {
+        appleMusicPlaylistSyncStatus = nil
+        appleMusicPlaylistRecovery = nil
     }
 
-    func syncSelectedTeamAppleMusicPlaylist() async {
+    func cancelAppleMusicPlaylistRecovery() {
+        appleMusicPlaylistRecovery = nil
+        appleMusicPlaylistSyncStatus = "Playlist update canceled. Apple Music was not changed."
+    }
+
+    func continueAppleMusicPlaylistUpdate(_ recovery: AppleMusicPlaylistRecovery) async {
+        appleMusicPlaylistRecovery = nil
+        await syncAppleMusicPlaylist(summary: recovery.summary, songIDs: recovery.availableSongIDs, allowsRecovery: false)
+    }
+
+    func syncAppleMusicPlaylist(summary: TeamAppleMusicPlaylistSummary) async {
+        await syncAppleMusicPlaylist(summary: summary, songIDs: summary.songIDs, allowsRecovery: true)
+    }
+
+    private func syncAppleMusicPlaylist(
+        summary: TeamAppleMusicPlaylistSummary,
+        songIDs: [String],
+        allowsRecovery: Bool
+    ) async {
         guard !isAppleMusicPlaylistSyncing else { return }
-        guard featureFlags.appleMusicTeamPlaylistSyncEnabled else {
-            appleMusicPlaylistSyncStatus = AppError.featureDisabled.localizedDescription
-            return
-        }
-        guard let team = selectedTeam else {
-            appleMusicPlaylistSyncStatus = AppError.noSelectedTeam.localizedDescription
-            return
-        }
-
-        let summary = appleMusicPlaylistSummary(for: team)
-        guard !summary.songIDs.isEmpty else {
+        guard !songIDs.isEmpty else {
             appleMusicPlaylistSyncStatus = AppError.noAppleMusicTeamCues.localizedDescription
             return
         }
@@ -972,10 +1131,38 @@ final class AppModel: ObservableObject {
         defer { isAppleMusicPlaylistSyncing = false }
 
         do {
-            try await musicCatalogService.syncTeamPlaylist(name: summary.playlistName, songIDs: summary.songIDs)
-            var message = "Updated \"\(summary.playlistName)\" with \(summary.songIDs.count) \(summary.songIDs.count == 1 ? "song" : "songs")."
-            if summary.skippedCueCount > 0 {
-                message += " Skipped \(summary.skippedCueCount) non-Apple-Music \(summary.skippedCueCount == 1 ? "cue" : "cues")."
+            let resolved = try await musicCatalogService.resolveTeamPlaylistSongs(songIDs: songIDs)
+            if !resolved.unresolvedSongIDs.isEmpty {
+                if allowsRecovery {
+                    let unresolvedIDSet = Set(resolved.unresolvedSongIDs)
+                    appleMusicPlaylistRecovery = AppleMusicPlaylistRecovery(
+                        summary: summary,
+                        unresolvedSongs: summary.includedSongs.filter { unresolvedIDSet.contains($0.songID) },
+                        availableSongIDs: resolved.resolvedSongIDs
+                    )
+                    appleMusicPlaylistSyncStatus = "Apple Music could not find \(resolved.unresolvedSongIDs.count) \(resolved.unresolvedSongIDs.count == 1 ? "song" : "songs"). Review before continuing."
+                    haptics.warning(isEnabled: state.settings.hapticsEnabled)
+                    return
+                } else {
+                    appleMusicPlaylistSyncStatus = "Apple Music could not find every selected song. Playlist was not changed."
+                    haptics.warning(isEnabled: state.settings.hapticsEnabled)
+                    return
+                }
+            }
+            guard !resolved.songs.isEmpty else {
+                appleMusicPlaylistSyncStatus = AppError.noAppleMusicTeamCues.localizedDescription
+                return
+            }
+
+            try await musicCatalogService.replaceTeamPlaylist(name: summary.playlistName, songs: resolved.songs)
+            var message = "Updated \"\(summary.playlistName)\" with \(resolved.songs.count) \(resolved.songs.count == 1 ? "song" : "songs")."
+            let skippedCount = summary.skippedCues.count
+            if skippedCount > 0 {
+                message += " Skipped \(skippedCount) unsupported \(skippedCount == 1 ? "cue" : "cues")."
+            }
+            let duplicateCount = summary.duplicateSongs.count
+            if duplicateCount > 0 {
+                message += " Added \(duplicateCount == 1 ? "1 duplicate song" : "\(duplicateCount) duplicate songs") once."
             }
             appleMusicPlaylistSyncStatus = message
             haptics.success(isEnabled: state.settings.hapticsEnabled)
@@ -1188,6 +1375,7 @@ final class AppModel: ObservableObject {
             let currentVersion = self.state.appVersion
             let currentDeviceIdentity = self.state.deviceIdentity
             let currentSettings = self.state.settings
+            let currentLastSeenWhatsNewReleaseID = self.state.lastSeenWhatsNewReleaseID
             let currentSchemaVersion = self.state.schemaVersion
 
             let restoredState = try await Task.detached(priority: .utility) { () -> AppState in
@@ -1197,6 +1385,7 @@ final class AppModel: ObservableObject {
                 restoredState.appVersion = currentVersion
                 restoredState.deviceIdentity = currentDeviceIdentity
                 restoredState.settings = currentSettings
+                restoredState.lastSeenWhatsNewReleaseID = currentLastSeenWhatsNewReleaseID
                 restoredState.schemaVersion = max(restoredState.schemaVersion, currentSchemaVersion)
                 return restoredState
             }.value
@@ -1287,34 +1476,6 @@ final class AppModel: ObservableObject {
 
     private func playbackID(for player: Player) -> UUID {
         player.cue?.id ?? player.id
-    }
-
-    private struct AppleMusicPlaylistSummary {
-        var playlistName: String
-        var songIDs: [String]
-        var skippedCueCount: Int
-    }
-
-    private func appleMusicPlaylistSummary(for team: Team) -> AppleMusicPlaylistSummary {
-        var seenSongIDs = Set<String>()
-        var songIDs: [String] = []
-        var skippedCueCount = 0
-
-        for player in team.players {
-            guard let cue = player.cue else { continue }
-            guard case .appleMusic(let source) = cue.source, source.isCatalogBacked != false else {
-                skippedCueCount += 1
-                continue
-            }
-            guard seenSongIDs.insert(source.songID).inserted else { continue }
-            songIDs.append(source.songID)
-        }
-
-        return AppleMusicPlaylistSummary(
-            playlistName: "Roll Call - \(team.name)",
-            songIDs: songIDs,
-            skippedCueCount: skippedCueCount
-        )
     }
 
     private var teamIndex: Int? {

@@ -52,6 +52,33 @@ enum RollCallTestFixtures {
         )
     }
 
+    static func appleMusicCue(
+        id: UUID = UUID(),
+        songID: String,
+        title: String,
+        artistName: String,
+        isCatalogBacked: Bool? = true
+    ) -> Cue {
+        Cue(
+            id: id,
+            label: title,
+            source: .appleMusic(
+                AppleMusicSource(
+                    songID: songID,
+                    title: title,
+                    artistName: artistName,
+                    duration: 180,
+                    previewURL: nil,
+                    isCatalogBacked: isCatalogBacked
+                )
+            ),
+            startTime: 0,
+            duration: 8,
+            fadeOutDuration: 1,
+            pauseAfterAnnouncer: 0.2
+        )
+    }
+
     static func team(
         players: [Player]? = nil,
         battingOrder: [UUID]? = nil,
@@ -93,6 +120,7 @@ enum RollCallTestFixtures {
             experimental: .default,
             settings: .default,
             lastReadiness: nil,
+            lastSeenWhatsNewReleaseID: nil,
             recentAppleMusicSelections: [],
             trimDefaults: .default,
             onboarding: teams.isEmpty ? .notStarted : .completed(at: now)

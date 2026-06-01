@@ -4,10 +4,14 @@ Use this file as a concise project status snapshot for the current version, what
 
 ## Roll Call
 
-Current version: `1.0.1` (build `56`)
+Current version: `1.1.0` (build `57`)
 
 Status:
+- `1.1.0` build `57` bumps the checked-in app marketing version and build number for the 1.1 release lane after the current polish/practical-improvements work.
 - The `1.1/accents` lane now makes selected team colors drive a protected accent palette across app-wide tint, primary actions, selected controls, team identity surfaces, and page background accent washes while keeping semantic colors independent.
+- The `release/1.1` lane now includes a default-off Keep Screen Awake setting that prevents auto-lock while Roll Call is active on Game Day or Clips, with a battery-use note in Settings.
+- The `release/1.1` lane now includes an in-app What's New sheet backed by bundled draft 1.1 summary notes, a Settings > About reopen entry, a Full Changelog web link, and a Developer Tools reset action for testing outside Release builds.
+- The `release/1.1` lane now promotes Apple Music team playlist creation from a Developer Tools experiment to a normal team action with an included/skipped preview, managed-playlist overwrite warning, duplicate handling, and unresolved-song recovery before partial updates.
 - Initial `1.0.1` App Store submission candidate with a buildable iPhone app target at [RollCall.xcodeproj](/Users/jkfisher/Documents/Coding/Roll%20Call/RollCall.xcodeproj).
 - The hotfix/iOS17 lane lowers the checked-in app and test deployment target to iOS 17.0 without changing the marketing version, build number, bundle ID, entitlements, dependencies, permissions, or feature behavior.
 - The hotfix/iOS17 lane now includes a Game Day playback cleanup fix so stale fade-out or preview stop tasks cannot stop a newer batter cue after quick live taps.
@@ -77,6 +81,7 @@ What works now:
 - Settings now includes a `Volume Automation` switch so Roll Call can either manage cue volume for fades or leave playback volume untouched; Game Day hides the low-volume warning while this automation is enabled.
 - Advanced Trim now notes that Fade Out timing is only used when `Volume Automation` is enabled in Settings.
 - Settings now includes a default-on `Always Use Dark Live Screens` switch. Setup screens always follow the device appearance; `Game Day`, `Clips`, and the Game Day lineup sheet render dark when the device is dark or the setting is on, otherwise they render in normal Light Mode. App pages share a reusable system-background gradient using the selected team's protected accent tint, with a slightly stronger wash on live screens and Roll Call orange as the no-team fallback.
+- Settings now includes a default-off `Keep Screen Awake` switch. When enabled, Roll Call prevents auto-lock only while the app is active on `Game Day` or `Clips`, then restores normal auto-lock when leaving those live-use surfaces or when the app is no longer active.
 - Subscribed full-song Apple Music playback now routes through an internal MediaPlayer application-player path so the same Apple Music cue can attempt stepped fade-out in trim preview, cue preview, and Game Day without changing the cue model
 - Experimental Apple Music local-copy flag and one-way conversion action
 - Main tab roots now use a pinned, full-width TeamBar at the top of the screen instead of repeating panel-name headers; Game Day keeps its dark live-side board with a top announcer-mode picker, compact live warning strip, Now Batting hero, On Deck area, centered `Prev / Edit Lineup / Next` row, divider before the grid, and obvious active tap-to-stop state
@@ -90,10 +95,11 @@ What works now:
 - CSV roster import with preview before apply
 - Branded launch screen based on the Music Triage splash style
 - Developer Tools screen with experimental controls and support-bundle export
-- Developer Tools now includes an experimental Apple Music team playlist sync button that updates `Roll Call - <Team Name>` from the selected team's catalog-backed Apple Music cues
+- Team Actions can update the managed Apple Music playlist `Roll Call - <Team Name>` from the selected team's catalog-backed Apple Music cues, after previewing included songs, skipped cues, duplicate handling, and the managed-playlist overwrite warning.
 - Build-environment support now separates `Debug`, `Internal`, and `Release` configurations/schemes, with centralized `BuildEnvironment` / `FeatureFlags` guardrails so Release hides Developer Tools and experimental testing surfaces
 - `RollCallTests` can be run from Xcode with the `Roll Call Debug` scheme or from the command line using the README test command.
 - Settings > About now shows app version, build number, build environment, and an email feedback link with version details in the subject
+- Settings > About now includes a What's New entry. Existing users see the same update notes automatically once per version/build when they reach a safe non-live tab; Game Day, Clips, onboarding, package import, and other modal flows take priority.
 - Settings > About > Attributions & Licenses now includes a Special Thanks section for the girls of the Piscataway Thunder Softball Team
 - Repo README and license notice now describe the public noncommercial fork policy, commercial-permission boundary, small-snippet exception, and third-party asset attributions.
 
@@ -105,6 +111,7 @@ Known limitations:
 - Apple Music full-song trimming now depends on a device account state and MusicKit App Service configuration that this environment cannot emulate, so it still needs an on-device feel pass with and without an active Apple Music playback subscription after App ID registration/provisioning refresh.
 - The new subscribed-song MediaPlayer backend is implemented but still unproven on a real subscribed device; until that on-device check passes, full-song Apple Music fade behavior should still be treated as provisional.
 - The new Apple Music hook suggestion is intentionally conservative and still needs an on-device feel pass to judge whether its default entrance guesses are actually helpful.
+- Apple Music team playlist creation is promoted in the app, but the actual Apple Music library mutation and unresolved-song recovery path still need a physical-device Apple Music smoke test before release confidence.
 - Roll Call now gives only lightweight Focus guidance for interruptions; it still does not have OS-level Do Not Disturb or Guided Access integration.
 - In `Announcer Only`, players without a recorded Announcement Cue fall back to `Small Cheer`; in `Announcer+Song`, missing announcers are skipped and missing songs fall back to `Small Cheer`. This fallback is live-safe but does not count as player-specific Ready status in Readiness.
 - The no-song Game Day fallback clip is currently code-defaulted to `Small Cheer`; a user-facing selector for changing that default is not implemented yet.
@@ -112,6 +119,9 @@ Known limitations:
 - Startup and tap responsiveness have been tightened by deferring/coalescing some follow-up work and moving snapshot restore I/O off the main actor, but this still needs an on-device feel pass to confirm the improvement.
 
 Verification:
+- Result in this `1.1.0` build `57` version bump: `git diff --check` succeeded, and the checked-in app target build settings now read `MARKETING_VERSION = 1.1.0` and `CURRENT_PROJECT_VERSION = 57` for Debug, Release, and Internal. No bundle ID, deployment target, entitlements, dependencies, permissions, or feature behavior changed.
+- Result in this `release/1.1` What's New pass: sandboxed `xcodebuild -project RollCall.xcodeproj -scheme "Roll Call Debug" -destination 'generic/platform=iOS' -derivedDataPath /private/tmp/rollcall-whatsnew-dd CODE_SIGNING_ALLOWED=NO build` was blocked by CoreSimulator/cache/network restrictions while resolving ZIPFoundation; the same signing-disabled build succeeded out of sandbox after splitting the root SwiftUI modifier chain for type-checking. `git diff --check` and the focused `xcrun swiftc -parse ...` app-file check also succeeded. A simulator/device smoke check should still confirm the automatic safe-tab timing and manual Settings > About presentation.
+- Result in this `release/1.1` Keep Screen Awake pass: `git diff --check` succeeded; `xcrun swiftc -parse RollCall/Models.swift RollCall/Services.swift RollCall/AppModel.swift RollCall/RootView.swift RollCall/RollCallApp.swift RollCall/BuildEnvironment.swift RollCall/DesignSystem/RollCallDesignSystem.swift RollCall/DesignSystem/RollCallColors.swift RollCall/DesignSystem/RollCallTypography.swift RollCall/DesignSystem/RollCallSpacing.swift RollCall/DesignSystem/RollCallButtonStyles.swift RollCall/DesignSystem/RollCallCardStyles.swift RollCall/DesignSystem/StatusChip.swift RollCall/DesignSystem/TeamBanner.swift` succeeded. A simulator/device smoke check should still confirm the iOS auto-lock behavior in practice.
 - Result in this iOS 17 Game Day playback pass: final `git diff --check` and `xcrun swiftc -parse RollCall/Models.swift RollCall/Services.swift RollCall/AppModel.swift RollCall/RootView.swift RollCall/RollCallApp.swift RollCall/BuildEnvironment.swift RollCall/DesignSystem/RollCallDesignSystem.swift RollCall/DesignSystem/RollCallColors.swift RollCall/DesignSystem/RollCallTypography.swift RollCall/DesignSystem/RollCallSpacing.swift RollCall/DesignSystem/RollCallButtonStyles.swift RollCall/DesignSystem/RollCallCardStyles.swift RollCall/DesignSystem/StatusChip.swift RollCall/DesignSystem/TeamBanner.swift` succeeded.
 - Result in this iOS 17 Game Day playback pass: `xcodebuild -project RollCall.xcodeproj -scheme "Roll Call Debug" -destination 'generic/platform=iOS' -derivedDataPath /private/tmp/rollcall-ios17-gameday-dd CODE_SIGNING_ALLOWED=NO build` succeeded out of sandbox after the session-token/reentrancy guard change, then a final main-actor callback cleanup was parse-checked. A follow-up full build after that warning cleanup was blocked by the local approval/usage limit.
 - Result in this iOS 17 Game Day playback pass: `xcodebuild test -project RollCall.xcodeproj -scheme "Roll Call Debug" -destination 'platform=iOS Simulator,name=iPhone 15 Pro,OS=17.5' -derivedDataPath /private/tmp/rollcall-ios17-gameday-test CODE_SIGNING_ALLOWED=NO` succeeded out of sandbox before the final reentrancy and main-actor callback cleanup; that final code still needs a full Xcode build/test or on-device smoke when approval capacity is available.
