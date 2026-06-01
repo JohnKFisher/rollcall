@@ -23,42 +23,6 @@ private enum PackageImportContext {
     case onboarding
 }
 
-private extension TeamAccentPreset {
-    var title: String {
-        switch self {
-        case .rollCallOrange: return "Orange"
-        case .red: return "Red"
-        case .gold: return "Gold"
-        case .green: return "Green"
-        case .blue: return "Blue"
-        case .purple: return "Purple"
-        case .gray: return "Gray"
-        case .black: return "Black"
-        }
-    }
-
-    func color(surface: RollCallSurfaceVariant = .standard) -> Color {
-        switch self {
-        case .rollCallOrange:
-            return Color.rollCall(.accent, surface: surface)
-        case .red:
-            return Color(uiColor: .systemRed)
-        case .gold:
-            return Color(uiColor: .systemYellow)
-        case .green:
-            return Color(uiColor: .systemGreen)
-        case .blue:
-            return Color(uiColor: .systemBlue)
-        case .purple:
-            return Color(uiColor: .systemPurple)
-        case .gray:
-            return Color(uiColor: .systemGray)
-        case .black:
-            return Color.black
-        }
-    }
-}
-
 private struct PlayingSpeakerSymbol: View {
     let systemImage: String
     var color: Color?
@@ -108,6 +72,116 @@ private extension View {
     }
 }
 
+private extension View {
+    func teamAccentScope(_ theme: TeamAccentTheme) -> some View {
+        rollCallTeamAccentTheme(theme)
+            .tint(theme.color(.primary))
+    }
+
+    func accentWashBackground(surface: RollCallSurfaceVariant = .standard) -> some View {
+        background {
+            AccentWashBackground(surface: surface)
+                .ignoresSafeArea()
+        }
+    }
+
+    func accentWashListBackground(surface: RollCallSurfaceVariant = .standard) -> some View {
+        scrollContentBackground(.hidden)
+            .accentWashBackground(surface: surface)
+    }
+}
+
+@MainActor
+private struct TabBarAccentUpdater: UIViewControllerRepresentable {
+    let theme: TeamAccentTheme
+
+    func makeUIViewController(context: Context) -> UIViewController {
+        TabBarAccentViewController(theme: theme)
+    }
+
+    func updateUIViewController(_ uiViewController: UIViewController, context: Context) {
+        guard let controller = uiViewController as? TabBarAccentViewController else { return }
+        controller.theme = theme
+        controller.applyAccent()
+    }
+
+    private final class TabBarAccentViewController: UIViewController {
+        var theme: TeamAccentTheme
+
+        init(theme: TeamAccentTheme) {
+            self.theme = theme
+            super.init(nibName: nil, bundle: nil)
+        }
+
+        @available(*, unavailable)
+        required init?(coder: NSCoder) {
+            fatalError("init(coder:) has not been implemented")
+        }
+
+        override func didMove(toParent parent: UIViewController?) {
+            super.didMove(toParent: parent)
+            applyAccent()
+        }
+
+        override func viewDidLayoutSubviews() {
+            super.viewDidLayoutSubviews()
+            applyAccent()
+        }
+
+        func applyAccent() {
+            let tintColor = theme.uiColor(.primary).resolvedColor(with: traitCollection)
+            var parent = parent
+            while let current = parent {
+                if let tabBarController = current as? UITabBarController {
+                    applyTabBarAccent(tintColor, to: tabBarController.tabBar)
+                    return
+                }
+                parent = current.parent
+            }
+        }
+    }
+}
+
+@MainActor
+private func applyTabBarAccent(_ theme: TeamAccentTheme) {
+    let tintColor = theme.uiColor(.primary)
+    UITabBar.appearance().tintColor = tintColor
+
+    for scene in UIApplication.shared.connectedScenes.compactMap({ $0 as? UIWindowScene }) {
+        for window in scene.windows {
+            applyTabBarAccent(tintColor, below: window.rootViewController)
+        }
+    }
+}
+
+@MainActor
+private func applyTabBarAccent(_ tintColor: UIColor, below viewController: UIViewController?) {
+    guard let viewController else { return }
+    if let tabBarController = viewController as? UITabBarController {
+        applyTabBarAccent(tintColor, to: tabBarController.tabBar)
+    }
+    for child in viewController.children {
+        applyTabBarAccent(tintColor, below: child)
+    }
+    if let presented = viewController.presentedViewController {
+        applyTabBarAccent(tintColor, below: presented)
+    }
+}
+
+@MainActor
+private func applyTabBarAccent(_ tintColor: UIColor, to tabBar: UITabBar) {
+    tabBar.tintColor = tintColor
+    let standardAppearance = tabBar.standardAppearance
+    standardAppearance.stackedLayoutAppearance.selected.iconColor = tintColor
+    standardAppearance.stackedLayoutAppearance.selected.titleTextAttributes[.foregroundColor] = tintColor
+    standardAppearance.inlineLayoutAppearance.selected.iconColor = tintColor
+    standardAppearance.inlineLayoutAppearance.selected.titleTextAttributes[.foregroundColor] = tintColor
+    standardAppearance.compactInlineLayoutAppearance.selected.iconColor = tintColor
+    standardAppearance.compactInlineLayoutAppearance.selected.titleTextAttributes[.foregroundColor] = tintColor
+    tabBar.standardAppearance = standardAppearance
+    tabBar.scrollEdgeAppearance = standardAppearance
+}
+
 struct RootView: View {
     private struct PlayerEditorRoute: Identifiable {
         let id: UUID
@@ -149,6 +223,10 @@ struct RootView: View {
         .liveSide
     }
 
+    private var selectedTeamAccentTheme: TeamAccentTheme {
+        appModel.selectedTeam?.accentPreset.theme ?? .rollCallDefault
+    }
+
     private func presentPlayerEditor(for player: Player) {
         playerEditorRoute = PlayerEditorRoute(id: player.id)
     }
@@ -174,7 +252,8 @@ struct RootView: View {
 
     var body: some View {
         rootContent
-            .tint(.orange)
+            .rollCallTeamAccentTheme(selectedTeamAccentTheme)
+            .tint(selectedTeamAccentTheme.color(.primary))
             .task {
                 await appModel.finishLaunchingIfNeeded()
                 resolveInitialTabIfNeeded()
@@ -323,28 +402,40 @@ struct RootView: View {
     private var mainTabs: some View {
         TabView(selection: $selectedTab) {
             gameDayTab
+                .teamAccentScope(selectedTeamAccentTheme)
                 .tag(RootTab.gameDay)
                 .tabItem { Label("Game Day", systemImage: "play.rectangle.fill") }
 
             generalClipsTab
+                .teamAccentScope(selectedTeamAccentTheme)
                 .tag(RootTab.generalClips)
                 .tabItem { Label("Clips", systemImage: "music.note.list") }
 
             playersTab
+                .teamAccentScope(selectedTeamAccentTheme)
                 .tag(RootTab.players)
                 .tabItem { Label("Players", systemImage: "person.3.fill") }
 
             teamsTab
+                .teamAccentScope(selectedTeamAccentTheme)
                 .tag(RootTab.teams)
                 .tabItem { Label("Teams", systemImage: "list.number") }
 
             readinessTab
+                .teamAccentScope(selectedTeamAccentTheme)
                 .tag(RootTab.readiness)
                 .tabItem { Label("Readiness", systemImage: "checklist") }
 
             settingsTab
+                .teamAccentScope(selectedTeamAccentTheme)
                 .tag(RootTab.settings)
                 .tabItem { Label("Settings", systemImage: "gearshape.fill") }
+        }
+        .teamAccentScope(selectedTeamAccentTheme)
+        .background(TabBarAccentUpdater(theme: selectedTeamAccentTheme).frame(width: 0, height: 0))
+        .onAppear { applyTabBarAccent(selectedTeamAccentTheme) }
+        .onChange(of: selectedTeamAccentTheme) { _, theme in
+            applyTabBarAccent(theme)
         }
     }
 
@@ -395,6 +486,7 @@ struct RootView: View {
                 }
             }
             .listStyle(.insetGrouped)
+            .accentWashListBackground()
             .navigationTitle("Players")
             .toolbar(.hidden, for: .navigationBar)
             .safeAreaInset(edge: .top, spacing: 0) {
@@ -445,7 +537,7 @@ struct RootView: View {
             TeamBanner(
                 teamName: appModel.selectedTeam?.name,
                 secondaryStatus: secondaryStatus ?? selectedTeamBannerStatus,
-                accentColor: appModel.selectedTeam?.accentPreset.color(surface: variant == .liveSide ? .live : .standard),
+                accentColor: selectedTeamAccentTheme.color(.primary, surface: variant == .liveSide ? .live : .standard),
                 variant: variant
             )
             .frame(maxWidth: .infinity)
@@ -510,7 +602,7 @@ struct RootView: View {
     private var generalClipsTab: some View {
         NavigationStack {
             ZStack {
-                LiveSurfaceBackground()
+                AccentWashBackground(surface: .live)
                     .ignoresSafeArea()
 
                 ScrollView {
@@ -602,6 +694,8 @@ struct RootView: View {
         let surface: RollCallSurfaceVariant
         let play: () -> Void
 
+        @Environment(\.rollCallTeamAccentTheme) private var teamAccentTheme
+
         var body: some View {
             Button(action: play) {
                 HStack(spacing: RollCallSpacingTier.standard.value) {
@@ -624,9 +718,9 @@ struct RootView: View {
                     Label("Play", systemImage: "play.fill")
                         .labelStyle(.iconOnly)
                         .font(.headline.weight(.bold))
-                        .foregroundStyle(.white)
+                        .foregroundStyle(teamAccentTheme.color(.onFill, surface: .live))
                         .frame(width: 48, height: 48)
-                        .background(Color.rollCall(.accent, surface: .live), in: Circle())
+                        .background(teamAccentTheme.color(.fill, surface: .live), in: Circle())
                         .overlay {
                             Circle()
                                 .strokeBorder(Color.white.opacity(0.22), lineWidth: 1)
@@ -749,7 +843,7 @@ struct RootView: View {
                 .padding(.top, RollCallSpacingTier.tight.value)
                 .padding(.bottom, RollCallSpacingTier.large.value)
             }
-            .background(Color(uiColor: .systemGroupedBackground))
+            .accentWashBackground()
             .navigationTitle("Readiness")
             .toolbar(.hidden, for: .navigationBar)
             .safeAreaInset(edge: .top, spacing: 0) {
@@ -793,7 +887,11 @@ struct RootView: View {
                                     Label("Team Actions", systemImage: "ellipsis.circle")
                                         .frame(maxWidth: .infinity)
                                 }
-                                .buttonStyle(RollCallButtonStyle(family: .secondary, surface: .standard))
+                                .buttonStyle(RollCallButtonStyle(
+                                    family: .secondary,
+                                    surface: .standard,
+                                    teamAccentTheme: selectedTeamAccentTheme
+                                ))
 
                                 Text("Roster CSV format: name, number. Use a header row or simple two-column rows; player number is optional.")
                                     .rollCallText(.helperText)
@@ -855,7 +953,7 @@ struct RootView: View {
                 .padding(.bottom, RollCallSpacingTier.large.value)
                 .padding(.bottom, 72)
             }
-            .background(Color(uiColor: .systemGroupedBackground))
+            .accentWashBackground()
             .navigationTitle("Teams")
             .toolbar(.hidden, for: .navigationBar)
             .safeAreaInset(edge: .top, spacing: 0) {
@@ -1003,7 +1101,7 @@ struct RootView: View {
                                 systemImage: "sun.max.fill"
                             )
                         }
-                        .tint(Color.rollCall(.accent))
+                        .tint(selectedTeamAccentTheme.color(.primary))
 
                         Toggle(isOn: Binding(
                             get: { appModel.state.settings.hapticsEnabled },
@@ -1015,7 +1113,7 @@ struct RootView: View {
                                 systemImage: "iphone.radiowaves.left.and.right"
                             )
                         }
-                        .tint(Color.rollCall(.accent))
+                        .tint(selectedTeamAccentTheme.color(.primary))
 
                         Toggle(isOn: Binding(
                             get: { appModel.state.settings.fadeOutVolumeAutomationEnabled },
@@ -1027,7 +1125,7 @@ struct RootView: View {
                                 systemImage: "speaker.wave.2.fill"
                             )
                         }
-                        .tint(Color.rollCall(.accent))
+                        .tint(selectedTeamAccentTheme.color(.primary))
                     }
 
                     SettingsSectionGroup(
@@ -1127,7 +1225,7 @@ struct RootView: View {
                 .padding(.top, RollCallSpacingTier.tight.value)
                 .padding(.bottom, RollCallSpacingTier.large.value)
             }
-            .background(Color(uiColor: .systemGroupedBackground))
+            .accentWashBackground()
             .navigationTitle("Settings")
             .toolbar(.hidden, for: .navigationBar)
             .safeAreaInset(edge: .top, spacing: 0) {
@@ -1303,6 +1401,10 @@ private struct OnboardingRootView: View {
         !playerName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
+    private var activeAccentTheme: TeamAccentTheme {
+        activeTeam?.accentPreset.theme ?? selectedAccent.theme
+    }
+
     var body: some View {
         NavigationStack {
             ScrollView {
@@ -1323,7 +1425,7 @@ private struct OnboardingRootView: View {
                 .frame(maxWidth: 560, alignment: .leading)
                 .frame(maxWidth: .infinity, alignment: .center)
             }
-            .background(Color(uiColor: .systemGroupedBackground))
+            .accentWashBackground()
             .navigationTitle("Setup Guide")
             .toolbar {
                 if canNavigateBack {
@@ -1399,6 +1501,8 @@ private struct OnboardingRootView: View {
                 LineupEditorSheet(appModel: appModel)
             }
         }
+        .rollCallTeamAccentTheme(activeAccentTheme)
+        .tint(activeAccentTheme.color(.primary))
     }
 
     @ViewBuilder
@@ -2030,6 +2134,8 @@ private struct OnboardingMilestonesView: View {
     let activeStep: OnboardingStep
     var isComplete: Bool = false
 
+    @Environment(\.rollCallTeamAccentTheme) private var teamAccentTheme
+
     var body: some View {
         HStack(spacing: 10) {
             ForEach(OnboardingStep.allCases, id: \.self) { step in
@@ -2045,7 +2151,7 @@ private struct OnboardingMilestonesView: View {
                 .overlay(alignment: .bottom) {
                     if !isComplete && step == activeStep {
                         Capsule()
-                            .fill(Color.rollCall(.accent))
+                            .fill(teamAccentTheme.color(.fill))
                             .frame(height: 2)
                             .offset(y: 5)
                     }
@@ -2071,8 +2177,8 @@ private struct OnboardingMilestonesView: View {
     }
 
     private func symbolColor(for step: OnboardingStep) -> Color {
-        if isComplete { return Color.rollCall(.accent) }
-        return step.rawValue <= activeStep.rawValue ? Color.rollCall(.accent) : Color(uiColor: .tertiaryLabel)
+        if isComplete { return teamAccentTheme.color(.primary) }
+        return step.rawValue <= activeStep.rawValue ? teamAccentTheme.color(.primary) : Color(uiColor: .tertiaryLabel)
     }
 
     private func textColor(for step: OnboardingStep) -> Color {
@@ -2099,26 +2205,45 @@ private struct OnboardingCard<Content: View>: View {
     }
 }
 
-private extension View {
-    func onboardingTextField() -> some View {
-        self
+private struct OnboardingTextFieldModifier: ViewModifier {
+    @Environment(\.rollCallTeamAccentTheme) private var teamAccentTheme
+
+    func body(content: Content) -> some View {
+        content
             .padding(.horizontal, 12)
             .padding(.vertical, 11)
             .background(Color(uiColor: .systemBackground))
             .overlay(
                 RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .strokeBorder(Color.rollCall(.accent).opacity(0.55), lineWidth: 1.4)
+                    .strokeBorder(teamAccentTheme.color(.primary).opacity(0.55), lineWidth: 1.4)
             )
             .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+    }
+}
+
+private extension View {
+    func onboardingTextField() -> some View {
+        modifier(OnboardingTextFieldModifier())
     }
 }
 
 private struct AccentPresetGrid: View {
     @Binding var selectedAccent: TeamAccentPreset
 
+    private let displayOrder: [TeamAccentPreset] = [
+        .red,
+        .rollCallOrange,
+        .gold,
+        .green,
+        .blue,
+        .purple,
+        .gray,
+        .black
+    ]
+
     var body: some View {
         LazyVGrid(columns: [GridItem(.adaptive(minimum: 86), spacing: 8)], spacing: 8) {
-            ForEach(TeamAccentPreset.allCases) { preset in
+            ForEach(displayOrder) { preset in
                 Button {
                     selectedAccent = preset
                 } label: {
@@ -2779,12 +2904,14 @@ private struct SelectedTeamSummary: View {
 private struct TeamRowIcon: View {
     let isSelected: Bool
 
+    @Environment(\.rollCallTeamAccentTheme) private var teamAccentTheme
+
     var body: some View {
         Image(systemName: isSelected ? "person.3.fill" : "person.3")
             .font(.system(size: 17, weight: .semibold))
-            .foregroundStyle(isSelected ? Color.rollCall(.ready) : Color.rollCall(.accent))
+            .foregroundStyle(isSelected ? Color.rollCall(.ready) : teamAccentTheme.color(.primary))
             .frame(width: 34, height: 34)
-            .background((isSelected ? Color.rollCall(.ready) : Color.rollCall(.accent)).opacity(0.13))
+            .background((isSelected ? Color.rollCall(.ready) : teamAccentTheme.color(.subtle)).opacity(0.13))
             .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
             .accessibilityHidden(true)
     }
@@ -2986,7 +3113,7 @@ private struct AttributionsView: View {
             .padding(.top, RollCallSpacingTier.tight.value)
             .padding(.bottom, RollCallSpacingTier.large.value)
         }
-        .background(Color(uiColor: .systemGroupedBackground))
+        .accentWashBackground()
         .navigationTitle("Attributions")
         .navigationBarTitleDisplayMode(.inline)
     }
@@ -3035,12 +3162,18 @@ private struct SettingsIcon: View {
     let systemImage: String
     let role: RollCallColorRole
 
+    @Environment(\.rollCallTeamAccentTheme) private var teamAccentTheme
+
+    private var color: Color {
+        role == .accent ? teamAccentTheme.color(.primary) : Color.rollCall(role)
+    }
+
     var body: some View {
         Image(systemName: systemImage)
             .font(.system(size: 17, weight: .semibold))
-            .foregroundStyle(Color.rollCall(role))
+            .foregroundStyle(color)
             .frame(width: 34, height: 34)
-            .background(Color.rollCall(role).opacity(0.13))
+            .background(color.opacity(0.13))
             .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
             .accessibilityHidden(true)
     }
@@ -3050,6 +3183,8 @@ private struct PackageImportConfirmationSheet: View {
     let pending: PendingPackageImport
     let onImport: () -> Void
     let onCancel: () -> Void
+
+    @Environment(\.rollCallTeamAccentTheme) private var teamAccentTheme
 
     private var teamName: String {
         let trimmed = pending.team.name.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -3067,7 +3202,7 @@ private struct PackageImportConfirmationSheet: View {
                     VStack(alignment: .leading, spacing: RollCallSpacingTier.tight.value) {
                         Label("You are importing team \(teamName).", systemImage: "shippingbox.fill")
                             .font(.headline)
-                            .foregroundStyle(Color.rollCall(.accent))
+                            .foregroundStyle(teamAccentTheme.color(.primary))
                             .fixedSize(horizontal: false, vertical: true)
 
                         Text("Roll Call will add this as a new team and save a backup first. Existing teams stay unchanged.")
@@ -3095,6 +3230,7 @@ private struct PackageImportConfirmationSheet: View {
                     PackageImportStatRow(title: "General Clips", value: "\(pending.team.builtInClips.count)")
                 }
             }
+            .accentWashListBackground()
             .navigationTitle("Import Team?")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -3172,6 +3308,7 @@ private struct RosterImportPreviewSheet: View {
                     }
                 }
             }
+            .accentWashListBackground()
             .navigationTitle("Roster Preview")
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
@@ -3246,16 +3383,15 @@ private struct RollCallPackageImportSheet: UIViewControllerRepresentable {
 
 private struct GameDayBackground: View {
     var body: some View {
-        LiveSurfaceBackground()
+        AccentWashBackground(surface: .live)
     }
 }
 
-private enum LiveSurfaceStyle {
-    static let backgroundAccentTint = Color.rollCall(.accent, surface: .live)
-}
+private struct AccentWashBackground: View {
+    @Environment(\.rollCallTeamAccentTheme) private var teamAccentTheme
 
-private struct LiveSurfaceBackground: View {
-    var accentTint: Color = LiveSurfaceStyle.backgroundAccentTint
+    var surface: RollCallSurfaceVariant = .standard
+    var accentTint: Color? = nil
 
     var body: some View {
         ZStack {
@@ -3263,12 +3399,16 @@ private struct LiveSurfaceBackground: View {
             LinearGradient(
                 colors: [
                     .clear,
-                    accentTint.opacity(0.18)
+                    (accentTint ?? teamAccentTheme.color(.subtle, surface: surface)).opacity(gradientOpacity)
                 ],
                 startPoint: .topLeading,
                 endPoint: .bottomTrailing
             )
         }
+    }
+
+    private var gradientOpacity: Double {
+        surface == .live ? 0.18 : 0.12
     }
 }
 
@@ -3476,6 +3616,8 @@ private struct GameDayNowBattingHero: View {
     let isActive: Bool
     let announcerMode: GameDayAnnouncerMode
 
+    @Environment(\.rollCallTeamAccentTheme) private var teamAccentTheme
+
     private var cueTitle: String {
         switch announcerMode {
         case .announcerOnly:
@@ -3574,7 +3716,7 @@ private struct GameDayNowBattingHero: View {
                         if !player.uniformNumber.isEmpty {
                             Text("#\(player.uniformNumber)")
                                 .font(.headline.weight(.bold))
-                                .foregroundStyle(Color.rollCall(.accent, surface: .live))
+                                .foregroundStyle(teamAccentTheme.color(.primary, surface: .live))
                         }
                         GameDayStatePill(
                             text: statusText,
@@ -3659,6 +3801,8 @@ private struct GameDayOnDeckCard: View {
     let player: Player?
     let announcerMode: GameDayAnnouncerMode
 
+    @Environment(\.rollCallTeamAccentTheme) private var teamAccentTheme
+
     var body: some View {
         Group {
             if player != nil {
@@ -3715,7 +3859,7 @@ private struct GameDayOnDeckCard: View {
             if !player.uniformNumber.isEmpty {
                 Text("#\(player.uniformNumber)")
                     .font(.headline.weight(.bold))
-                    .foregroundStyle(Color.rollCall(.accent, surface: .live))
+                    .foregroundStyle(teamAccentTheme.color(.primary, surface: .live))
             }
         }
     }
@@ -3903,6 +4047,8 @@ private struct GameDayPlayerGrid: View {
     let onDeckPlayerID: UUID?
     let announcerMode: GameDayAnnouncerMode
 
+    @Environment(\.rollCallTeamAccentTheme) private var teamAccentTheme
+
     init(
         appModel: AppModel,
         players: [Player],
@@ -4028,7 +4174,7 @@ private struct GameDayPlayerGrid: View {
             return GameDayTileState(text: "Playing", systemImage: "speaker.wave.3.fill", color: Color.rollCall(.live, surface: .live), animatesSymbol: true)
         }
         if player.id == onDeckPlayerID {
-            return GameDayTileState(text: "On Deck", systemImage: "person.crop.circle.badge.clock", color: Color.rollCall(.accent, surface: .live))
+            return GameDayTileState(text: "On Deck", systemImage: "person.crop.circle.badge.clock", color: teamAccentTheme.color(.primary, surface: .live))
         }
         if player.id == nowPlayerID {
             return GameDayTileState(text: "Now Batting", systemImage: "figure.baseball", color: Color.rollCall(.ready, surface: .live))
@@ -4171,6 +4317,7 @@ private struct LineupEditorSheet: View {
                     }
                 }
             }
+            .accentWashListBackground(surface: .live)
             .navigationTitle("Today’s Lineup")
             .environment(\.editMode, $editMode)
             .toolbar {
@@ -4220,6 +4367,7 @@ private struct RecoveryCenterView: View {
                 }
             }
         }
+        .accentWashListBackground()
         .navigationTitle("Recovery & Backups")
         .alert(item: $backupPendingRestore) { snapshot in
             Alert(
@@ -4382,8 +4530,10 @@ private struct DeveloperToolsView: View {
                             .foregroundStyle(.secondary)
                     }
                 }
+                .accentWashListBackground()
             }
         }
+        .accentWashBackground()
         .navigationTitle("Developer Tools")
         .alert("Experimental Apple Music Playlist Sync", isPresented: $showTeamPlaylistWarning) {
             Button("Update Playlist") {
@@ -4685,13 +4835,7 @@ private struct PlayerEditorSheet: View {
                         }
 
                         PhotosPicker(selection: $photoItem, matching: .images) {
-                            VStack(spacing: 6) {
-                                PlayerPhotoThumbnail(relativePath: photoRelativePath, size: 64, cornerRadius: 18)
-                                Text(photoRelativePath == nil ? "Add Photo" : "Change")
-                                    .font(.caption.weight(.semibold))
-                                    .foregroundStyle(Color.rollCall(.accent))
-                            }
-                            .frame(width: 78)
+                            PlayerEditorPhotoPickerLabel(photoRelativePath: photoRelativePath)
                         }
                     }
                     .rollCallCard(.identity)
@@ -4887,8 +5031,7 @@ private struct PlayerEditorSheet: View {
                 .playerEditorListRow()
             }
             .listStyle(.insetGrouped)
-            .scrollContentBackground(.hidden)
-            .background(Color(uiColor: .systemGroupedBackground))
+            .accentWashListBackground()
             .navigationTitle(player.displayName.isEmpty ? "Player" : player.displayName)
             .scrollDismissesKeyboard(.interactively)
             .dismissesKeyboardOnTap()
@@ -5360,16 +5503,38 @@ private struct PlayerEditorSectionHeader: View {
     }
 }
 
+private struct PlayerEditorPhotoPickerLabel: View {
+    let photoRelativePath: String?
+
+    @Environment(\.rollCallTeamAccentTheme) private var teamAccentTheme
+
+    var body: some View {
+        VStack(spacing: 6) {
+            PlayerPhotoThumbnail(relativePath: photoRelativePath, size: 64, cornerRadius: 18)
+            Text(photoRelativePath == nil ? "Add Photo" : "Change")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(teamAccentTheme.color(.primary))
+        }
+        .frame(width: 78)
+    }
+}
+
 private struct PlayerEditorSectionIcon: View {
     let systemImage: String
     let role: RollCallColorRole
 
+    @Environment(\.rollCallTeamAccentTheme) private var teamAccentTheme
+
+    private var color: Color {
+        role == .accent ? teamAccentTheme.color(.primary) : Color.rollCall(role)
+    }
+
     var body: some View {
         Image(systemName: systemImage)
             .font(.system(size: 15, weight: .semibold))
-            .foregroundStyle(Color.rollCall(role))
+            .foregroundStyle(color)
             .frame(width: 30, height: 30)
-            .background(Color.rollCall(role).opacity(0.12))
+            .background(color.opacity(0.12))
             .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
             .accessibilityHidden(true)
     }
@@ -5378,23 +5543,25 @@ private struct PlayerEditorSectionIcon: View {
 private struct PlayerEditorChipButtonStyle: ButtonStyle {
     let isSelected: Bool
 
+    @Environment(\.rollCallTeamAccentTheme) private var teamAccentTheme
+
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .font(.caption.weight(.semibold))
-            .foregroundStyle(isSelected ? .white : Color(uiColor: .label))
+            .foregroundStyle(isSelected ? teamAccentTheme.color(.onFill) : Color(uiColor: .label))
             .padding(.horizontal, 10)
             .padding(.vertical, 7)
             .background(background(isPressed: configuration.isPressed))
             .overlay(
                 Capsule(style: .continuous)
-                    .strokeBorder(Color.rollCall(.accent).opacity(isSelected ? 0 : 0.35), lineWidth: 1)
+                    .strokeBorder(teamAccentTheme.color(.primary).opacity(isSelected ? 0 : 0.35), lineWidth: 1)
             )
             .clipShape(Capsule(style: .continuous))
             .scaleEffect(configuration.isPressed ? 0.98 : 1)
     }
 
     private func background(isPressed: Bool) -> Color {
-        let base = isSelected ? Color.rollCall(.accent) : Color.rollCall(.neutralSurface)
+        let base = isSelected ? teamAccentTheme.color(.fill) : Color.rollCall(.neutralSurface)
         return isPressed ? base.opacity(0.78) : base
     }
 }
@@ -5739,6 +5906,7 @@ private struct AppleMusicPickerSheet: View {
                     }
                 }
             }
+            .accentWashListBackground()
             .navigationTitle("Choose Song")
             .searchable(text: $searchTerm, prompt: "Search Apple Music")
             .toolbar {
@@ -5860,6 +6028,7 @@ private struct StartScrubControl: View {
 
     @GestureState private var isPressing = false
     @GestureState private var isDragging = false
+    @Environment(\.rollCallTeamAccentTheme) private var teamAccentTheme
 
     var body: some View {
         GeometryReader { proxy in
@@ -5870,7 +6039,7 @@ private struct StartScrubControl: View {
                     .fill(Color.secondary.opacity(0.18))
                     .frame(height: 18)
                 RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .fill(Color.rollCall(.accent).opacity(0.82))
+                    .fill(teamAccentTheme.color(.fill).opacity(0.82))
                     .frame(width: max(14, width * progress), height: 18)
                 if isDragging {
                     Text(currentValueText)
@@ -5882,7 +6051,7 @@ private struct StartScrubControl: View {
                         .offset(x: max(0, min(width - 72, width * progress - 36)), y: -30)
                 }
                 Circle()
-                    .fill(Color.rollCall(.accent))
+                    .fill(teamAccentTheme.color(.fill))
                     .frame(width: 28, height: 28)
                     .offset(x: thumbOffset)
                     .shadow(radius: 2)

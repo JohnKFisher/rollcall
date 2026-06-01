@@ -11,6 +11,8 @@ struct RollCallCardModifier: ViewModifier {
     let family: RollCallCardFamily
     let surface: RollCallSurfaceVariant
 
+    @Environment(\.rollCallTeamAccentTheme) private var teamAccentTheme
+
     func body(content: Content) -> some View {
         content
             .padding(RollCallInsets.card)
@@ -47,7 +49,7 @@ struct RollCallCardModifier: ViewModifier {
         case .status:
             return Color.rollCall(.warning, surface: surface).opacity(0.35)
         case .identity:
-            return Color.rollCall(.accent, surface: surface).opacity(0.28)
+            return teamAccentTheme.color(.primary, surface: surface).opacity(0.28)
         case .live:
             return Color.rollCall(.live, surface: .live).opacity(0.44)
         }
