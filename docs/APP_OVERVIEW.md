@@ -1,6 +1,6 @@
 # Roll Call — Application Overview
 
-This document gives a non-code AI everything it needs to discuss the Roll Call app at a product level: what it is, who it's for, how the screens fit together, what the user can do on each one, and the principles that constrain future change. It is current as of build 57 / version 1.1.0.
+This document gives a non-code AI everything it needs to discuss the Roll Call app at a product level: what it is, who it's for, how the screens fit together, what the user can do on each one, and the principles that constrain future change. It is current as of build 58 / version 1.1.0.
 
 If you are an AI reading this to help with planning: assume the human you are talking to is the sole developer and product owner. They want help thinking through changes, tradeoffs, and priorities — not generating code. Quote back the principles in this document when they conflict with a proposal.
 

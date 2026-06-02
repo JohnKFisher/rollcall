@@ -4,10 +4,10 @@ Use this file as a concise project status snapshot for the current version, what
 
 ## Roll Call
 
-Current version: `1.1.0` (build `57`)
+Current version: `1.1.0` (build `58`)
 
 Status:
-- `1.1.0` build `57` bumps the checked-in app marketing version and build number for the 1.1 release lane after the current polish/practical-improvements work.
+- `1.1.0` build `58` bumps the checked-in app build number for the latest 1.1 release-lane polish, including accent-color follow-ups, What's New cleanup, and create-or-update Apple Music playlist wording.
 - The `1.1/accents` lane now makes selected team colors drive a protected accent palette across app-wide tint, primary actions, selected controls, team identity surfaces, and page background accent washes while keeping semantic colors independent.
 - The `release/1.1` lane now includes a default-off Keep Screen Awake setting that prevents auto-lock while Roll Call is active on Game Day or Clips, with a battery-use note in Settings.
 - The `release/1.1` lane now includes an in-app What's New sheet backed by bundled draft 1.1 summary notes, a Settings > About reopen entry, a Full Changelog web link, and a Developer Tools reset action for testing outside Release builds.
@@ -95,7 +95,7 @@ What works now:
 - CSV roster import with preview before apply
 - Branded launch screen based on the Music Triage splash style
 - Developer Tools screen with experimental controls and support-bundle export
-- Team Actions can update the managed Apple Music playlist `Roll Call - <Team Name>` from the selected team's catalog-backed Apple Music cues, after previewing included songs, skipped cues, duplicate handling, and the managed-playlist overwrite warning.
+- Team Actions can create or update the managed Apple Music playlist `Roll Call - <Team Name>` from the selected team's catalog-backed Apple Music cues, after previewing included songs, skipped cues, duplicate handling, and the managed-playlist overwrite warning.
 - Build-environment support now separates `Debug`, `Internal`, and `Release` configurations/schemes, with centralized `BuildEnvironment` / `FeatureFlags` guardrails so Release hides Developer Tools and experimental testing surfaces
 - `RollCallTests` can be run from Xcode with the `Roll Call Debug` scheme or from the command line using the README test command.
 - Settings > About now shows app version, build number, build environment, and an email feedback link with version details in the subject
@@ -119,6 +119,7 @@ Known limitations:
 - Startup and tap responsiveness have been tightened by deferring/coalescing some follow-up work and moving snapshot restore I/O off the main actor, but this still needs an on-device feel pass to confirm the improvement.
 
 Verification:
+- Result in this `1.1.0` build `58` bump: `git diff --check` and `xcrun swiftc -parse RollCall/Models.swift RollCall/Services.swift RollCall/AppModel.swift RollCall/RootView.swift` succeeded, and the checked-in app target build settings now read `MARKETING_VERSION = 1.1.0` and `CURRENT_PROJECT_VERSION = 58` for Debug, Release, and Internal. No bundle ID, deployment target, entitlements, dependencies, permissions, or feature behavior changed.
 - Result in this `1.1.0` build `57` version bump: `git diff --check` succeeded, and the checked-in app target build settings now read `MARKETING_VERSION = 1.1.0` and `CURRENT_PROJECT_VERSION = 57` for Debug, Release, and Internal. No bundle ID, deployment target, entitlements, dependencies, permissions, or feature behavior changed.
 - Result in this `release/1.1` What's New pass: sandboxed `xcodebuild -project RollCall.xcodeproj -scheme "Roll Call Debug" -destination 'generic/platform=iOS' -derivedDataPath /private/tmp/rollcall-whatsnew-dd CODE_SIGNING_ALLOWED=NO build` was blocked by CoreSimulator/cache/network restrictions while resolving ZIPFoundation; the same signing-disabled build succeeded out of sandbox after splitting the root SwiftUI modifier chain for type-checking. `git diff --check` and the focused `xcrun swiftc -parse ...` app-file check also succeeded. A simulator/device smoke check should still confirm the automatic safe-tab timing and manual Settings > About presentation.
 - Result in this `release/1.1` Keep Screen Awake pass: `git diff --check` succeeded; `xcrun swiftc -parse RollCall/Models.swift RollCall/Services.swift RollCall/AppModel.swift RollCall/RootView.swift RollCall/RollCallApp.swift RollCall/BuildEnvironment.swift RollCall/DesignSystem/RollCallDesignSystem.swift RollCall/DesignSystem/RollCallColors.swift RollCall/DesignSystem/RollCallTypography.swift RollCall/DesignSystem/RollCallSpacing.swift RollCall/DesignSystem/RollCallButtonStyles.swift RollCall/DesignSystem/RollCallCardStyles.swift RollCall/DesignSystem/StatusChip.swift RollCall/DesignSystem/TeamBanner.swift` succeeded. A simulator/device smoke check should still confirm the iOS auto-lock behavior in practice.

@@ -1127,7 +1127,7 @@ final class AppModel: ObservableObject {
         }
 
         isAppleMusicPlaylistSyncing = true
-        appleMusicPlaylistSyncStatus = "Updating \"\(summary.playlistName)\"..."
+        appleMusicPlaylistSyncStatus = "Saving \"\(summary.playlistName)\"..."
         defer { isAppleMusicPlaylistSyncing = false }
 
         do {
@@ -1155,7 +1155,7 @@ final class AppModel: ObservableObject {
             }
 
             try await musicCatalogService.replaceTeamPlaylist(name: summary.playlistName, songs: resolved.songs)
-            var message = "Updated \"\(summary.playlistName)\" with \(resolved.songs.count) \(resolved.songs.count == 1 ? "song" : "songs")."
+            var message = "Saved \"\(summary.playlistName)\" with \(resolved.songs.count) \(resolved.songs.count == 1 ? "song" : "songs")."
             let skippedCount = summary.skippedCues.count
             if skippedCount > 0 {
                 message += " Skipped \(skippedCount) unsupported \(skippedCount == 1 ? "cue" : "cues")."

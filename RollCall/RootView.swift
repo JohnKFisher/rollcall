@@ -360,8 +360,10 @@ struct RootView: View {
     private func playerEditorSheet(for route: PlayerEditorRoute) -> some View {
         if let player = playerForEditorRoute(route) {
             PlayerEditorSheet(appModel: appModel, player: player)
+                .teamAccentScope(selectedTeamAccentTheme)
         } else {
             ContentUnavailableView("Player Not Found", systemImage: "person.crop.circle.badge.exclamationmark", description: Text("The selected player is no longer on the current team."))
+                .teamAccentScope(selectedTeamAccentTheme)
         }
     }
 
@@ -489,6 +491,7 @@ struct RootView: View {
                         whatsNewPresentation = nil
                     }
                 )
+                .teamAccentScope(selectedTeamAccentTheme)
             }
             .sheet(item: $teamPlaylistPreview) { summary in
                 TeamAppleMusicPlaylistPreviewSheet(
@@ -498,6 +501,7 @@ struct RootView: View {
                         teamPlaylistPreview = nil
                     }
                 )
+                .teamAccentScope(selectedTeamAccentTheme)
             }
             .fileImporter(isPresented: $csvImportPresented, allowedContentTypes: [.commaSeparatedText, .text], allowsMultipleSelection: false) { result in
                 handleRosterImportResult(result)
@@ -1032,7 +1036,7 @@ struct RootView: View {
                                         showRenameTeamAlert = true
                                     }
                                     Button("Duplicate Selected Team") { appModel.duplicateTeam() }
-                                    Button("Update Apple Music Playlist") {
+                                    Button("Create or Update Apple Music Playlist") {
                                         appModel.clearAppleMusicPlaylistStatus()
                                         teamPlaylistPreview = appModel.selectedTeamAppleMusicPlaylistSummary()
                                     }
@@ -3122,7 +3126,7 @@ private struct TeamAppleMusicPlaylistPreviewSheet: View {
 
     private var primaryButtonTitle: String {
         if appModel.isAppleMusicPlaylistSyncing {
-            return "Updating Playlist"
+            return "Saving Playlist"
         }
         if matchingRecovery != nil {
             if matchingRecovery?.availableSongIDs.isEmpty == true {
@@ -3130,7 +3134,7 @@ private struct TeamAppleMusicPlaylistPreviewSheet: View {
             }
             return "Continue With Available Songs"
         }
-        return "Update Playlist"
+        return "Create or Update Playlist"
     }
 
     private var canRunPrimaryAction: Bool {
@@ -3176,7 +3180,7 @@ private struct TeamAppleMusicPlaylistPreviewSheet: View {
                 Text(summary.playlistName)
                     .rollCallText(.primaryIdentity)
                     .lineLimit(3)
-                Text("Roll Call will build this Apple Music playlist from \(summary.teamName)'s Apple Music song cues.")
+                Text("Roll Call will create this Apple Music playlist from \(summary.teamName)'s Apple Music song cues, or replace the existing Roll Call-managed playlist.")
                     .rollCallText(.helperText)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -3189,7 +3193,7 @@ private struct TeamAppleMusicPlaylistPreviewSheet: View {
                 Image(systemName: "exclamationmark.triangle.fill")
                     .foregroundStyle(Color.rollCall(.warning))
                     .accessibilityHidden(true)
-                Text("Roll Call manages and replaces this playlist. Manual edits to this Apple Music playlist may be overwritten when you update it.")
+                Text("Roll Call manages this playlist. Manual edits to an existing Apple Music playlist may be overwritten when you create or update it.")
                     .rollCallText(.helperText)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
@@ -3200,7 +3204,7 @@ private struct TeamAppleMusicPlaylistPreviewSheet: View {
     private var includedSection: some View {
         PlaylistPreviewSection(
             title: "\(summary.includedSongs.count) \(summary.includedSongs.count == 1 ? "Song" : "Songs") Included",
-            helperText: summary.canUpdatePlaylist ? "Apple Music catalog songs are added once." : "Choose Apple Music songs for players before updating this playlist."
+            helperText: summary.canUpdatePlaylist ? "Apple Music catalog songs are added once." : "Choose Apple Music songs for players before creating or updating this playlist."
         ) {
             if summary.includedSongs.isEmpty {
                 PlaylistEmptyMessage(text: "No Apple Music songs to add yet.")
@@ -3254,7 +3258,7 @@ private struct TeamAppleMusicPlaylistPreviewSheet: View {
         if let recovery = matchingRecovery {
             PlaylistPreviewSection(
                 title: "Apple Music Could Not Find \(recovery.unresolvedSongs.count)",
-                helperText: "Cancel leaves the Apple Music playlist unchanged. Continue replaces it with the songs Apple Music found."
+                helperText: "Cancel leaves Apple Music unchanged. Continue creates or replaces the playlist with the songs Apple Music found."
             ) {
                 VStack(spacing: 0) {
                     ForEach(Array(recovery.unresolvedSongs.enumerated()), id: \.element.id) { index, song in
@@ -3272,7 +3276,7 @@ private struct TeamAppleMusicPlaylistPreviewSheet: View {
             SectionCard {
                 HStack(spacing: RollCallSpacingTier.tight.value) {
                     ProgressView()
-                    Text("Updating Apple Music playlist...")
+                    Text("Saving Apple Music playlist...")
                         .rollCallText(.helperText)
                 }
             }
@@ -3511,40 +3515,23 @@ private struct WhatsNewSheet: View {
     let bundle: WhatsNewBundle
     let onDone: () -> Void
 
+    private var versionSubline: String {
+        "Roll Call \(AppMetadata.appVersion) (build \(AppMetadata.buildNumber))"
+    }
+
     var body: some View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: RollCallSpacingTier.large.value) {
-                    VStack(alignment: .leading, spacing: RollCallSpacingTier.tight.value) {
-                        Text("What's New in Roll Call \(bundle.family)")
-                            .rollCallText(.screenTitle)
-                        Text("Current version: \(AppMetadata.appVersion) (\(AppMetadata.buildNumber))")
-                            .rollCallText(.helperText)
-                    }
+                    Text(versionSubline)
+                        .rollCallText(.helperText)
 
                     ForEach(bundle.releases) { release in
-                        SettingsSectionGroup(title: release.version) {
-                            VStack(alignment: .leading, spacing: RollCallSpacingTier.standard.value) {
-                                ForEach(release.bullets, id: \.self) { bullet in
-                                    HStack(alignment: .top, spacing: RollCallSpacingTier.tight.value) {
-                                        Image(systemName: "checkmark.circle.fill")
-                                            .foregroundStyle(Color.rollCall(.ready))
-                                            .padding(.top, 2)
-                                        Text(bullet)
-                                            .rollCallText(.body)
-                                            .fixedSize(horizontal: false, vertical: true)
-                                    }
-                                }
-                            }
-                        }
+                        releaseSection(release)
                     }
 
                     Link(destination: bundle.fullChangelogURL) {
-                        SettingsRowLabel(
-                            title: "Full Changelog",
-                            detail: "Open the complete Roll Call update notes on the web.",
-                            systemImage: "safari.fill"
-                        )
+                        FullChangelogLinkLabel()
                     }
                     .buttonStyle(.plain)
                 }
@@ -3558,6 +3545,69 @@ private struct WhatsNewSheet: View {
                 }
             }
         }
+    }
+
+    @ViewBuilder
+    private func releaseSection(_ release: WhatsNewRelease) -> some View {
+        if bundle.releases.count == 1 {
+            releaseBulletList(release)
+        } else {
+            SettingsSectionGroup(title: release.version) {
+                releaseBulletList(release)
+            }
+        }
+    }
+
+    private func releaseBulletList(_ release: WhatsNewRelease) -> some View {
+        VStack(alignment: .leading, spacing: RollCallSpacingTier.standard.value) {
+            ForEach(release.bullets, id: \.self) { bullet in
+                HStack(alignment: .top, spacing: RollCallSpacingTier.tight.value) {
+                    Image(systemName: "checkmark.circle.fill")
+                        .foregroundStyle(Color.rollCall(.ready))
+                        .padding(.top, 2)
+                    Text(bullet)
+                        .rollCallText(.body)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+        }
+    }
+}
+
+private struct FullChangelogLinkLabel: View {
+    @Environment(\.rollCallTeamAccentTheme) private var teamAccentTheme
+
+    var body: some View {
+        HStack(alignment: .center, spacing: RollCallSpacingTier.standard.value) {
+            SettingsIcon(systemImage: "safari.fill", role: .accent)
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Full Changelog")
+                    .rollCallText(.cardTitle)
+                    .foregroundStyle(teamAccentTheme.color(.primary))
+                    .lineLimit(2)
+                Text("Open the complete Roll Call update notes on the web.")
+                    .rollCallText(.helperText)
+                    .lineLimit(3)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+
+            Image(systemName: "arrow.up.forward")
+                .font(.footnote.weight(.bold))
+                .foregroundStyle(teamAccentTheme.color(.primary))
+                .frame(width: 28, height: 28)
+                .background(teamAccentTheme.color(.subtle).opacity(0.13))
+                .clipShape(Circle())
+                .accessibilityHidden(true)
+        }
+        .padding(RollCallInsets.card)
+        .background(Color(uiColor: .secondarySystemGroupedBackground))
+        .overlay {
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .strokeBorder(teamAccentTheme.color(.primary).opacity(0.35), lineWidth: 1)
+        }
+        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .contentShape(Rectangle())
     }
 }
 
@@ -6657,6 +6707,8 @@ private struct PlayerPhotoThumbnail: View {
     var size: CGFloat
     var cornerRadius: CGFloat = 16
 
+    @Environment(\.rollCallTeamAccentTheme) private var teamAccentTheme
+
     var body: some View {
         Group {
             if let image = loadImage() {
@@ -6666,10 +6718,10 @@ private struct PlayerPhotoThumbnail: View {
             } else {
                 ZStack {
                     RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                        .fill(Color.orange.opacity(0.14))
+                        .fill(teamAccentTheme.color(.subtle).opacity(0.14))
                     Image(systemName: "person.crop.square.fill")
                         .font(.system(size: size * 0.42, weight: .semibold))
-                        .foregroundStyle(.orange.opacity(0.8))
+                        .foregroundStyle(teamAccentTheme.color(.primary).opacity(0.82))
                 }
             }
         }
