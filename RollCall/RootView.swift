@@ -5079,50 +5079,52 @@ private struct RecoveryCenterView: View {
 
     @ViewBuilder
     private func recentlyDeletedRow(for item: RecentlyDeletedItem) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            switch item.payload {
-            case .team(let deletedTeam):
-                StatusChip(text: "Team", role: .neutral, emphasis: .subdued)
-                Text(deletedTeam.team.name)
-                    .font(.headline)
-                Text("Deleted \(item.deletedAt.formatted(date: .abbreviated, time: .omitted))")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                Text(recoveryRetentionText(for: item))
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                Button("Restore") {
-                    handleRestore(item)
-                }
-                .buttonStyle(.borderedProminent)
-            case .player(let deletedPlayer):
-                StatusChip(text: "Player", role: .neutral, emphasis: .subdued)
-                Text(deletedPlayer.player.displayName)
-                    .font(.headline)
-                Text(appModel.recoveryTeamName(for: deletedPlayer))
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-                Text("Deleted \(item.deletedAt.formatted(date: .abbreviated, time: .omitted))")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                Text(recoveryRetentionText(for: item))
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+        let restorePreparation = appModel.restorePreparation(for: item)
 
-                switch appModel.restorePreparation(for: item) {
-                case .blocked(let message):
-                    Text(message)
-                        .font(.footnote)
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(alignment: .top, spacing: 12) {
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack(alignment: .firstTextBaseline, spacing: 8) {
+                        StatusChip(
+                            text: recoveryItemTypeLabel(for: item),
+                            role: .neutral,
+                            emphasis: .subdued
+                        )
+
+                        Text(recoveryItemTitle(for: item))
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(.primary)
+                    }
+
+                    if let subtitle = recoverySubtitle(for: item) {
+                        Text(subtitle)
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                    }
+
+                    Text(recoveryMetadataText(for: item))
+                        .font(.caption)
                         .foregroundStyle(.secondary)
-                case .ready, .partialPrompt:
+                }
+
+                Spacer(minLength: 8)
+
+                if canRestore(restorePreparation) {
                     Button("Restore") {
                         handleRestore(item)
                     }
                     .buttonStyle(.borderedProminent)
+                    .controlSize(.small)
                 }
             }
+
+            if case .blocked(let message) = restorePreparation {
+                Text(message)
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            }
         }
-        .padding(.vertical, 4)
+        .padding(.vertical, 2)
         .swipeActions(edge: .trailing, allowsFullSwipe: false) {
             Button("Delete Permanently", role: .destructive) {
                 recentlyDeletedPendingPermanentDelete = item
@@ -5138,6 +5140,46 @@ private struct RecoveryCenterView: View {
             appModel.lastError = message
         case .partialPrompt(let prompt):
             pendingPartialRestorePrompt = prompt
+        }
+    }
+
+    private func recoveryItemTypeLabel(for item: RecentlyDeletedItem) -> String {
+        switch item.payload {
+        case .team:
+            return "Team"
+        case .player:
+            return "Player"
+        }
+    }
+
+    private func recoveryItemTitle(for item: RecentlyDeletedItem) -> String {
+        switch item.payload {
+        case .team(let deletedTeam):
+            return deletedTeam.team.name
+        case .player(let deletedPlayer):
+            return deletedPlayer.player.displayName
+        }
+    }
+
+    private func recoverySubtitle(for item: RecentlyDeletedItem) -> String? {
+        switch item.payload {
+        case .team:
+            return nil
+        case .player(let deletedPlayer):
+            return appModel.recoveryTeamName(for: deletedPlayer)
+        }
+    }
+
+    private func recoveryMetadataText(for item: RecentlyDeletedItem) -> String {
+        "Deleted \(item.deletedAt.formatted(date: .abbreviated, time: .omitted)) • \(recoveryRetentionText(for: item))"
+    }
+
+    private func canRestore(_ preparation: RestorePreparation) -> Bool {
+        switch preparation {
+        case .ready, .partialPrompt:
+            return true
+        case .blocked:
+            return false
         }
     }
 

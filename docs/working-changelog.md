@@ -21,6 +21,7 @@ Internal notes for building public-facing changelogs. Keep entries understandabl
 - Apple Music access and picker wording now better explain that full-song playback depends on the user's subscription and song availability on this device.
 - The selected team's color wash now appears across Roll Call pages, not just Game Day and Clips.
 - Gray and Black team colors now use adaptive neutral accent treatments so they stay readable in both Light Mode and Dark Mode.
+- Recovery's Recently Deleted list now keeps the same restore details while fitting more items on screen at once.
 
 ### Fixed
 - Team accent styling now also applies correctly to iOS 26 Liquid Glass tab bars and primary buttons.
