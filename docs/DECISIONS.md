@@ -17,6 +17,20 @@ Use this file as a concise decision log for project-specific architectural, beha
   Rationale: the feature protects field use without silently changing battery behavior across the whole app, and Clips shares the current live-screen treatment until the later Game Day/Clips revamp revisits the boundary.
   Status: approved
 
+## 2026-06-02
+
+- Approved: Recovery now leads with a centralized `Recently Deleted` list for deleted teams and players, while backups remain a separate earlier-app-state tool.
+  Rationale: accidental deletes are better solved by a simple item-level recovery surface than by asking users to restore whole-app backups for everyday mistakes.
+  Status: approved
+
+- Approved: Recently Deleted keeps deleted teams and players for 60 days, shows days remaining, allows item-by-item permanent delete, and excludes deleted-item history from normal exports and backup restores.
+  Rationale: the feature should feel recoverable and explicit without turning into permanent hidden storage or leaking deleted-item history into sharing and backup flows.
+  Status: approved
+
+- Approved: team restore is full-fidelity, player restore returns to the original team in the best practical prior lineup position as present today, and missing media should trigger an honest `Restore What We Can` fallback instead of silent partial recovery.
+  Rationale: recovery should preserve meaningful setup work, stay visible in the restored team context, and tell the truth clearly when some song, photo, or Announcement Cue media can no longer be recovered.
+  Status: approved
+
 ## 2026-05-31
 
 - Approved: team color drives a protected derived accent palette across selected-team UI, while semantic colors such as warning, destructive, ready, disabled, and live playback remain independent.

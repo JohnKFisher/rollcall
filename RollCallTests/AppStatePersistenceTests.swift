@@ -4,7 +4,21 @@ import XCTest
 final class AppStatePersistenceTests: XCTestCase {
     func testAppStateRoundTripsTeamRosterAndSelection() throws {
         let team = RollCallTestFixtures.team()
-        let state = RollCallTestFixtures.appState(team: team)
+        var state = RollCallTestFixtures.appState(team: team)
+        state.recentlyDeleted = [
+            RecentlyDeletedItem(
+                id: UUID(),
+                deletedAt: .now,
+                payload: .player(
+                    DeletedPlayerRecord(
+                        player: RollCallTestFixtures.player(id: UUID(), name: "Deleted Player", number: "7"),
+                        originalTeamID: team.id,
+                        originalTeamName: team.name,
+                        previousBattingOrder: []
+                    )
+                )
+            )
+        ]
         let encoder = JSONEncoder()
         encoder.dateEncodingStrategy = .iso8601
         let decoder = JSONDecoder()
@@ -14,6 +28,14 @@ final class AppStatePersistenceTests: XCTestCase {
 
         XCTAssertEqual(decoded.selectedTeamID, team.id)
         XCTAssertEqual(decoded.teams.first?.players.map(\.displayName), ["Alex Ramirez", "Jordan Lee", "Casey Morgan"])
+        XCTAssertEqual(decoded.recentlyDeleted.count, 1)
+        if case .player(let deletedPlayer)? = decoded.recentlyDeleted.first?.payload {
+            XCTAssertEqual(deletedPlayer.player.displayName, "Deleted Player")
+            XCTAssertEqual(deletedPlayer.originalTeamID, team.id)
+            XCTAssertEqual(deletedPlayer.originalTeamName, team.name)
+        } else {
+            XCTFail("Expected a deleted player payload.")
+        }
         XCTAssertEqual(decoded.settings, .default)
     }
 

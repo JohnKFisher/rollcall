@@ -4,10 +4,12 @@ Use this file as a concise project status snapshot for the current version, what
 
 ## Roll Call
 
-Current version: `1.1.0` (build `58`)
+Current version: `1.1.0` (build `59`)
 
 Status:
-- `1.1.0` build `58` bumps the checked-in app build number for the latest 1.1 release-lane polish, including accent-color follow-ups, What's New cleanup, and create-or-update Apple Music playlist wording.
+- `1.1.0` build `59` bumps the checked-in app build number for the latest 1.1 release-lane polish, including the new Recovery / Recently Deleted work and its aligned release docs.
+- The `release/1.1` lane now keeps shared player media on disk while any active team or `Recently Deleted` item still references it, and built-in announcer regeneration now cleans up old unused generated files instead of accumulating orphaned copies.
+- The `release/1.1` lane now includes a `Recovery` screen with `Recently Deleted` for teams and players: deletes move there for 60 days, restores are item-by-item, permanent delete stays manual, blocked player restores explain when the team must be restored first, and backups now read as the broader earlier-app-state tool.
 - The `1.1/accents` lane now makes selected team colors drive a protected accent palette across app-wide tint, primary actions, selected controls, team identity surfaces, and page background accent washes while keeping semantic colors independent.
 - The `release/1.1` lane now includes a default-off Keep Screen Awake setting that prevents auto-lock while Roll Call is active on Game Day or Clips, with a battery-use note in Settings.
 - The `release/1.1` lane now includes an in-app What's New sheet backed by bundled draft 1.1 summary notes, a Settings > About reopen entry, a Full Changelog web link, and a Developer Tools reset action for testing outside Release builds.
@@ -56,6 +58,7 @@ Status:
 
 What works now:
 - Team selection, duplication, and confirmed removal
+- Recovery now includes `Recently Deleted` for deleted teams and players, with 60-day retention, item-by-item restore, item-by-item permanent delete, and restore-time warnings when some media could not be fully recovered
 - Sensible launch routing: onboarding for no teams, `Players` for an empty selected team, and `Game Day` for a selected team with players
 - First-run welcome screen plus setup guide for creating or importing teams, with a Settings entry that can reopen onboarding at any time and a simplified post-song trim step before lineup handoff
 - Stored team accent color presets, now including Gray and Black, drive a protected app-wide accent theme for the selected team; no-team screens fall back to Roll Call orange
@@ -64,6 +67,7 @@ What works now:
 - Today’s lineup editing with present-player tracking, next-batter flow, persisted manual order, and one-tap A-Z / number sorting
 - Dedicated Apple Music picker with app-wide recents, debounced search, subscription-aware guidance, row preview, and immediate selection
 - Apple Music search that uses catalog-backed MusicKit results for subscribed full-song mode and reserves iTunes preview fallback for preview-only mode
+- Apple Music access and picker wording now explains that full-song playback depends on the user's subscription and whether the song is available on this device
 - Local audio import plus video-to-audio extraction
 - Trim-focused cue editor with song summary, suggested-hook vs start-at-beginning choices, start scrubber, preset lengths, Advanced fine tuning, and subscription-aware full-song vs preview-only Apple Music trimming
 - Player Editor now uses compact Roll Call visual-language cards, status chips, helper text, button hierarchy, and a confirmed Remove Player action while preserving the PE-1/PE-2 workflow
@@ -91,7 +95,7 @@ What works now:
 - `.rollcall` export now produces a zipped single-file archive (with backward-compatible import support for older directory-style packages)
 - AirDropped or shared `.rollcall` files can now open directly into Roll Call's existing import flow, the manual import picker accepts `.rollcall` files even when Files surfaces them as generic file data, and the app now advertises `.rollcall` as an editable document type it owns
 - Settings import now uses an explicit document picker so `.rollcall` files and legacy package folders can actually be chosen on-device
-- Manual backups plus in-app restore, with automatic pre-import backups and retention capped to the newest 10
+- Manual backups plus in-app restore, with automatic pre-import backups and retention capped to the newest 10; these remain the broader earlier-app-state safety tool while `Recently Deleted` handles everyday team/player recovery
 - CSV roster import with preview before apply
 - Branded launch screen based on the Music Triage splash style
 - Developer Tools screen with experimental controls and support-bundle export
@@ -104,6 +108,7 @@ What works now:
 - Repo README and license notice now describe the public noncommercial fork policy, commercial-permission boundary, small-snippet exception, and third-party asset attributions.
 
 Known limitations:
+- `Recovery` currently uses a simple mixed list with no search or filters, and the new delete/restore flows still deserve a quick on-device smoke pass before treating them as fully field-proven.
 - iOS 17.0 is now the checked-in minimum deployment target. The app builds for iOS 17.0, passed the hosted test suite on iOS 17.5 and iOS 18.6 simulators, and launched to the welcome screen on iOS 17.5, but a full hands-on iOS 17 flow smoke is still required before treating this hotfix as App Store-ready.
 - A physical iPad running iOS 17 reported Game Day silence after the first batter and one possible Next-button stall. The current hotfix addresses the most likely stale playback-cleanup race, but that exact iPad Game Day flow still needs a repeat smoke test before release confidence.
 - Waveforms and per-cue gain remain intentionally deferred.
@@ -119,6 +124,9 @@ Known limitations:
 - Startup and tap responsiveness have been tightened by deferring/coalescing some follow-up work and moving snapshot restore I/O off the main actor, but this still needs an on-device feel pass to confirm the improvement.
 
 Verification:
+- Result in this `release/1.1` asset-lifecycle hardening pass: `git diff --check` succeeded; `xcrun swiftc -parse RollCall/AppModel.swift RollCall/Models.swift RollCall/Services.swift RollCallTests/BackupRestoreTests.swift RollCallTests/TestSupport/RollCallTestFixtures.swift` succeeded; sandboxed `xcodebuild test -project RollCall.xcodeproj -scheme "Roll Call Debug" -destination 'platform=iOS Simulator,name=iPhone 16 Pro,OS=18.6' -derivedDataPath /private/tmp/rollcall-asset-tests CODE_SIGNING_ALLOWED=NO -only-testing:RollCallTests/BackupRestoreTests` was blocked by normal CoreSimulator/package-resolution restrictions; the same focused test run succeeded out of sandbox and now covers shared-team asset retention plus generated-announcer replacement/cleanup.
+- Result in this `1.1.0` build `59` bump: `git diff --check` succeeded, and the checked-in app target build settings now read `MARKETING_VERSION = 1.1.0` and `CURRENT_PROJECT_VERSION = 59` for Debug, Release, and Internal. No bundle ID, deployment target, entitlements, dependencies, permissions, or feature behavior changed in this bump itself.
+- Result in this `release/1.1` Recovery pass: `git diff --check` succeeded; `xcrun swiftc -parse RollCall/Models.swift RollCall/AppModel.swift RollCall/RootView.swift RollCall/Services.swift` succeeded; `xcrun swiftc -parse RollCallTests/AppStatePersistenceTests.swift RollCallTests/BackupRestoreTests.swift RollCallTests/RecentlyDeletedTests.swift RollCallTests/TestSupport/RollCallTestFixtures.swift` succeeded; and out-of-sandbox `xcodebuild test -project RollCall.xcodeproj -scheme "Roll Call Debug" -destination 'platform=iOS Simulator,name=iPhone 16 Pro,OS=18.6' -derivedDataPath /private/tmp/rollcall-recovery-tests-4 CODE_SIGNING_ALLOWED=NO` succeeded after the sandboxed attempt was blocked by normal SwiftPM/CoreSimulator restrictions.
 - Result in this `1.1.0` build `58` bump: `git diff --check` and `xcrun swiftc -parse RollCall/Models.swift RollCall/Services.swift RollCall/AppModel.swift RollCall/RootView.swift` succeeded, and the checked-in app target build settings now read `MARKETING_VERSION = 1.1.0` and `CURRENT_PROJECT_VERSION = 58` for Debug, Release, and Internal. No bundle ID, deployment target, entitlements, dependencies, permissions, or feature behavior changed.
 - Result in this `1.1.0` build `57` version bump: `git diff --check` succeeded, and the checked-in app target build settings now read `MARKETING_VERSION = 1.1.0` and `CURRENT_PROJECT_VERSION = 57` for Debug, Release, and Internal. No bundle ID, deployment target, entitlements, dependencies, permissions, or feature behavior changed.
 - Result in this `release/1.1` What's New pass: sandboxed `xcodebuild -project RollCall.xcodeproj -scheme "Roll Call Debug" -destination 'generic/platform=iOS' -derivedDataPath /private/tmp/rollcall-whatsnew-dd CODE_SIGNING_ALLOWED=NO build` was blocked by CoreSimulator/cache/network restrictions while resolving ZIPFoundation; the same signing-disabled build succeeded out of sandbox after splitting the root SwiftUI modifier chain for type-checking. `git diff --check` and the focused `xcrun swiftc -parse ...` app-file check also succeeded. A simulator/device smoke check should still confirm the automatic safe-tab timing and manual Settings > About presentation.
@@ -155,8 +163,8 @@ Verification:
 - Result in the most recent verified build session before this version bump: the in-sandbox check was blocked by cache and CoreSimulator restrictions, but an out-of-sandbox `xcodebuild -project RollCall.xcodeproj -scheme RollCall -destination 'generic/platform=iOS' build` completed successfully for `0.4.9` (build `13`) before the Game Day visual pass. XcodeBuildMCP then completed simulator build/run verification after the Game Day redesign. The remaining verification is an on-device smoke pass for AirDrop-opened `.rollcall` imports, manual picker selection of AirDropped `.rollcall` files stored in Files, whether Files now prefers Roll Call as the open target for `.rollcall`, subscribed Apple Music MediaPlayer fade behavior with the setting on and off, repeated non-zero trim starts, preview-only fallback trimming, custom-intro playback, and bright-condition Game Day readability.
 
 Recommended next priorities:
-1. Before shipping the iOS 17 hotfix, run an iOS 17.0 simulator or device smoke pass for launch, onboarding, create team/player, saved-team relaunch, Game Day fallback playback, local/package import/export, Settings/About, and document-open/import handoff.
-2. Compare the same hotfix flows against a current newer-iOS runtime; any new iOS 17 regression in core app, Apple Music, Files, audio, or subscription/device-state behavior blocks release.
+1. Run a focused Recovery smoke pass on simulator or device: delete player, delete team, restore each, confirm blocked player restore when the team is still deleted, confirm the `60 days` messaging, and spot-check the partial-restore warning path with missing media if practical.
+2. Before shipping the iOS 17 hotfix, run an iOS 17.0 simulator or device smoke pass for launch, onboarding, create team/player, saved-team relaunch, Game Day fallback playback, local/package import/export, Settings/About, and document-open/import handoff.
 3. Enable the MusicKit App Service for App ID `com.jkfisher.rollcall`, refresh signing/provisioning, then launch on-device and do a focused smoke pass for subscribed-device full-song trimming, repeated non-zero trim starts, MediaPlayer fade-out behavior in preview and Game Day, preview-only fallback trimming, custom-intro playback, direct AirDrop `.rollcall` opening, whether Files prefers Roll Call for `.rollcall`, manual picker selection from Files, and bright-field readability with `Always Use Dark Live Screens` on and off.
 
 Build environment docs:

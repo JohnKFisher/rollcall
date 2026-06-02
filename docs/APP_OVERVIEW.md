@@ -148,7 +148,7 @@ A scroll view of grouped sections:
 - **Team Package** — Export Selected Team, Share Latest .rollcall Package (only shows once an export exists), Add Team from .rollcall Package.
 - **Setup Guide** — Open Setup Guide (returns user to the guided flow for a new or imported team).
 - **Game Day** — three toggles: Always Use Dark Live Screens (default on), Game Day Haptics, Volume Automation (off by default; lets Roll Call adjust system volume for fades).
-- **Recovery** — navigation into Recovery & Backups (manual backup creation, restore from a backup list; automatic backups are made before package imports).
+- **Recovery** — navigation into Recovery, where `Recently Deleted` handles everyday team/player undelete for 60 days and backups remain available for restoring an earlier app state.
 - **About** — version, build, environment chip, copyright credit to John Kenneth Fisher, GitHub link, Email Feedback link (pre-fills version metadata), Attributions & Licenses link.
 - **Advanced / Developer Tools** (only visible when feature flag is on) — environment gates, runtime testing flags, experimental actions, diagnostics.
 
@@ -278,13 +278,13 @@ Import adds the package as a new team and leaves existing teams unchanged. Impor
 
 Available from Teams → Team Actions menu. Imports name + uniform number rows from a CSV; opens a Roster Preview sheet for confirmation before applying. This is a fast way to seed a roster but does not import audio.
 
-### Recovery & Backups
+### Recovery
 
-Reached from Settings → Recovery & Backups. Manual "Create Backup" button. Automatic backups are taken before package imports and backup restores. Only the newest 10 are kept. Restoring picks from the list. No automatic backups on a timer; this is a deliberate "backup on risky action" model.
+Reached from Settings → Recovery. The screen now leads with **Recently Deleted**, a mixed newest-first list of deleted teams and players. Deleted items stay there for 60 days unless restored or permanently deleted. Team restores are full-fidelity; player restores return to the original team and try to rejoin the prior batting-order position while marking the player present today. If a player's original team is still deleted, the row stays visible and explains that the team must be restored first.
 
-### Recently Deleted
+Restore is the primary action. Permanent delete is secondary and confirmed item by item. If some saved media is missing, Roll Call explains what could not be recovered and offers a `Restore What We Can` fallback instead of silently restoring a partial result.
 
-Not present in 1.0. On the roadmap as 1.x ("Recovery / Recently Deleted"). Currently, delete-team and delete-player operations are permanent (after a confirmation dialog).
+The lower part of Recovery still contains manual **Backups**. Automatic backups are taken before package imports and before restoring from a backup. Only the newest 10 are kept. Backups are for returning to an earlier app state, not for everyday deleted-player or deleted-team recovery.
 
 ---
 

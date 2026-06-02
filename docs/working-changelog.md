@@ -10,6 +10,7 @@ Internal notes for building public-facing changelogs. Keep entries understandabl
 - [public candidate] Added an optional Keep Screen Awake setting so Game Day and Clips can prevent auto-lock during live use, with a battery-use note in Settings.
 - [public candidate] Added an in-app What's New sheet for update notes, with a Settings > About entry and a Full Changelog link.
 - [public candidate] Teams can now update a managed Apple Music playlist from their Apple Music song cues, with a preview of included and skipped songs before anything changes.
+- [public candidate] Added a new Recovery screen with Recently Deleted for teams and players, including 60-day recovery, item-by-item restore, and item-by-item permanent delete.
 
 
 ### Changed
@@ -29,6 +30,8 @@ Internal notes for building public-facing changelogs. Keep entries understandabl
 
 ### Reliability / Data Safety
 - Playback and preview cleanup now ignore stale stop tasks after a newer cue starts, reducing silent or stuck Game Day playback after rapid taps.
+- [public candidate] If deleted items are missing some saved media, Roll Call now tells you what could not be recovered and offers a clear `Restore What We Can` fallback instead of silently restoring a broken result.
+- Shared team media now stays on the device while any active team or Recovery item still references it, and regenerated built-in announcer files now clean up old unused copies instead of leaving orphaned assets behind.
 
 ### Internal / Maintenance
 - Semantic colors such as warning, destructive, ready, disabled, and live playback remain separate from team accent colors.

@@ -17,7 +17,8 @@ enum RollCallTestFixtures {
         isPresent: Bool = true,
         cue: Cue? = nil,
         photoRelativePath: String? = nil,
-        customAnnouncerRelativePath: String? = nil
+        customAnnouncerRelativePath: String? = nil,
+        generatedBuiltInAnnouncerRelativePath: String? = nil
     ) -> Player {
         Player(
             id: id,
@@ -27,7 +28,8 @@ enum RollCallTestFixtures {
             photoRelativePath: photoRelativePath,
             cue: cue,
             isPresent: isPresent,
-            customAnnouncerRelativePath: customAnnouncerRelativePath
+            customAnnouncerRelativePath: customAnnouncerRelativePath,
+            generatedBuiltInAnnouncerRelativePath: generatedBuiltInAnnouncerRelativePath
         )
     }
 
@@ -109,13 +111,22 @@ enum RollCallTestFixtures {
     }
 
     static func appState(team: Team? = nil, snapshots: [SnapshotRecord] = []) -> AppState {
-        let teams = team.map { [$0] } ?? []
+        appState(teams: team.map { [$0] } ?? [], selectedTeamID: team?.id, snapshots: snapshots)
+    }
+
+    static func appState(
+        teams: [Team],
+        selectedTeamID: UUID? = nil,
+        snapshots: [SnapshotRecord] = [],
+        recentlyDeleted: [RecentlyDeletedItem] = []
+    ) -> AppState {
         return AppState(
             schemaVersion: AppState.currentSchemaVersion,
             appVersion: "1.0.1",
             deviceIdentity: DeviceIdentity(label: "Test iPhone"),
-            selectedTeamID: team?.id,
+            selectedTeamID: selectedTeamID ?? teams.first?.id,
             teams: teams,
+            recentlyDeleted: recentlyDeleted,
             snapshots: snapshots,
             experimental: .default,
             settings: .default,

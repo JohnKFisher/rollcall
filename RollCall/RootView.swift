@@ -388,19 +388,30 @@ struct RootView: View {
                 guard importedTeamID != nil else { return }
                 selectedTab = .teams
             }
+            .onChange(of: appModel.pendingRecoveryNavigationToken) { _, token in
+                guard token != nil else { return }
+                selectedTab = .players
+                appModel.pendingRecoveryNavigationToken = nil
+            }
             .onChange(of: canPresentAutomaticWhatsNew) { _, canPresent in
                 if canPresent {
                     presentAutomaticWhatsNewIfPossible()
                 }
             }
             .overlay(alignment: .top) {
-                if appModel.isBusy {
-                    ProgressView("Working…")
-                        .padding(.horizontal, 16)
-                        .padding(.vertical, 10)
-                        .background(.ultraThinMaterial, in: Capsule())
-                        .padding(.top, 8)
+                VStack(spacing: 8) {
+                    if appModel.isBusy {
+                        ProgressView("Working…")
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 10)
+                            .background(.ultraThinMaterial, in: Capsule())
+                    }
+
+                    if let bannerMessage = appModel.bannerMessage {
+                        AppBannerView(message: bannerMessage)
+                    }
                 }
+                .padding(.top, 8)
             }
     }
 
@@ -437,9 +448,9 @@ struct RootView: View {
                 }
             } message: {
                 if let team = appModel.selectedTeam {
-                    Text("Remove \(team.name) from this device? This deletes that team's \(team.players.count) players, lineup state, clips, and custom intros from the app. Existing exports and backups stay untouched.")
+                    Text("Remove \(team.name) from this device? This deletes that team's \(team.players.count) players, lineup state, clips, and custom intros from the app. You can restore it later from Recovery. Existing exports and backups stay untouched.")
                 } else {
-                    Text("Remove the selected team from this device. Existing exports and backups stay untouched.")
+                    Text("Remove the selected team from this device. You can restore it later from Recovery. Existing exports and backups stay untouched.")
                 }
             }
     }
@@ -1303,14 +1314,14 @@ struct RootView: View {
 
                     SettingsSectionGroup(
                         title: "Recovery",
-                        helperText: "Backup and restore tools stay separate from everyday setup."
+                        helperText: "Restore deleted teams or players first. Use backups when you need to go back to an earlier app state."
                     ) {
                         NavigationLink {
                             RecoveryCenterView(appModel: appModel)
                         } label: {
                             SettingsNavigationLabel(
-                                title: "Recovery & Backups",
-                                detail: "Create or restore local recovery points.",
+                                title: "Recovery",
+                                detail: "Restore deleted teams or players, or go back to an earlier app state.",
                                 systemImage: "arrow.counterclockwise.circle.fill"
                             )
                         }
@@ -3476,6 +3487,50 @@ private extension ReadinessState {
     }
 }
 
+private struct AppBannerView: View {
+    let message: AppBannerMessage
+
+    private var tint: Color {
+        switch message.style {
+        case .success:
+            return Color.rollCall(.ready)
+        case .warning:
+            return Color.rollCall(.warning)
+        }
+    }
+
+    private var symbol: String {
+        switch message.style {
+        case .success:
+            return "checkmark.circle.fill"
+        case .warning:
+            return "exclamationmark.triangle.fill"
+        }
+    }
+
+    var body: some View {
+        HStack(alignment: .center, spacing: 10) {
+            Image(systemName: symbol)
+                .foregroundStyle(tint)
+                .accessibilityHidden(true)
+            Text(message.text)
+                .rollCallText(.helperText)
+                .foregroundStyle(Color(uiColor: .label))
+                .multilineTextAlignment(.leading)
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 10)
+        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .strokeBorder(tint.opacity(0.35), lineWidth: 1)
+        }
+        .padding(.horizontal, 16)
+        .transition(.move(edge: .top).combined(with: .opacity))
+    }
+}
+
 private struct SettingsSectionGroup<Content: View>: View {
     let title: String
     let helperText: String?
@@ -4927,11 +4982,33 @@ private struct LineupEditorSheet: View {
 private struct RecoveryCenterView: View {
     @ObservedObject var appModel: AppModel
     @State private var backupPendingRestore: SnapshotRecord?
+    @State private var recentlyDeletedPendingPermanentDelete: RecentlyDeletedItem?
+    @State private var pendingPartialRestorePrompt: PartialRestorePrompt?
 
     var body: some View {
         List {
+            Section("Recently Deleted") {
+                Text("Deleted teams and players stay here for 60 days unless you restore or permanently delete them.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+
+                if appModel.state.recentlyDeleted.isEmpty {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("No recently deleted teams or players.")
+                        Text("If you remove something by mistake, you can restore it here.")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                    }
+                    .padding(.vertical, 4)
+                } else {
+                    ForEach(appModel.state.recentlyDeleted) { item in
+                        recentlyDeletedRow(for: item)
+                    }
+                }
+            }
+
             Section("Backups") {
-                Text("Create a manual backup before risky edits. Automatic backups are also created before package imports and backup restores, and only the newest 10 are kept.")
+                Text("Backups restore an earlier app state. They are separate from Recently Deleted and are best for larger recovery steps.")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
 
@@ -4963,7 +5040,10 @@ private struct RecoveryCenterView: View {
             }
         }
         .accentWashListBackground()
-        .navigationTitle("Recovery & Backups")
+        .navigationTitle("Recovery")
+        .onAppear {
+            appModel.refreshRecoveryState()
+        }
         .alert(item: $backupPendingRestore) { snapshot in
             Alert(
                 title: Text("Restore Backup?"),
@@ -4973,6 +5053,111 @@ private struct RecoveryCenterView: View {
                     Task { await appModel.restoreBackup(snapshot) }
                 }
             )
+        }
+        .alert(item: $recentlyDeletedPendingPermanentDelete) { item in
+            Alert(
+                title: Text("Delete Permanently?"),
+                message: Text(permanentDeleteMessage(for: item)),
+                primaryButton: .cancel(),
+                secondaryButton: .destructive(Text("Delete Permanently")) {
+                    appModel.permanentlyDeleteRecentlyDeletedItem(item)
+                }
+            )
+        }
+        .alert(item: $pendingPartialRestorePrompt) { prompt in
+            Alert(
+                title: Text(prompt.title),
+                message: Text(prompt.message),
+                primaryButton: .cancel(),
+                secondaryButton: .default(Text("Restore What We Can")) {
+                    guard let item = appModel.state.recentlyDeleted.first(where: { $0.id == prompt.itemID }) else { return }
+                    appModel.restoreRecentlyDeletedItem(item, allowPartial: true)
+                }
+            )
+        }
+    }
+
+    @ViewBuilder
+    private func recentlyDeletedRow(for item: RecentlyDeletedItem) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            switch item.payload {
+            case .team(let deletedTeam):
+                StatusChip(text: "Team", role: .neutral, emphasis: .subdued)
+                Text(deletedTeam.team.name)
+                    .font(.headline)
+                Text("Deleted \(item.deletedAt.formatted(date: .abbreviated, time: .omitted))")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Text(recoveryRetentionText(for: item))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Button("Restore") {
+                    handleRestore(item)
+                }
+                .buttonStyle(.borderedProminent)
+            case .player(let deletedPlayer):
+                StatusChip(text: "Player", role: .neutral, emphasis: .subdued)
+                Text(deletedPlayer.player.displayName)
+                    .font(.headline)
+                Text(appModel.recoveryTeamName(for: deletedPlayer))
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                Text("Deleted \(item.deletedAt.formatted(date: .abbreviated, time: .omitted))")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Text(recoveryRetentionText(for: item))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+
+                switch appModel.restorePreparation(for: item) {
+                case .blocked(let message):
+                    Text(message)
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                case .ready, .partialPrompt:
+                    Button("Restore") {
+                        handleRestore(item)
+                    }
+                    .buttonStyle(.borderedProminent)
+                }
+            }
+        }
+        .padding(.vertical, 4)
+        .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+            Button("Delete Permanently", role: .destructive) {
+                recentlyDeletedPendingPermanentDelete = item
+            }
+        }
+    }
+
+    private func handleRestore(_ item: RecentlyDeletedItem) {
+        switch appModel.restorePreparation(for: item) {
+        case .ready:
+            appModel.restoreRecentlyDeletedItem(item)
+        case .blocked(let message):
+            appModel.lastError = message
+        case .partialPrompt(let prompt):
+            pendingPartialRestorePrompt = prompt
+        }
+    }
+
+    private func recoveryRetentionText(for item: RecentlyDeletedItem) -> String {
+        let daysRemaining = max(Calendar.current.dateComponents([.day], from: .now, to: item.expiresAt).day ?? 0, 0)
+        if daysRemaining == 0 {
+            return "Expires today"
+        }
+        if daysRemaining == 1 {
+            return "1 day left"
+        }
+        return "\(daysRemaining) days left"
+    }
+
+    private func permanentDeleteMessage(for item: RecentlyDeletedItem) -> String {
+        switch item.payload {
+        case .team(let deletedTeam):
+            return "Delete \(deletedTeam.team.name) permanently? You will not be able to restore it from Recently Deleted."
+        case .player(let deletedPlayer):
+            return "Delete \(deletedPlayer.player.displayName) permanently? You will not be able to restore them from Recently Deleted."
         }
     }
 }
@@ -6329,7 +6514,7 @@ private extension PlayerEditorSheet {
             case .customAnnouncer:
                 return "This will remove only the Announcement Cue recording for this player."
             case .player:
-                return "This will remove this player from the roster, lineup, and Game Day."
+                return "This will remove this player from the roster, lineup, and Game Day. You can restore them later from Recovery."
             }
         }
     }

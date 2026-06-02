@@ -88,6 +88,149 @@ final class BackupRestoreTests: XCTestCase {
         XCTAssertEqual(model.state.snapshots.first?.reason, "Automatic backup before restore")
     }
 
+    @MainActor
+    func testBackupsDoNotStoreRecentlyDeletedItemsAndRestoreKeepsCurrentRecoveryList() async throws {
+        let currentTeam = RollCallTestFixtures.team(players: [
+            RollCallTestFixtures.player(id: RollCallTestFixtures.alexID, name: "Alex Ramirez", number: "12"),
+        ])
+        let deletedPlayer = RollCallTestFixtures.player(id: RollCallTestFixtures.caseyID, name: "Casey Morgan", number: "9")
+        var currentState = RollCallTestFixtures.appState(team: currentTeam)
+        currentState.recentlyDeleted = [
+            RecentlyDeletedItem(
+                id: UUID(),
+                deletedAt: .now,
+                payload: .player(
+                    DeletedPlayerRecord(
+                        player: deletedPlayer,
+                        originalTeamID: currentTeam.id,
+                        originalTeamName: currentTeam.name,
+                        previousBattingOrder: [deletedPlayer.id]
+                    )
+                )
+            )
+        ]
+        try writeState(currentState)
+        let model = AppModel()
+
+        model.createBackup(reason: "Manual backup")
+        let snapshot = try await waitForFirstSnapshot(in: model)
+
+        let backupState = try readStateSnapshot(snapshot)
+        XCTAssertTrue(backupState.recentlyDeleted.isEmpty)
+
+        let restoredTeam = RollCallTestFixtures.team(players: [
+            RollCallTestFixtures.player(id: RollCallTestFixtures.caseyID, name: "Restored Casey", number: "9"),
+        ])
+        let restoreSnapshot = SnapshotRecord(
+            id: UUID(),
+            createdAt: RollCallTestFixtures.now,
+            reason: "Manual backup",
+            relativeManifestPath: "restore-without-recovery.json"
+        )
+        try writeSnapshotState(RollCallTestFixtures.appState(team: restoredTeam), fileName: restoreSnapshot.relativeManifestPath)
+
+        await model.restoreBackup(restoreSnapshot)
+
+        XCTAssertEqual(model.state.teams.first?.players.map(\.displayName), ["Restored Casey"])
+        XCTAssertEqual(model.state.recentlyDeleted.count, 1)
+        if case .player(let deletedPlayer)? = model.state.recentlyDeleted.first?.payload {
+            XCTAssertEqual(deletedPlayer.player.displayName, "Casey Morgan")
+            XCTAssertEqual(deletedPlayer.originalTeamID, currentTeam.id)
+            XCTAssertEqual(deletedPlayer.originalTeamName, currentTeam.name)
+            XCTAssertEqual(deletedPlayer.previousBattingOrder, [deletedPlayer.player.id])
+        } else {
+            XCTFail("Expected the current recovery list to survive backup restore.")
+        }
+    }
+
+    @MainActor
+    func testRemovingOneTeamKeepsSharedAssetsUsedByAnotherTeam() throws {
+        let sharedPlayerOne = RollCallTestFixtures.player(
+            id: RollCallTestFixtures.alexID,
+            name: "Alex Ramirez",
+            number: "12",
+            cue: RollCallTestFixtures.localCue(relativePath: "shared-song.m4a"),
+            photoRelativePath: "shared-photo.jpg",
+            customAnnouncerRelativePath: "shared-announcer.caf"
+        )
+        let sharedPlayerTwo = RollCallTestFixtures.player(
+            id: RollCallTestFixtures.caseyID,
+            name: "Casey Morgan",
+            number: "9",
+            cue: RollCallTestFixtures.localCue(relativePath: "shared-song.m4a"),
+            photoRelativePath: "shared-photo.jpg",
+            customAnnouncerRelativePath: "shared-announcer.caf"
+        )
+        let firstTeam = RollCallTestFixtures.team(players: [sharedPlayerOne])
+        var secondTeam = RollCallTestFixtures.team(players: [sharedPlayerTwo])
+        secondTeam.id = UUID()
+        secondTeam.name = "Lightning"
+
+        try writeState(RollCallTestFixtures.appState(teams: [firstTeam, secondTeam], selectedTeamID: firstTeam.id))
+        try writeAsset("shared-song.m4a")
+        try writeAsset("shared-photo.jpg")
+        try writeAsset("shared-announcer.caf")
+        let model = AppModel()
+
+        model.removeSelectedTeam()
+
+        XCTAssertEqual(model.state.teams.map(\.name), ["Lightning"])
+        XCTAssertTrue(assetExists("shared-song.m4a"))
+        XCTAssertTrue(assetExists("shared-photo.jpg"))
+        XCTAssertTrue(assetExists("shared-announcer.caf"))
+    }
+
+    @MainActor
+    func testReplacingGeneratedBuiltInAnnouncerRemovesOldUnreferencedFile() throws {
+        let player = RollCallTestFixtures.player(
+            id: RollCallTestFixtures.alexID,
+            name: "Alex Ramirez",
+            number: "12",
+            generatedBuiltInAnnouncerRelativePath: "old-announcer.caf"
+        )
+        let team = RollCallTestFixtures.team(players: [player])
+        try writeState(RollCallTestFixtures.appState(team: team))
+        try writeAsset("old-announcer.caf")
+        try writeAsset("new-announcer.caf")
+        let model = AppModel()
+
+        model.applyGeneratedBuiltInAnnouncerAsset(
+            GeneratedAnnouncerAsset(
+                relativePath: "new-announcer.caf",
+                resolvedVoiceIdentifier: "voice-id",
+                voiceLanguageCode: "en-US"
+            ),
+            toPlayerID: player.id,
+            onTeamID: team.id
+        )
+
+        XCTAssertEqual(
+            model.state.teams.first?.players.first?.generatedBuiltInAnnouncerRelativePath,
+            "new-announcer.caf"
+        )
+        XCTAssertFalse(assetExists("old-announcer.caf"))
+        XCTAssertTrue(assetExists("new-announcer.caf"))
+    }
+
+    @MainActor
+    func testClearingGeneratedBuiltInAnnouncerRemovesOldFileWhenUnused() throws {
+        let player = RollCallTestFixtures.player(
+            id: RollCallTestFixtures.alexID,
+            name: "Alex Ramirez",
+            number: "12",
+            generatedBuiltInAnnouncerRelativePath: "old-announcer.caf"
+        )
+        let team = RollCallTestFixtures.team(players: [player])
+        try writeState(RollCallTestFixtures.appState(team: team))
+        try writeAsset("old-announcer.caf")
+        let model = AppModel()
+
+        model.applyGeneratedBuiltInAnnouncerAsset(nil, toPlayerID: player.id, onTeamID: team.id)
+
+        XCTAssertNil(model.state.teams.first?.players.first?.generatedBuiltInAnnouncerRelativePath)
+        XCTAssertFalse(assetExists("old-announcer.caf"))
+    }
+
     private func writePackageDirectory(name: String, manifest: TeamPackageManifest) throws -> URL {
         let packageURL = temp.fileURL(name)
         try FileManager.default.createDirectory(at: packageURL, withIntermediateDirectories: true)
@@ -118,5 +261,26 @@ final class BackupRestoreTests: XCTestCase {
         decoder.dateDecodingStrategy = .iso8601
         let url = try AppPaths.snapshotsDirectory().appendingPathComponent(snapshot.relativeManifestPath)
         return try decoder.decode(AppState.self, from: Data(contentsOf: url))
+    }
+
+    @MainActor
+    private func waitForFirstSnapshot(in model: AppModel) async throws -> SnapshotRecord {
+        for _ in 0..<20 {
+            if let snapshot = model.state.snapshots.first {
+                return snapshot
+            }
+            try await Task.sleep(for: .milliseconds(50))
+        }
+        throw XCTSkip("Timed out waiting for backup snapshot creation.")
+    }
+
+    private func writeAsset(_ relativePath: String) throws {
+        let url = try AppPaths.assetURL(relativePath: relativePath)
+        try Data("test".utf8).write(to: url, options: .atomic)
+    }
+
+    private func assetExists(_ relativePath: String) -> Bool {
+        guard let url = try? AppPaths.assetURL(relativePath: relativePath) else { return false }
+        return FileManager.default.fileExists(atPath: url.path)
     }
 }

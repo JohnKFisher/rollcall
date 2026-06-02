@@ -45,6 +45,36 @@ struct SupportBundleExport: Identifiable {
     let url: URL
 }
 
+struct AppBannerMessage: Identifiable, Equatable {
+    enum Style: Equatable {
+        case success
+        case warning
+    }
+
+    let id = UUID()
+    let text: String
+    let style: Style
+}
+
+struct PartialRestorePrompt: Identifiable, Equatable {
+    enum ItemType: Equatable {
+        case team
+        case player
+    }
+
+    let id = UUID()
+    let itemID: UUID
+    let itemType: ItemType
+    let title: String
+    let message: String
+}
+
+enum RestorePreparation: Equatable {
+    case ready
+    case blocked(String)
+    case partialPrompt(PartialRestorePrompt)
+}
+
 struct AnnouncerVoiceOption: Identifiable, Hashable {
     let id: String
     let name: String
@@ -408,6 +438,7 @@ final class AppModel: ObservableObject {
     @Published var state: AppState
     @Published var isBusy = false
     @Published var lastError: String?
+    @Published var bannerMessage: AppBannerMessage?
     @Published var exportURL: URL?
     @Published var pendingRosterImport: PendingRosterImport?
     @Published var pendingPackageImport: PendingPackageImport?
@@ -419,6 +450,7 @@ final class AppModel: ObservableObject {
     @Published private(set) var appleMusicPlaylistRecovery: AppleMusicPlaylistRecovery?
     @Published private(set) var appleMusicPlaybackCapability: AppleMusicPlaybackCapability = .unknown
     @Published private(set) var customAnnouncerRecordingPhase: CustomAnnouncerRecordingPhase = .idle
+    @Published var pendingRecoveryNavigationToken: UUID?
     private var hasFinishedLaunching = false
     private let persistenceWriter = StatePersistenceWriter()
     private var persistSequence = 0
@@ -431,6 +463,7 @@ final class AppModel: ObservableObject {
     private var pendingIncomingPackageURLs: [URL] = []
     private var isPreparingIncomingPackagePreview = false
     private var initialStateLoadWarning: String?
+    private var bannerDismissTask: Task<Void, Never>?
 
     let audioAssetService = AudioAssetService()
     let musicCatalogService = MusicCatalogService()
@@ -465,6 +498,7 @@ final class AppModel: ObservableObject {
         FeatureFlags.assertReleaseSafety(featureFlags)
         normalizeSelectedTeamIfNeeded()
         normalizeAllTeams()
+        purgeExpiredRecentlyDeletedItems()
         reconcileOnboardingForExistingTeamIfNeeded()
         if let initialStateLoadWarning {
             lastError = initialStateLoadWarning
@@ -677,7 +711,14 @@ final class AppModel: ObservableObject {
     }
 
     func removeSelectedTeam() {
-        guard let teamIndex else { return }
+        guard let teamIndex, let team = selectedTeam else { return }
+        addRecentlyDeletedItem(
+            RecentlyDeletedItem(
+                id: UUID(),
+                deletedAt: .now,
+                payload: .team(DeletedTeamRecord(team: team))
+            )
+        )
         state.teams.remove(at: teamIndex)
         normalizeSelectedTeamIfNeeded()
         stopPlayback()
@@ -713,9 +754,24 @@ final class AppModel: ObservableObject {
     }
 
     func removePlayer(_ player: Player) {
-        guard let teamIndex, let playerIndex = state.teams[teamIndex].players.firstIndex(where: { $0.id == player.id }) else { return }
+        guard let teamIndex,
+              let playerIndex = state.teams[teamIndex].players.firstIndex(where: { $0.id == player.id }) else { return }
+        let team = state.teams[teamIndex]
         let removed = state.teams[teamIndex].players.remove(at: playerIndex)
-        removeStoredAssetsIfUnreferenced(for: removed)
+        addRecentlyDeletedItem(
+            RecentlyDeletedItem(
+                id: UUID(),
+                deletedAt: .now,
+                payload: .player(
+                    DeletedPlayerRecord(
+                        player: removed,
+                        originalTeamID: team.id,
+                        originalTeamName: team.name,
+                        previousBattingOrder: team.session.battingOrder
+                    )
+                )
+            )
+        )
         state.teams[teamIndex].modifiedAt = .now
         normalizeLineup(for: teamIndex)
         prewarmNextBatterCue()
@@ -1296,7 +1352,7 @@ final class AppModel: ObservableObject {
     }
 
     func createBackup(reason: String) {
-        let snapshotState = state
+        let snapshotState = backupSnapshotState(from: state)
         Task(priority: .utility) { [weak self] in
             let result = await self?.writeBackupRecord(for: snapshotState, reason: reason) ?? .failure(AppError.invalidImport)
 
@@ -1312,10 +1368,16 @@ final class AppModel: ObservableObject {
     }
 
     private func createBackupBeforeRiskyOperation(reason: String) async throws {
-        let snapshotState = state
+        let snapshotState = backupSnapshotState(from: state)
         let snapshotRecord = try await writeBackupRecord(for: snapshotState, reason: reason).get()
         insertBackupRecord(snapshotRecord)
         persist()
+    }
+
+    func refreshRecoveryState() {
+        if purgeExpiredRecentlyDeletedItems() {
+            persist()
+        }
     }
 
     private func writeBackupRecord(for snapshotState: AppState, reason: String) async -> Result<SnapshotRecord, Error> {
@@ -1377,6 +1439,7 @@ final class AppModel: ObservableObject {
             let currentSettings = self.state.settings
             let currentLastSeenWhatsNewReleaseID = self.state.lastSeenWhatsNewReleaseID
             let currentSchemaVersion = self.state.schemaVersion
+            let currentRecentlyDeleted = self.state.recentlyDeleted
 
             let restoredState = try await Task.detached(priority: .utility) { () -> AppState in
                 let decoder = JSONDecoder()
@@ -1387,6 +1450,7 @@ final class AppModel: ObservableObject {
                 restoredState.settings = currentSettings
                 restoredState.lastSeenWhatsNewReleaseID = currentLastSeenWhatsNewReleaseID
                 restoredState.schemaVersion = max(restoredState.schemaVersion, currentSchemaVersion)
+                restoredState.recentlyDeleted = currentRecentlyDeleted
                 return restoredState
             }.value
 
@@ -1397,6 +1461,56 @@ final class AppModel: ObservableObject {
             self.scheduleReadinessRefresh()
             self.persist()
         }
+    }
+
+    func restorePreparation(for item: RecentlyDeletedItem) -> RestorePreparation {
+        switch item.payload {
+        case .team(let deletedTeam):
+            let missingSummary = missingMediaSummary(for: deletedTeam.team)
+            guard !missingSummary.hasMissingMedia else { return .partialPrompt(teamPartialPrompt(for: item, team: deletedTeam.team, summary: missingSummary)) }
+            return .ready
+        case .player(let deletedPlayer):
+            guard state.teams.contains(where: { $0.id == deletedPlayer.originalTeamID }) else {
+                return .blocked("Restore the team first to bring this player back.")
+            }
+            let missingTypes = missingMediaTypes(for: deletedPlayer.player)
+            guard !missingTypes.isEmpty else { return .ready }
+            return .partialPrompt(playerPartialPrompt(for: item, player: deletedPlayer.player, missingTypes: missingTypes))
+        }
+    }
+
+    func restoreRecentlyDeletedItem(_ item: RecentlyDeletedItem, allowPartial: Bool = false) {
+        switch item.payload {
+        case .team(let deletedTeam):
+            let summary = missingMediaSummary(for: deletedTeam.team)
+            if summary.hasMissingMedia && !allowPartial {
+                lastError = "Roll Call could not fully restore \(deletedTeam.team.name). Choose Restore What We Can to bring back the team without the missing media."
+                return
+            }
+            restoreDeletedTeam(item, deletedTeam: deletedTeam, partialSummary: summary.hasMissingMedia ? summary : nil)
+        case .player(let deletedPlayer):
+            guard state.teams.contains(where: { $0.id == deletedPlayer.originalTeamID }) else {
+                lastError = "Restore the team first to bring this player back."
+                return
+            }
+            let missingTypes = missingMediaTypes(for: deletedPlayer.player)
+            if !missingTypes.isEmpty && !allowPartial {
+                lastError = "Roll Call could not fully restore \(deletedPlayer.player.displayName). Choose Restore What We Can to bring back the player without the missing media."
+                return
+            }
+            restoreDeletedPlayer(item, deletedPlayer: deletedPlayer, missingTypes: missingTypes)
+        }
+    }
+
+    func permanentlyDeleteRecentlyDeletedItem(_ item: RecentlyDeletedItem) {
+        guard let itemIndex = state.recentlyDeleted.firstIndex(where: { $0.id == item.id }) else { return }
+        state.recentlyDeleted.remove(at: itemIndex)
+        removeStoredAssetsForDeletedItemIfUnreferenced(item)
+        persist()
+    }
+
+    func recoveryTeamName(for deletedPlayer: DeletedPlayerRecord) -> String {
+        state.teams.first(where: { $0.id == deletedPlayer.originalTeamID })?.name ?? deletedPlayer.originalTeamName
     }
 
     func exportSupportBundle() async {
@@ -1521,6 +1635,28 @@ final class AppModel: ObservableObject {
             .forEach(removeAssetIfUnreferenced(relativePath:))
     }
 
+    func applyGeneratedBuiltInAnnouncerAsset(
+        _ asset: GeneratedAnnouncerAsset?,
+        toPlayerID playerID: UUID,
+        onTeamID teamID: UUID
+    ) {
+        guard let teamIndex = state.teams.firstIndex(where: { $0.id == teamID }),
+              let playerIndex = state.teams[teamIndex].players.firstIndex(where: { $0.id == playerID }) else {
+            return
+        }
+
+        let previousPlayer = state.teams[teamIndex].players[playerIndex]
+        state.teams[teamIndex].players[playerIndex].generatedBuiltInAnnouncerRelativePath = asset?.relativePath
+        let updatedPlayer = state.teams[teamIndex].players[playerIndex]
+
+        if let asset {
+            state.teams[teamIndex].announcerProfile.applyResolvedVoice(from: asset)
+        }
+
+        state.teams[teamIndex].modifiedAt = .now
+        removeAssetsNoLongerReferenced(from: previousPlayer, to: updatedPlayer)
+    }
+
     private func removeAssetIfUnreferenced(relativePath: String) {
         guard !assetIsReferenced(relativePath: relativePath) else { return }
         audioAssetService.removeAsset(relativePath: relativePath)
@@ -1528,11 +1664,16 @@ final class AppModel: ObservableObject {
 
     private func assetIsReferenced(relativePath: String?, byAnyPlayerOtherThan ignoredPlayerID: UUID? = nil) -> Bool {
         guard let relativePath else { return false }
-        return state.teams.contains { team in
+        if state.teams.contains(where: { team in
             team.players.contains { player in
                 guard player.id != ignoredPlayerID else { return false }
                 return storedAssetRelativePaths(for: player).contains(relativePath)
             }
+        }) {
+            return true
+        }
+        return state.recentlyDeleted.contains { item in
+            storedAssetRelativePaths(for: item).contains(relativePath)
         }
     }
 
@@ -1551,6 +1692,242 @@ final class AppModel: ObservableObject {
             paths.append(source.relativePath)
         }
         return paths
+    }
+
+    private func storedAssetRelativePaths(for team: Team) -> [String] {
+        team.players.flatMap(storedAssetRelativePaths(for:))
+    }
+
+    private func storedAssetRelativePaths(for item: RecentlyDeletedItem) -> [String] {
+        switch item.payload {
+        case .team(let deletedTeam):
+            return storedAssetRelativePaths(for: deletedTeam.team)
+        case .player(let deletedPlayer):
+            return storedAssetRelativePaths(for: deletedPlayer.player)
+        }
+    }
+
+    private func addRecentlyDeletedItem(_ item: RecentlyDeletedItem) {
+        _ = purgeExpiredRecentlyDeletedItems()
+        state.recentlyDeleted.insert(item, at: 0)
+    }
+
+    @discardableResult
+    private func purgeExpiredRecentlyDeletedItems(now: Date = .now) -> Bool {
+        let expiredItems = state.recentlyDeleted.filter { $0.expiresAt <= now }
+        guard !expiredItems.isEmpty else { return false }
+        state.recentlyDeleted.removeAll { $0.expiresAt <= now }
+        expiredItems.forEach(removeStoredAssetsForDeletedItemIfUnreferenced)
+        return true
+    }
+
+    private func backupSnapshotState(from state: AppState) -> AppState {
+        var snapshotState = state
+        snapshotState.recentlyDeleted = []
+        return snapshotState
+    }
+
+    private func removeStoredAssetsForDeletedItemIfUnreferenced(_ item: RecentlyDeletedItem) {
+        storedAssetRelativePaths(for: item).forEach(removeAssetIfUnreferenced(relativePath:))
+    }
+
+    private enum MissingMediaType: String {
+        case song = "song"
+        case photo = "photo"
+        case announcementCue = "Announcement Cue"
+    }
+
+    private struct MissingMediaSummary {
+        var songCount = 0
+        var photoCount = 0
+        var announcementCueCount = 0
+
+        var hasMissingMedia: Bool {
+            songCount > 0 || photoCount > 0 || announcementCueCount > 0
+        }
+
+        var warningText: String {
+            var segments: [String] = []
+            if songCount > 0 {
+                segments.append("\(songCount) \(songCount == 1 ? "player is" : "players are") missing song audio")
+            }
+            if photoCount > 0 {
+                segments.append("\(photoCount) \(photoCount == 1 ? "player photo could" : "player photos could") not be recovered")
+            }
+            if announcementCueCount > 0 {
+                segments.append("\(announcementCueCount) \(announcementCueCount == 1 ? "Announcement Cue is" : "Announcement Cues are") missing")
+            }
+            guard let first = segments.first else { return "" }
+            if segments.count == 1 {
+                return first
+            }
+            if segments.count == 2 {
+                return "\(first), and \(segments[1])"
+            }
+            return "\(segments[0]), \(segments[1]), and \(segments[2])"
+        }
+    }
+
+    private func missingMediaTypes(for player: Player) -> [MissingMediaType] {
+        var types: [MissingMediaType] = []
+        if let photoRelativePath = player.photoRelativePath,
+           !audioAssetService.assetExists(relativePath: photoRelativePath) {
+            types.append(.photo)
+        }
+        if let customAnnouncerRelativePath = player.customAnnouncerRelativePath,
+           !audioAssetService.assetExists(relativePath: customAnnouncerRelativePath) {
+            types.append(.announcementCue)
+        }
+        if case .localAudio(let source)? = player.cue?.source,
+           !audioAssetService.assetExists(relativePath: source.relativePath) {
+            types.append(.song)
+        }
+        return types
+    }
+
+    private func missingMediaSummary(for team: Team) -> MissingMediaSummary {
+        team.players.reduce(into: MissingMediaSummary()) { summary, player in
+            let missingTypes = missingMediaTypes(for: player)
+            if missingTypes.contains(.song) {
+                summary.songCount += 1
+            }
+            if missingTypes.contains(.photo) {
+                summary.photoCount += 1
+            }
+            if missingTypes.contains(.announcementCue) {
+                summary.announcementCueCount += 1
+            }
+        }
+    }
+
+    private func playerPartialPrompt(for item: RecentlyDeletedItem, player: Player, missingTypes: [MissingMediaType]) -> PartialRestorePrompt {
+        PartialRestorePrompt(
+            itemID: item.id,
+            itemType: .player,
+            title: "Restore What We Can?",
+            message: "\(player.displayName) could not be fully restored because \(playerMissingSummaryText(missingTypes)) missing. You can still restore the player and re-add the missing media afterward."
+        )
+    }
+
+    private func teamPartialPrompt(for item: RecentlyDeletedItem, team: Team, summary: MissingMediaSummary) -> PartialRestorePrompt {
+        PartialRestorePrompt(
+            itemID: item.id,
+            itemType: .team,
+            title: "Restore What We Can?",
+            message: "\(team.name) could not be fully restored because \(summary.warningText). You can still restore the team and re-add the missing media afterward."
+        )
+    }
+
+    private func playerMissingSummaryText(_ missingTypes: [MissingMediaType]) -> String {
+        let names = missingTypes.map(\.rawValue)
+        guard let first = names.first else { return "some media is" }
+        if names.count == 1 {
+            return "the \(first) is"
+        }
+        if names.count == 2 {
+            return "the \(names[0]) and \(names[1]) are"
+        }
+        return "the \(names[0]), \(names[1]), and \(names[2]) are"
+    }
+
+    private func restoreDeletedTeam(_ item: RecentlyDeletedItem, deletedTeam: DeletedTeamRecord, partialSummary: MissingMediaSummary?) {
+        var restoredTeam = deletedTeam.team
+        restoredTeam.name = restoredTeamName(from: restoredTeam.name)
+        restoredTeam.modifiedAt = .now
+        state.teams.append(restoredTeam)
+        state.selectedTeamID = restoredTeam.id
+        normalizeLineup(for: state.teams.count - 1)
+        state.recentlyDeleted.removeAll { $0.id == item.id }
+        scheduleReadinessRefresh()
+        prewarmNextBatterCue()
+        pendingRecoveryNavigationToken = UUID()
+        if let partialSummary {
+            showBanner("\(restoredTeam.name) restored, but \(partialSummary.warningText). Open players to re-add the missing media.", style: .warning)
+        } else {
+            showBanner("\(restoredTeam.name) restored.", style: .success)
+        }
+        persist()
+    }
+
+    private func restoreDeletedPlayer(_ item: RecentlyDeletedItem, deletedPlayer: DeletedPlayerRecord, missingTypes: [MissingMediaType]) {
+        guard let restoreTeamIndex = state.teams.firstIndex(where: { $0.id == deletedPlayer.originalTeamID }) else {
+            lastError = "Restore the team first to bring this player back."
+            return
+        }
+
+        var restoredPlayer = deletedPlayer.player
+        restoredPlayer.isPresent = true
+        let insertionIndex = restoredPlayerInsertionIndex(
+            previousBattingOrder: deletedPlayer.previousBattingOrder,
+            playerID: restoredPlayer.id,
+            currentBattingOrder: state.teams[restoreTeamIndex].session.battingOrder
+        )
+
+        let rosterInsertionIndex = min(insertionIndex, state.teams[restoreTeamIndex].players.count)
+        state.teams[restoreTeamIndex].players.insert(restoredPlayer, at: rosterInsertionIndex)
+        let battingOrderInsertionIndex = min(insertionIndex, state.teams[restoreTeamIndex].session.battingOrder.count)
+        state.teams[restoreTeamIndex].session.battingOrder.insert(restoredPlayer.id, at: battingOrderInsertionIndex)
+        state.teams[restoreTeamIndex].modifiedAt = .now
+        state.selectedTeamID = state.teams[restoreTeamIndex].id
+        normalizeLineup(for: restoreTeamIndex)
+        state.recentlyDeleted.removeAll { $0.id == item.id }
+        scheduleReadinessRefresh()
+        prewarmNextBatterCue()
+        pendingRecoveryNavigationToken = UUID()
+        if missingTypes.isEmpty {
+            showBanner("\(restoredPlayer.displayName) restored.", style: .success)
+        } else {
+            showBanner("\(restoredPlayer.displayName) restored, but \(playerMissingSummaryText(missingTypes)) missing. Open the player to re-add it.", style: .warning)
+        }
+        persist()
+    }
+
+    private func restoredTeamName(from originalName: String) -> String {
+        let activeNames = Set(state.teams.map(\.name))
+        guard activeNames.contains(originalName) else { return originalName }
+
+        let restoredBase = "\(originalName) (Restored)"
+        guard activeNames.contains(restoredBase) else { return restoredBase }
+
+        var suffix = 2
+        while activeNames.contains("\(originalName) (Restored \(suffix))") {
+            suffix += 1
+        }
+        return "\(originalName) (Restored \(suffix))"
+    }
+
+    private func restoredPlayerInsertionIndex(previousBattingOrder: [UUID], playerID: UUID, currentBattingOrder: [UUID]) -> Int {
+        guard let deletedIndex = previousBattingOrder.firstIndex(of: playerID) else {
+            return currentBattingOrder.count
+        }
+
+        for candidateID in previousBattingOrder[..<deletedIndex].reversed() {
+            if let currentIndex = currentBattingOrder.firstIndex(of: candidateID) {
+                return currentIndex + 1
+            }
+        }
+
+        let successorStart = previousBattingOrder.index(after: deletedIndex)
+        if successorStart < previousBattingOrder.endIndex {
+            for candidateID in previousBattingOrder[successorStart...] {
+                if let currentIndex = currentBattingOrder.firstIndex(of: candidateID) {
+                    return currentIndex
+                }
+            }
+        }
+
+        return currentBattingOrder.count
+    }
+
+    private func showBanner(_ text: String, style: AppBannerMessage.Style) {
+        let banner = AppBannerMessage(text: text, style: style)
+        bannerDismissTask?.cancel()
+        bannerMessage = banner
+        bannerDismissTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .seconds(4))
+            guard let self, self.bannerMessage?.id == banner.id else { return }
+            self.bannerMessage = nil
+        }
     }
 
     private func alphabeticalBattingOrder(for players: [Player]) -> [UUID] {
@@ -1997,21 +2374,11 @@ final class AppModel: ObservableObject {
             guard !Task.isCancelled else { break }
             do {
                 let asset = try await generateBuiltInAnnouncerAsset(for: player, teamName: teamName, profile: profile)
-                guard let liveTeamIndex = state.teams.firstIndex(where: { $0.id == teamID }),
-                      let playerIndex = state.teams[liveTeamIndex].players.firstIndex(where: { $0.id == player.id }) else {
-                    continue
-                }
-                state.teams[liveTeamIndex].players[playerIndex].generatedBuiltInAnnouncerRelativePath = asset.relativePath
-                state.teams[liveTeamIndex].announcerProfile.applyResolvedVoice(from: asset)
-                state.teams[liveTeamIndex].modifiedAt = .now
+                applyGeneratedBuiltInAnnouncerAsset(asset, toPlayerID: player.id, onTeamID: teamID)
                 announcerRegenerationStatus = AnnouncerRegenerationStatus(teamID: teamID, phase: phase, completed: index + 1, total: players.count)
                 persist()
             } catch {
-                guard let liveTeamIndex = state.teams.firstIndex(where: { $0.id == teamID }),
-                      let playerIndex = state.teams[liveTeamIndex].players.firstIndex(where: { $0.id == player.id }) else {
-                    continue
-                }
-                state.teams[liveTeamIndex].players[playerIndex].generatedBuiltInAnnouncerRelativePath = nil
+                applyGeneratedBuiltInAnnouncerAsset(nil, toPlayerID: player.id, onTeamID: teamID)
                 if firstFailure == nil {
                     firstFailure = "\(player.displayName): \(error.localizedDescription)"
                 }
@@ -2074,7 +2441,7 @@ final class AppModel: ObservableObject {
     }
 }
 
-private struct GeneratedAnnouncerAsset {
+struct GeneratedAnnouncerAsset {
     var relativePath: String
     var resolvedVoiceIdentifier: String?
     var voiceLanguageCode: String?

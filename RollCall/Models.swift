@@ -567,6 +567,69 @@ struct SnapshotRecord: Codable, Equatable, Identifiable {
     var relativeManifestPath: String
 }
 
+struct DeletedTeamRecord: Codable, Equatable {
+    var team: Team
+}
+
+struct DeletedPlayerRecord: Codable, Equatable {
+    var player: Player
+    var originalTeamID: UUID
+    var originalTeamName: String
+    var previousBattingOrder: [UUID]
+}
+
+enum RecentlyDeletedPayload: Equatable {
+    case team(DeletedTeamRecord)
+    case player(DeletedPlayerRecord)
+}
+
+extension RecentlyDeletedPayload: Codable {
+    enum CodingKeys: String, CodingKey {
+        case type
+        case team
+        case player
+    }
+
+    enum Kind: String, Codable {
+        case team
+        case player
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        switch try container.decode(Kind.self, forKey: .type) {
+        case .team:
+            self = .team(try container.decode(DeletedTeamRecord.self, forKey: .team))
+        case .player:
+            self = .player(try container.decode(DeletedPlayerRecord.self, forKey: .player))
+        }
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        switch self {
+        case .team(let value):
+            try container.encode(Kind.team, forKey: .type)
+            try container.encode(value, forKey: .team)
+        case .player(let value):
+            try container.encode(Kind.player, forKey: .type)
+            try container.encode(value, forKey: .player)
+        }
+    }
+}
+
+struct RecentlyDeletedItem: Codable, Equatable, Identifiable {
+    static let retentionDays = 60
+
+    var id: UUID
+    var deletedAt: Date
+    var payload: RecentlyDeletedPayload
+
+    var expiresAt: Date {
+        Calendar.current.date(byAdding: .day, value: Self.retentionDays, to: deletedAt) ?? deletedAt
+    }
+}
+
 struct ExperimentalSettings: Codable, Equatable {
     var showExperimentalFeatures: Bool
     var unlockPremiumForTesting: Bool
@@ -683,13 +746,14 @@ struct DeviceIdentity: Codable, Equatable {
 }
 
 struct AppState: Codable, Equatable {
-    static let currentSchemaVersion = 5
+    static let currentSchemaVersion = 6
 
     var schemaVersion: Int
     var appVersion: String
     var deviceIdentity: DeviceIdentity
     var selectedTeamID: UUID?
     var teams: [Team]
+    var recentlyDeleted: [RecentlyDeletedItem]
     var snapshots: [SnapshotRecord]
     var experimental: ExperimentalSettings
     var settings: AppSettings
@@ -705,6 +769,7 @@ struct AppState: Codable, Equatable {
         case deviceIdentity
         case selectedTeamID
         case teams
+        case recentlyDeleted
         case snapshots
         case experimental
         case settings
@@ -721,6 +786,7 @@ struct AppState: Codable, Equatable {
         deviceIdentity: DeviceIdentity,
         selectedTeamID: UUID?,
         teams: [Team],
+        recentlyDeleted: [RecentlyDeletedItem],
         snapshots: [SnapshotRecord],
         experimental: ExperimentalSettings,
         settings: AppSettings,
@@ -735,6 +801,7 @@ struct AppState: Codable, Equatable {
         self.deviceIdentity = deviceIdentity
         self.selectedTeamID = selectedTeamID
         self.teams = teams
+        self.recentlyDeleted = recentlyDeleted
         self.snapshots = snapshots
         self.experimental = experimental
         self.settings = settings
@@ -752,6 +819,7 @@ struct AppState: Codable, Equatable {
         deviceIdentity = try container.decodeIfPresent(DeviceIdentity.self, forKey: .deviceIdentity) ?? DeviceIdentity(label: "This iPhone")
         selectedTeamID = try container.decodeIfPresent(UUID.self, forKey: .selectedTeamID)
         teams = try container.decodeIfPresent([Team].self, forKey: .teams) ?? []
+        recentlyDeleted = try container.decodeIfPresent([RecentlyDeletedItem].self, forKey: .recentlyDeleted) ?? []
         snapshots = try container.decodeIfPresent([SnapshotRecord].self, forKey: .snapshots) ?? []
         experimental = try container.decodeIfPresent(ExperimentalSettings.self, forKey: .experimental) ?? .default
         settings = try container.decodeIfPresent(AppSettings.self, forKey: .settings) ?? .default
@@ -772,6 +840,7 @@ struct AppState: Codable, Equatable {
         deviceIdentity: DeviceIdentity(label: "This iPhone"),
         selectedTeamID: nil,
         teams: [],
+        recentlyDeleted: [],
         snapshots: [],
         experimental: .default,
         settings: .default,
