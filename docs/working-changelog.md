@@ -17,6 +17,7 @@ Internal notes for building public-facing changelogs. Keep entries understandabl
 - The Full Changelog link in What's New is now easier to recognize as a tappable web link.
 - Missing player-photo placeholders and the player editor now better reflect the selected team's accent color.
 - Apple Music playlist wording now says create or update where Roll Call may do either.
+- Apple Music access and picker wording now better explain that full-song playback depends on the user's subscription and song availability on this device.
 - The selected team's color wash now appears across Roll Call pages, not just Game Day and Clips.
 - Gray and Black team colors now use adaptive neutral accent treatments so they stay readable in both Light Mode and Dark Mode.
 

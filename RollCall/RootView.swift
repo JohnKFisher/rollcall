@@ -1649,7 +1649,7 @@ private struct OnboardingRootView: View {
                     }
                 }
             } message: {
-                Text("Roll Call uses Apple Music access when you choose songs, play full tracks your subscription allows, or update team playlists. You can still use local audio if you skip this.")
+                Text("Roll Call uses Apple Music access when you choose songs, play full tracks your subscription allows, or update team playlists. Song playback depends on your subscription and what Apple Music makes available on this device.")
             }
             .sheet(isPresented: $showAppleMusicPicker) {
                 AppleMusicPickerSheet(appModel: appModel) { result in
@@ -5635,7 +5635,7 @@ private struct PlayerEditorSheet: View {
                     }
                 }
             } message: {
-                Text("Roll Call uses Apple Music access when you choose songs, play full tracks your subscription allows, or update team playlists. You can still import local audio if you skip this.")
+                Text("Roll Call uses Apple Music access when you choose songs, play full tracks your subscription allows, or update team playlists. Song playback depends on your subscription and what Apple Music makes available on this device.")
             }
             .fileImporter(isPresented: $importPresented, allowedContentTypes: [.audio, .movie], allowsMultipleSelection: false) { result in
                 if case .success(let urls) = result, let url = urls.first {
@@ -6474,11 +6474,11 @@ private struct AppleMusicPickerSheet: View {
         Section {
             switch appModel.appleMusicPlaybackCapability {
             case .fullSong:
-                Text("Apple Music subscription detected. You can choose up to 20 seconds from anywhere in the full song.")
+                Text("Full-song playback depends on your Apple Music subscription and song availability on this device.")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
             case .previewOnly, .unknown:
-                Text("No Apple Music playback subscription detected. You can still choose a song, but trimming is limited to the available preview clip.")
+                Text("Full-song playback depends on your Apple Music subscription and song availability on this device.")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
             }
