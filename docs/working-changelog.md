@@ -19,6 +19,7 @@ Internal notes for building public-facing changelogs. Keep entries understandabl
 - [needs review] Game Day's player grid now flows forward from the batter after On Deck and wraps through the lineup so the live board reads more like the expected batting order while still keeping every player available to tap.
 - [needs review] If you tap a later player out of order on Game Day, the big hero now temporarily switches to a `Lineup Override` state for that player without reshuffling the lineup grid or On Deck card.
 - [needs review] Game Day now uses a little more spacing around the live board, control row, and player grid so the tap targets have more breathing room.
+- [needs review] Clips now uses a little more spacing around the live board and between clip cards so the reactions are easier to scan and tap quickly.
 - [needs review] Game Day now uses smaller announcer and song status icons across the live board so player tiles, Now Batting, and On Deck can show what is available with less repeated gray text.
 - [needs review] Game Day's Now Batting and On Deck headers now carry the player number in the compact status line instead of giving the number its own larger placement.
 - The What's New sheet now uses a more compact layout with less repeated version text.

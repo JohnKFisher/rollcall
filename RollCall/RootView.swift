@@ -894,13 +894,13 @@ struct RootView: View {
                     .ignoresSafeArea()
 
                 ScrollView {
-                    VStack(alignment: .leading, spacing: RollCallSpacingTier.standard.value) {
+                    VStack(alignment: .leading, spacing: 14) {
                         if appModel.selectedTeamBuiltInClips.isEmpty {
                             ClipsEmptyStateCard(surface: clipsSurface)
                         } else {
                             ClipsHeaderCard(clipCount: appModel.selectedTeamBuiltInClips.count, surface: clipsSurface)
 
-                            LazyVStack(spacing: RollCallSpacingTier.tight.value) {
+                            LazyVStack(spacing: 10) {
                                 ForEach(appModel.selectedTeamBuiltInClips) { clip in
                                     GeneralClipCard(clip: clip, surface: clipsSurface) {
                                         Task { await appModel.play(builtInClip: clip) }
@@ -909,9 +909,9 @@ struct RootView: View {
                             }
                         }
                     }
-                    .padding(.horizontal, 16)
-                    .padding(.top, 12)
-                    .padding(.bottom, 28)
+                    .padding(.horizontal, 19)
+                    .padding(.top, 14)
+                    .padding(.bottom, 34)
                 }
             }
             .navigationTitle("Clips")

@@ -11,6 +11,7 @@ Status:
 - The `release/1.1` lane now makes Game Day's player grid visually continue the lineup after `On Deck`, wrapping through the present order while still letting coaches tap any player tile directly out of sequence.
 - The `release/1.1` lane now treats an out-of-order Game Day player tap as a temporary hero-only `Lineup Override`, so the currently playing player is obvious without making `On Deck` or the grid pretend the lineup order itself changed.
 - The `release/1.1` lane now gives the Game Day live board a bit more outer spacing and more room between the control row and player grid so the buttons feel less crowded during live use.
+- The `release/1.1` lane now gives Clips a bit more outer spacing and more room between clip cards so the live reaction board feels less crowded too.
 - Non-Release `Developer Tools` can now launch the same rating-request sheet used in the real app, while still keeping separate native-StoreKit and direct-App-Store diagnostics.
 - `1.1.0` build `61` bumps the checked-in app build number for the current Game Day cleanup pass, including the compact mode-aware cue icons, number-placement polish, and more frequent next-batter warmup refresh when Game Day becomes active.
 - The `release/1.1` lane now ships a narrower built-in General Clips pack that favors more sports-specific cheers, chant, rhythm, and stadium atmosphere over generic audience-applause sounds, and existing teams migrate off both the older placeholder-ish pack and the broader audience-style experiment automatically.
