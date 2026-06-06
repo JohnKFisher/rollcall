@@ -4455,8 +4455,8 @@ private struct GameDayNowBattingHero: View {
 
     private var cueIcons: [GameDayTileCueIcon] {
         let hasSong = player.cue != nil
-        let availableColor = Color(uiColor: .secondaryLabel)
-        let missingColor = Color(uiColor: .tertiaryLabel)
+        let availableColor = Color.rollCall(.ready, surface: .live)
+        let missingColor = Color.rollCall(.destructive, surface: .live)
 
         switch announcerMode {
         case .announcerOnly:
@@ -4691,7 +4691,7 @@ private struct GameDayOnDeckCard: View {
                 tileState: GameDayTileState(
                     text: "On Deck",
                     systemImage: "person.crop.circle.badge.clock",
-                    color: teamAccentTheme.color(.primary, surface: .live)
+                    color: Color.rollCall(.ready, surface: .live)
                 ),
                 cueIcons: onDeckCueIcons(for: player)
             )
@@ -4719,8 +4719,8 @@ private struct GameDayOnDeckCard: View {
     private func onDeckCueIcons(for player: Player) -> [GameDayTileCueIcon] {
         let hasCustomAnnouncer = appModel.hasStoredCustomAnnouncer(for: player)
         let hasSong = player.cue != nil
-        let availableColor = Color(uiColor: .secondaryLabel)
-        let missingColor = Color(uiColor: .tertiaryLabel)
+        let availableColor = Color.rollCall(.ready, surface: .live)
+        let missingColor = Color.rollCall(.destructive, surface: .live)
 
         switch announcerMode {
         case .announcerOnly:
@@ -4946,7 +4946,7 @@ private struct GameDayPlayerGrid: View {
                         Task { await appModel.play(player: player) }
                     }
                 } label: {
-                    VStack(alignment: .leading, spacing: 7) {
+                    VStack(alignment: .leading, spacing: 5) {
                         HStack(alignment: .center, spacing: 4) {
                             Text(player.uniformNumber.isEmpty ? "--" : "#\(player.uniformNumber)")
                                 .font(.caption.weight(.bold))
@@ -4962,7 +4962,7 @@ private struct GameDayPlayerGrid: View {
                             .minimumScaleFactor(0.74)
                             .frame(maxWidth: .infinity, alignment: .leading)
 
-                        if let tileState {
+                        if let tileState, tileState.animatesSymbol {
                             Text(tileState.text)
                                 .font(.caption2.weight(.bold))
                                 .textCase(.uppercase)
@@ -4971,8 +4971,8 @@ private struct GameDayPlayerGrid: View {
                                 .minimumScaleFactor(0.78)
                         }
                     }
-                    .padding(10)
-                    .frame(maxWidth: .infinity, minHeight: 94, alignment: .topLeading)
+                    .padding(8)
+                    .frame(maxWidth: .infinity, minHeight: 82, alignment: .topLeading)
                     .background(
                         RoundedRectangle(cornerRadius: 13, style: .continuous)
                             .fill(tileBackground(isActive: isActive))
@@ -5173,6 +5173,8 @@ private struct GameDayPanelIconRow: View {
     let tileState: GameDayTileState?
     let cueIcons: [GameDayTileCueIcon]
 
+    private let reservedWidth: CGFloat = 52
+
     var body: some View {
         HStack(spacing: 4) {
             if let tileState {
@@ -5192,6 +5194,7 @@ private struct GameDayPanelIconRow: View {
                     .foregroundStyle(icon.color)
             }
         }
+        .frame(width: reservedWidth, alignment: .trailing)
     }
 }
 

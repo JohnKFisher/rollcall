@@ -4,12 +4,12 @@ Use this file as a concise project status snapshot for the current version, what
 
 ## Roll Call
 
-Current version: `1.1.0` (build `60`)
+Current version: `1.1.0` (build `61`)
 
 Status:
 - The `release/1.1` lane now includes a rating request flow that waits for five successful Game Day sessions, counts real Game Day use even when coaches close the app directly from Game Day, waits for a later safe non-live tab before asking, shows Roll Call's own rating-request sheet, sends an explicit `Rate Roll Call` tap straight to the App Store review page, allows one later automatic retry after another five successful sessions if the first ask is skipped, and exposes a Settings > About rating entry only after that threshold is earned.
 - Non-Release `Developer Tools` can now launch the same rating-request sheet used in the real app, while still keeping separate native-StoreKit and direct-App-Store diagnostics.
-- `1.1.0` build `60` bumps the checked-in app build number for the latest 1.1 release-lane polish, including the rating-request follow-up work and its aligned release docs.
+- `1.1.0` build `61` bumps the checked-in app build number for the current Game Day cleanup pass, including the compact mode-aware cue icons, number-placement polish, and more frequent next-batter warmup refresh when Game Day becomes active.
 - The `release/1.1` lane now ships a narrower built-in General Clips pack that favors more sports-specific cheers, chant, rhythm, and stadium atmosphere over generic audience-applause sounds, and existing teams migrate off both the older placeholder-ish pack and the broader audience-style experiment automatically.
 - The `release/1.1` lane now keeps shared player media on disk while any active team or `Recently Deleted` item still references it, and built-in announcer regeneration now cleans up old unused generated files instead of accumulating orphaned copies.
 - The `release/1.1` lane now includes a `Recovery` screen with `Recently Deleted` for teams and players: deletes move there for 60 days, restores are item-by-item, permanent delete stays manual, blocked player restores explain when the team must be restored first, and backups now read as the broader earlier-app-state tool.
