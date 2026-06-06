@@ -97,8 +97,8 @@ The center of the product. Dark by default in Live appearance (toggleable in Set
 
 - **Announcer Mode Picker** — segmented control for the three modes (Announcer Only / Announcer+Song / Song Only). Selection is per-team and persists.
 - **Live Warning Strip** (only shown when needed) — e.g. "No present players in the lineup", or a count of live readiness issues. Yellow or red tinted.
-- **Now Batting Hero card** — large player tile for the currently-playing or next-up player. Shows photo, name, number, the cue title (song name, or "Announcer Only", or "Fallback: Small Cheer"). Tap to play. A visible playing indicator appears while audio is active.
-- **On Deck card** — smaller tile for the player after Now Batting. Greys out when there is no next batter (one-player roster).
+- **Now Batting Hero card** — large player tile for the currently-playing or next-up player. Shows photo, name, number, the cue title (song name, or "Announcer Only", or "Fallback: Small Cheer"). Tap to play. A visible playing indicator appears while audio is active. If the coach taps a later player out of sequence, this card temporarily relabels itself as `Lineup Override` and shows that player until playback ends.
+- **On Deck card** — smaller tile for the player after the real lineup next batter. Greys out when there is no next batter (one-player roster), and does not temporarily change during a lineup override tap.
 - **Control Row** — a "Lineup" button that opens the lineup editor sheet. Plus playback controls when audio is active (stop).
 - **Player Grid** — all present players as tappable tiles that continue the visible lineup after `On Deck`, wrapping through the rest of the order so everyone stays available on the board. Tapping any tile still triggers that player's walkup immediately (the grid is sequence-oriented visually, but the coach can still tap whoever is actually at bat).
 

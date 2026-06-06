@@ -8,6 +8,10 @@ Use this file as a concise decision log for project-specific architectural, beha
   Rationale: the live board should make the expected next-up flow easier to scan without removing the coach's ability to manually trigger any player's walkup out of sequence.
   Status: approved
 
+- Approved: when a coach taps a later player from the Game Day grid, Roll Call should treat it as a temporary lineup override in the hero only, leaving the real `Now Batting` pointer, `On Deck`, and grid order untouched until playback ends.
+  Rationale: out-of-sequence walkups happen in real use, but the board should still preserve lineup context instead of visually pretending the lineup itself changed.
+  Status: approved
+
 - Approved: add a polite rating request flow that waits for five successful Game Day sessions, counts a session after real player playback when leaving Game Day or backgrounding from it, enforces a four-hour cooldown between counted sessions, never interrupts Game Day/Clips, shows Roll Call's own rating-request sheet before any handoff, sends an explicit `Rate Roll Call` tap straight to the App Store review page, exposes a Settings > About rating entry only after that threshold is earned, and allows one later automatic retry after another five successful sessions if the first ask is dismissed or skipped.
   Rationale: the app should ask only after repeated proven value in the real live-use flow, while still giving heavy Game Day users credit even if they usually close the app straight from Game Day; using Roll Call's own sheet keeps the copy testable and ensures an explicit rating tap is never lost to StoreKit suppression.
   Status: approved

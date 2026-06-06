@@ -1153,6 +1153,12 @@ extension Team {
         return Array(firstSegment + secondSegment)
     }
 
+    func gameDayOverridePlayer(activePlayerID: UUID?) -> Player? {
+        guard let activePlayerID else { return nil }
+        guard activePlayerID != nextBatter?.id else { return nil }
+        return presentPlayersInBattingOrder.first(where: { $0.id == activePlayerID })
+    }
+
     static func sample() -> Team {
         let players = [
             Player(id: UUID(), displayName: "Alex Ramirez", uniformNumber: "12", pronunciationOverride: "", photoRelativePath: nil, cue: nil, isPresent: true),

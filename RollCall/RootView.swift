@@ -4265,12 +4265,24 @@ private struct GameDayTeamStack: View {
         presentPlayers.first(where: isActive)
     }
 
-    private var nowPlayer: Player? {
-        activePlayer ?? team.nextBatter
+    private var lineupNowPlayer: Player? {
+        team.nextBatter
+    }
+
+    private var overridePlayer: Player? {
+        team.gameDayOverridePlayer(activePlayerID: activePlayer?.id)
+    }
+
+    private var displayedNowPlayer: Player? {
+        overridePlayer ?? lineupNowPlayer
+    }
+
+    private var nowBattingLabel: String {
+        overridePlayer == nil ? "Now Batting" : "Lineup Override"
     }
 
     private var onDeckPlayer: Player? {
-        nextPlayer(after: nowPlayer)
+        nextPlayer(after: lineupNowPlayer)
     }
 
     private var liveWarning: GameDayLiveWarning? {
@@ -4298,11 +4310,12 @@ private struct GameDayTeamStack: View {
                 GameDayWarningStrip(warning: liveWarning)
             }
 
-            if let nowPlayer {
+            if let displayedNowPlayer {
                 GameDayNowBattingHero(
                     appModel: appModel,
-                    player: nowPlayer,
-                    isActive: isActive(nowPlayer),
+                    player: displayedNowPlayer,
+                    titleLabel: nowBattingLabel,
+                    isActive: isActive(displayedNowPlayer),
                     announcerMode: team.session.gameDayAnnouncerMode
                 )
             } else {
@@ -4328,7 +4341,7 @@ private struct GameDayTeamStack: View {
             GameDayPlayerGrid(
                 appModel: appModel,
                 players: gameDayGridPlayers,
-                nowPlayerID: nowPlayer?.id,
+                nowPlayerID: lineupNowPlayer?.id,
                 onDeckPlayerID: onDeckPlayer?.id,
                 announcerMode: team.session.gameDayAnnouncerMode
             )
@@ -4428,6 +4441,7 @@ private struct GameDayWarningStrip: View {
 private struct GameDayNowBattingHero: View {
     @ObservedObject var appModel: AppModel
     let player: Player
+    let titleLabel: String
     let isActive: Bool
     let announcerMode: GameDayAnnouncerMode
 
@@ -4550,7 +4564,7 @@ private struct GameDayNowBattingHero: View {
 
                 VStack(alignment: .leading, spacing: 7) {
                     HStack(alignment: .firstTextBaseline, spacing: 4) {
-                        Text("Now Batting")
+                        Text(titleLabel)
                             .font(.caption.weight(.bold))
                             .textCase(.uppercase)
                             .foregroundStyle(Color(uiColor: .secondaryLabel))
@@ -4628,7 +4642,7 @@ private struct GameDayNowBattingHero: View {
     }
 
     private var accessibilityLabel: String {
-        "Now Batting, \(player.displayName), \(statusText), \(cueTitle), \(isActive ? "tap again to stop" : actionTitle)"
+        "\(titleLabel), \(player.displayName), \(statusText), \(cueTitle), \(isActive ? "tap again to stop" : actionTitle)"
     }
 
     private var cueIconRow: some View {

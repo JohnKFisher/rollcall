@@ -90,6 +90,35 @@ final class TeamLineupTests: XCTestCase {
         )
     }
 
+    func testGameDayOverridePlayerReturnsTappedPlayerWhenItDiffersFromNextBatter() {
+        let team = RollCallTestFixtures.team(
+            battingOrder: [
+                RollCallTestFixtures.alexID,
+                RollCallTestFixtures.jordanID,
+                RollCallTestFixtures.caseyID,
+            ],
+            nextBatterIndex: 0
+        )
+
+        XCTAssertEqual(
+            team.gameDayOverridePlayer(activePlayerID: RollCallTestFixtures.caseyID)?.id,
+            RollCallTestFixtures.caseyID
+        )
+    }
+
+    func testGameDayOverridePlayerIgnoresCurrentNextBatter() {
+        let team = RollCallTestFixtures.team(
+            battingOrder: [
+                RollCallTestFixtures.alexID,
+                RollCallTestFixtures.jordanID,
+                RollCallTestFixtures.caseyID,
+            ],
+            nextBatterIndex: 0
+        )
+
+        XCTAssertNil(team.gameDayOverridePlayer(activePlayerID: RollCallTestFixtures.alexID))
+    }
+
     func testAlphabeticalPlayerIDsSortsByFirstNameThenRemainder() {
         let players = [
             RollCallTestFixtures.player(id: RollCallTestFixtures.caseyID, name: "Alex Zed", number: "8"),
