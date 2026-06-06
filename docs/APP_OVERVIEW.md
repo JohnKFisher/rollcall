@@ -100,7 +100,7 @@ The center of the product. Dark by default in Live appearance (toggleable in Set
 - **Now Batting Hero card** — large player tile for the currently-playing or next-up player. Shows photo, name, number, the cue title (song name, or "Announcer Only", or "Fallback: Small Cheer"). Tap to play. A visible playing indicator appears while audio is active.
 - **On Deck card** — smaller tile for the player after Now Batting. Greys out when there is no next batter (one-player roster).
 - **Control Row** — a "Lineup" button that opens the lineup editor sheet. Plus playback controls when audio is active (stop).
-- **Player Grid** — the rest of the present roster as tappable tiles in batting order. Tapping any tile triggers that player's walkup immediately (the lineup is for visual order, not for forcing sequence — the coach taps whoever is actually at bat).
+- **Player Grid** — all present players as tappable tiles that continue the visible lineup after `On Deck`, wrapping through the rest of the order so everyone stays available on the board. Tapping any tile still triggers that player's walkup immediately (the grid is sequence-oriented visually, but the coach can still tap whoever is actually at bat).
 
 Tap interactions degrade gracefully. If a player has no cue and announcer mode is "Song Only" or "Announcer+Song", playback falls back to a built-in cheer. If a player has no recorded announcer in "Announcer Only" mode, same. Game Day never fails silently and never errors out — it always plays *something*.
 

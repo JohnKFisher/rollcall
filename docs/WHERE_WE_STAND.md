@@ -8,6 +8,7 @@ Current version: `1.1.0` (build `61`)
 
 Status:
 - The `release/1.1` lane now includes a rating request flow that waits for five successful Game Day sessions, counts real Game Day use even when coaches close the app directly from Game Day, waits for a later safe non-live tab before asking, shows Roll Call's own rating-request sheet, sends an explicit `Rate Roll Call` tap straight to the App Store review page, allows one later automatic retry after another five successful sessions if the first ask is skipped, and exposes a Settings > About rating entry only after that threshold is earned.
+- The `release/1.1` lane now makes Game Day's player grid visually continue the lineup after `On Deck`, wrapping through the present order while still letting coaches tap any player tile directly out of sequence.
 - Non-Release `Developer Tools` can now launch the same rating-request sheet used in the real app, while still keeping separate native-StoreKit and direct-App-Store diagnostics.
 - `1.1.0` build `61` bumps the checked-in app build number for the current Game Day cleanup pass, including the compact mode-aware cue icons, number-placement polish, and more frequent next-batter warmup refresh when Game Day becomes active.
 - The `release/1.1` lane now ships a narrower built-in General Clips pack that favors more sports-specific cheers, chant, rhythm, and stadium atmosphere over generic audience-applause sounds, and existing teams migrate off both the older placeholder-ish pack and the broader audience-style experiment automatically.

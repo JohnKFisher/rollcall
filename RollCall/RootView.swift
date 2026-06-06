@@ -4257,6 +4257,10 @@ private struct GameDayTeamStack: View {
         team.presentPlayersInBattingOrder
     }
 
+    private var gameDayGridPlayers: [Player] {
+        team.gameDayGridPlayers(startingAfter: onDeckPlayer?.id)
+    }
+
     private var activePlayer: Player? {
         presentPlayers.first(where: isActive)
     }
@@ -4323,7 +4327,7 @@ private struct GameDayTeamStack: View {
 
             GameDayPlayerGrid(
                 appModel: appModel,
-                players: presentPlayers,
+                players: gameDayGridPlayers,
                 nowPlayerID: nowPlayer?.id,
                 onDeckPlayerID: onDeckPlayer?.id,
                 announcerMode: team.session.gameDayAnnouncerMode

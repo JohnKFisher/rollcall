@@ -1141,6 +1141,18 @@ extension Team {
         return present[normalizedIndex]
     }
 
+    func gameDayGridPlayers(startingAfter playerID: UUID?) -> [Player] {
+        let present = presentPlayersInBattingOrder
+        guard present.count > 1 else { return present }
+        guard let playerID, let startIndex = present.firstIndex(where: { $0.id == playerID }) else {
+            return present
+        }
+
+        let firstSegment = present[(startIndex + 1)...]
+        let secondSegment = present[...startIndex]
+        return Array(firstSegment + secondSegment)
+    }
+
     static func sample() -> Team {
         let players = [
             Player(id: UUID(), displayName: "Alex Ramirez", uniformNumber: "12", pronunciationOverride: "", photoRelativePath: nil, cue: nil, isPresent: true),

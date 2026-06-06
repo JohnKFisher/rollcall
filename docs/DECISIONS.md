@@ -4,6 +4,10 @@ Use this file as a concise decision log for project-specific architectural, beha
 
 ## 2026-06-05
 
+- Approved: Game Day's fallback player grid should visually continue the lineup after `On Deck`, wrapping through the present order while still keeping every player visible and every tile tap freeform.
+  Rationale: the live board should make the expected next-up flow easier to scan without removing the coach's ability to manually trigger any player's walkup out of sequence.
+  Status: approved
+
 - Approved: add a polite rating request flow that waits for five successful Game Day sessions, counts a session after real player playback when leaving Game Day or backgrounding from it, enforces a four-hour cooldown between counted sessions, never interrupts Game Day/Clips, shows Roll Call's own rating-request sheet before any handoff, sends an explicit `Rate Roll Call` tap straight to the App Store review page, exposes a Settings > About rating entry only after that threshold is earned, and allows one later automatic retry after another five successful sessions if the first ask is dismissed or skipped.
   Rationale: the app should ask only after repeated proven value in the real live-use flow, while still giving heavy Game Day users credit even if they usually close the app straight from Game Day; using Roll Call's own sheet keeps the copy testable and ensures an explicit rating tap is never lost to StoreKit suppression.
   Status: approved

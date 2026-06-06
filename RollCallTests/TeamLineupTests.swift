@@ -42,6 +42,54 @@ final class TeamLineupTests: XCTestCase {
         )
     }
 
+    func testGameDayGridPlayersStartsAfterOnDeckAndWrapsThroughLineup() {
+        let team = RollCallTestFixtures.team(
+            battingOrder: [
+                RollCallTestFixtures.alexID,
+                RollCallTestFixtures.jordanID,
+                RollCallTestFixtures.caseyID,
+            ]
+        )
+
+        XCTAssertEqual(
+            team.gameDayGridPlayers(startingAfter: RollCallTestFixtures.jordanID).map(\.id),
+            [
+                RollCallTestFixtures.caseyID,
+                RollCallTestFixtures.alexID,
+                RollCallTestFixtures.jordanID,
+            ]
+        )
+    }
+
+    func testGameDayGridPlayersReturnsPresentOrderWhenStartPlayerMissing() {
+        let jordan = RollCallTestFixtures.player(
+            id: RollCallTestFixtures.jordanID,
+            name: "Jordan Lee",
+            number: "4",
+            isPresent: false
+        )
+        let team = RollCallTestFixtures.team(
+            players: [
+                RollCallTestFixtures.player(id: RollCallTestFixtures.alexID, name: "Alex Ramirez", number: "12"),
+                jordan,
+                RollCallTestFixtures.player(id: RollCallTestFixtures.caseyID, name: "Casey Morgan", number: "9"),
+            ],
+            battingOrder: [
+                RollCallTestFixtures.alexID,
+                RollCallTestFixtures.jordanID,
+                RollCallTestFixtures.caseyID,
+            ]
+        )
+
+        XCTAssertEqual(
+            team.gameDayGridPlayers(startingAfter: RollCallTestFixtures.jordanID).map(\.id),
+            [
+                RollCallTestFixtures.alexID,
+                RollCallTestFixtures.caseyID,
+            ]
+        )
+    }
+
     func testAlphabeticalPlayerIDsSortsByFirstNameThenRemainder() {
         let players = [
             RollCallTestFixtures.player(id: RollCallTestFixtures.caseyID, name: "Alex Zed", number: "8"),
