@@ -14,6 +14,7 @@ Internal notes for building public-facing changelogs. Keep entries understandabl
 
 
 ### Changed
+- [public candidate] Built-in crowd clips now use a smaller, more sports-specific set built around cheers, a stadium swell, a chant, and rhythmic clap instead of generic audience-applause sounds.
 - The What's New sheet now uses a more compact layout with less repeated version text.
 - The Full Changelog link in What's New is now easier to recognize as a tappable web link.
 - Missing player-photo placeholders and the player editor now better reflect the selected team's accent color.
@@ -22,6 +23,7 @@ Internal notes for building public-facing changelogs. Keep entries understandabl
 - The selected team's color wash now appears across Roll Call pages, not just Game Day and Clips.
 - Gray and Black team colors now use adaptive neutral accent treatments so they stay readable in both Light Mode and Dark Mode.
 - Recovery's Recently Deleted list now keeps the same restore details while fitting more items on screen at once.
+- [public candidate] `.rollcall` files now use a bolder full-bleed Roll Call icon treatment instead of the older small centered badge, making shared team files easier to recognize in Files and share sheets.
 
 ### Fixed
 - Team accent styling now also applies correctly to iOS 26 Liquid Glass tab bars and primary buttons.

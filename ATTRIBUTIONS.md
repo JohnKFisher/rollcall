@@ -29,7 +29,6 @@ applicable third-party license.
 | Stadium Burst | `RollCall/BuiltInAudio/stadium-burst.mp3` | Stadium joy shouting crowd | https://mixkit.co/free-sound-effects/crowd/ | https://assets.mixkit.co/active_storage/sfx/3022/3022-preview.mp3 | Mixkit Sound Effects Free License | No attribution required on the reviewed Mixkit sound-effects pages |
 | Rhythmic Clap | `RollCall/BuiltInAudio/rhythmic-clap.mp3` | Rhythmic applause and cheering | https://mixkit.co/free-sound-effects/crowd/ | https://assets.mixkit.co/active_storage/sfx/504/504-preview.mp3 | Mixkit Sound Effects Free License | No attribution required on the reviewed Mixkit sound-effects pages |
 | Whistle Pop | `RollCall/BuiltInAudio/whistle-pop.mp3` | Male crowd cheering short | https://mixkit.co/free-sound-effects/crowd/ | https://assets.mixkit.co/active_storage/sfx/459/459-preview.mp3 | Mixkit Sound Effects Free License | No attribution required on the reviewed Mixkit sound-effects pages |
-| Crowd Laugh | `RollCall/BuiltInAudio/crowd-laugh.mp3` | Crowd laugh | https://mixkit.co/free-sound-effects/crowd/ | https://assets.mixkit.co/active_storage/sfx/424/424-preview.mp3 | Mixkit Sound Effects Free License | No attribution required on the reviewed Mixkit sound-effects pages |
 
 ## Special Thanks
 

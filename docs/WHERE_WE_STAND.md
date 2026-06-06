@@ -8,12 +8,14 @@ Current version: `1.1.0` (build `59`)
 
 Status:
 - `1.1.0` build `59` bumps the checked-in app build number for the latest 1.1 release-lane polish, including the new Recovery / Recently Deleted work and its aligned release docs.
+- The `release/1.1` lane now ships a narrower built-in General Clips pack that favors more sports-specific cheers, chant, rhythm, and stadium atmosphere over generic audience-applause sounds, and existing teams migrate off both the older placeholder-ish pack and the broader audience-style experiment automatically.
 - The `release/1.1` lane now keeps shared player media on disk while any active team or `Recently Deleted` item still references it, and built-in announcer regeneration now cleans up old unused generated files instead of accumulating orphaned copies.
 - The `release/1.1` lane now includes a `Recovery` screen with `Recently Deleted` for teams and players: deletes move there for 60 days, restores are item-by-item, permanent delete stays manual, blocked player restores explain when the team must be restored first, and backups now read as the broader earlier-app-state tool.
 - The `1.1/accents` lane now makes selected team colors drive a protected accent palette across app-wide tint, primary actions, selected controls, team identity surfaces, and page background accent washes while keeping semantic colors independent.
 - The `release/1.1` lane now includes a default-off Keep Screen Awake setting that prevents auto-lock while Roll Call is active on Game Day or Clips, with a battery-use note in Settings.
 - The `release/1.1` lane now includes an in-app What's New sheet backed by bundled draft 1.1 summary notes, a Settings > About reopen entry, a Full Changelog web link, and a Developer Tools reset action for testing outside Release builds.
 - The `release/1.1` lane now promotes Apple Music team playlist creation from a Developer Tools experiment to a normal team action with an included/skipped preview, managed-playlist overwrite warning, duplicate handling, and unresolved-song recovery before partial updates.
+- The `release/1.1` lane now gives `.rollcall` packages a bolder full-bleed file icon treatment so exported teams are easier to recognize in Files, AirDrop, and share sheets than the older small centered badge.
 - Initial `1.0.1` App Store submission candidate with a buildable iPhone app target at [RollCall.xcodeproj](/Users/jkfisher/Documents/Coding/Roll%20Call/RollCall.xcodeproj).
 - The hotfix/iOS17 lane lowers the checked-in app and test deployment target to iOS 17.0 without changing the marketing version, build number, bundle ID, entitlements, dependencies, permissions, or feature behavior.
 - The hotfix/iOS17 lane now includes a Game Day playback cleanup fix so stale fade-out or preview stop tasks cannot stop a newer batter cue after quick live taps.

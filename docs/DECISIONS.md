@@ -19,6 +19,10 @@ Use this file as a concise decision log for project-specific architectural, beha
 
 ## 2026-06-02
 
+- Approved: the built-in General Clips pack should favor distinct real-crowd reactions, avoid negative or mocking sounds, and use plain functional names instead of novelty labels.
+  Rationale: the live-use clip board should feel authentic for youth softball and general sporting events, with enough variety to cover mild applause, bigger cheers, rhythm, and atmosphere without padding the set with redundant or negative sounds.
+  Status: approved
+
 - Approved: Recovery now leads with a centralized `Recently Deleted` list for deleted teams and players, while backups remain a separate earlier-app-state tool.
   Rationale: accidental deletes are better solved by a simple item-level recovery surface than by asking users to restore whole-app backups for everyday mistakes.
   Status: approved

@@ -38,7 +38,7 @@ These words have specific meaning in Roll Call. Use them precisely when discussi
 - **Lineup / Batting Order** — the ordered list of present players for today's game. Game Day plays in this order. The user can sort A-Z, sort by number, or drag manually. Manual order is preserved across launches.
 - **Game Day** — the live screen where the actual walkups happen. The product's reason for existing.
 - **Game Day Announcer Mode** — how cues play. Three values: `Announcer Only`, `Announcer+Song`, `Song Only`. Set per-team in session state, toggled from the live screen.
-- **Clip / General Clip** — the team's built-in library of short crowd sounds (e.g. "Charge Up", "Crowd Lift") for live moments outside the walkup flow. Lives in its own tab.
+- **Clip / General Clip** — the team's built-in library of short crowd sounds (e.g. `Small Cheer`, `Crowd Swell`, `Big Cheer`) for live moments outside the walkup flow. Lives in its own tab.
 - **Readiness** — Roll Call's confidence model. Answers "if I pressed Start Game right now, would it feel good?" Three states for players: ✓ Ready (has playable audio), ★ Enhanced (has audio + announcer intro), ○ Optional (everything else — photos, polish). Never a percentage. Never red. Never blocks Game Day.
 
 ---
@@ -106,7 +106,7 @@ Tap interactions degrade gracefully. If a player has no cue and announcer mode i
 
 ### 5.2 Clips (the General Clips tab)
 
-A team's library of built-in crowd reactions, separate from per-player cues. Defaults include "Charge Up" and "Crowd Lift" (Mixkit-sourced). Each clip is a card with title, duration text, and a large play button (circle, accent color). Tapping plays the clip immediately. This tab uses the same Live appearance treatment as Game Day so it doubles as a "during a live moment, fire a crowd reaction" surface.
+A team's library of built-in crowd reactions, separate from per-player cues. Defaults now focus on a smaller sports-oriented set: a friendly fallback cheer, a rhythmic clap, a general stadium swell, a stronger rally cheer, a bigger cheer, and a simple chant option. Each clip is a card with title, duration text, and a large play button (circle, accent color). Tapping plays the clip immediately. This tab uses the same Live appearance treatment as Game Day so it doubles as a "during a live moment, fire a crowd reaction" surface.
 
 Clips currently are a fixed bundled set per team — the user cannot add custom clips. (This is on the 1.x list as "Improved Clips" and "Ability to add songs to clips.")
 

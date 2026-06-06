@@ -515,6 +515,41 @@ struct Team: Codable, Equatable, Identifiable {
         if builtInSourceIDs == ["charge-up", "crowd-lift"] {
             builtInClips = BuiltInClip.defaults
         }
+
+        let legacyReleaseClipIDs: Set<String> = [
+            "small-cheer",
+            "victory-roar",
+            "stadium-burst",
+            "rhythmic-clap",
+            "whistle-pop",
+            "crowd-laugh"
+        ]
+        let mixedAudienceClipIDs: Set<String> = [
+            "small-cheer",
+            "happy-cheer",
+            "light-applause",
+            "applause",
+            "strong-applause",
+            "rhythmic-clap",
+            "crowd-swell",
+            "rally-cheer",
+            "big-cheer",
+            "victory-shout",
+            "chant-and-drums"
+        ]
+        let sportsExperimentClipIDs: Set<String> = [
+            "small-cheer",
+            "rhythmic-clap",
+            "crowd-swell",
+            "rally-cheer",
+            "big-cheer",
+            "lets-go-chant"
+        ]
+        if builtInSourceIDs == legacyReleaseClipIDs
+            || builtInSourceIDs == mixedAudienceClipIDs
+            || builtInSourceIDs == sportsExperimentClipIDs {
+            builtInClips = BuiltInClip.defaults
+        }
     }
 }
 
@@ -1006,7 +1041,6 @@ extension BuiltInClip {
         BuiltInClip(id: UUID(), title: "Stadium Burst", cue: Cue(id: UUID(), label: "Stadium Burst", source: .builtInClip(BuiltInClipSource(id: "stadium-burst", displayName: "Stadium Burst")), startTime: 0, duration: 5.0, fadeOutDuration: 0.35, pauseAfterAnnouncer: 0.2)),
         BuiltInClip(id: UUID(), title: "Rhythmic Clap", cue: Cue(id: UUID(), label: "Rhythmic Clap", source: .builtInClip(BuiltInClipSource(id: "rhythmic-clap", displayName: "Rhythmic Clap")), startTime: 0, duration: 6.0, fadeOutDuration: 0.35, pauseAfterAnnouncer: 0.2)),
         BuiltInClip(id: UUID(), title: "Whistle Pop", cue: Cue(id: UUID(), label: "Whistle Pop", source: .builtInClip(BuiltInClipSource(id: "whistle-pop", displayName: "Whistle Pop")), startTime: 0, duration: 4.0, fadeOutDuration: 0.3, pauseAfterAnnouncer: 0.2)),
-        BuiltInClip(id: UUID(), title: "Crowd Laugh", cue: Cue(id: UUID(), label: "Crowd Laugh", source: .builtInClip(BuiltInClipSource(id: "crowd-laugh", displayName: "Crowd Laugh")), startTime: 0, duration: 4.5, fadeOutDuration: 0.35, pauseAfterAnnouncer: 0.2)),
     ]
 }
 

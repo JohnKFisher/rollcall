@@ -3672,8 +3672,7 @@ private struct AttributionsView: View {
         "Victory Roar",
         "Stadium Burst",
         "Rhythmic Clap",
-        "Whistle Pop",
-        "Crowd Laugh"
+        "Whistle Pop"
     ]
 
     var body: some View {
@@ -3697,7 +3696,7 @@ private struct AttributionsView: View {
 
                 SettingsSectionGroup(
                     title: "Bundled General Clips",
-                    helperText: "Roll Call includes crowd and applause sound effects from Mixkit."
+                    helperText: "Roll Call includes bundled crowd sound effects from Mixkit."
                 ) {
                     VStack(alignment: .leading, spacing: RollCallSpacingTier.standard.value) {
                         SettingsRowLabel(
