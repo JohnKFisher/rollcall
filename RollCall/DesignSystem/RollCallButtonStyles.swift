@@ -13,6 +13,7 @@ struct RollCallButtonStyle: ButtonStyle {
     let surface: RollCallSurfaceVariant
     let teamAccentTheme: TeamAccentTheme
 
+    @Environment(\.colorScheme) private var colorScheme
     @Environment(\.isEnabled) private var isEnabled
 
     init(
@@ -95,6 +96,11 @@ struct RollCallButtonStyle: ButtonStyle {
         case .primary, .destructive, .liveControl:
             return .clear
         case .secondary:
+            if surface == .live {
+                return teamAccentTheme
+                    .color(colorScheme == .dark ? .subtle : .primary, surface: surface)
+                    .opacity(colorScheme == .dark ? 0.38 : 1)
+            }
             return Color.rollCall(.neutralStructure, surface: surface)
         case .quiet:
             return Color.clear

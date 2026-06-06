@@ -113,6 +113,17 @@ private extension View {
     }
 }
 
+private func liveAccentOutlineColor(
+    theme: TeamAccentTheme,
+    colorScheme: ColorScheme,
+    lightOpacity: Double,
+    darkOpacity: Double
+) -> Color {
+    theme
+        .color(colorScheme == .dark ? .subtle : .primary, surface: .live)
+        .opacity(colorScheme == .dark ? darkOpacity : lightOpacity)
+}
+
 private extension View {
     func teamAccentScope(_ theme: TeamAccentTheme) -> some View {
         rollCallTeamAccentTheme(theme)
@@ -916,6 +927,9 @@ struct RootView: View {
         let clipCount: Int
         let surface: RollCallSurfaceVariant
 
+        @Environment(\.colorScheme) private var colorScheme
+        @Environment(\.rollCallTeamAccentTheme) private var teamAccentTheme
+
         var body: some View {
             HStack(spacing: RollCallSpacingTier.standard.value) {
                 Image(systemName: "speaker.wave.2.fill")
@@ -938,7 +952,7 @@ struct RootView: View {
             .padding(.bottom, 10)
             .overlay(alignment: .bottom) {
                 Rectangle()
-                    .fill(Color.rollCall(.neutralStructure, surface: surface).opacity(0.7))
+                    .fill(liveAccentOutlineColor(theme: teamAccentTheme, colorScheme: colorScheme, lightOpacity: 0.7, darkOpacity: 0.34))
                     .frame(height: 1)
             }
         }
@@ -971,6 +985,7 @@ struct RootView: View {
         let surface: RollCallSurfaceVariant
         let play: () -> Void
 
+        @Environment(\.colorScheme) private var colorScheme
         @Environment(\.rollCallTeamAccentTheme) private var teamAccentTheme
 
         var body: some View {
@@ -1046,7 +1061,7 @@ struct RootView: View {
 
         private var cardBorder: some View {
             RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .strokeBorder(Color.rollCall(.neutralStructure, surface: surface).opacity(0.9), lineWidth: 1)
+                .strokeBorder(liveAccentOutlineColor(theme: teamAccentTheme, colorScheme: colorScheme, lightOpacity: 0.85, darkOpacity: 0.42), lineWidth: 1)
         }
     }
 
@@ -1192,8 +1207,11 @@ struct RootView: View {
                                 appModel.addTeam(named: newTeamName)
                                 newTeamName = ""
                             } label: {
-                                Label("Create Team", systemImage: "plus")
-                                    .frame(maxWidth: .infinity)
+                                SettingsRowLabel(
+                                    title: "Create Team",
+                                    detail: "Add a new team, then choose it below.",
+                                    systemImage: "plus"
+                                )
                             }
                             .rollCallButtonStyle(.primary)
                             .disabled(newTeamName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
@@ -1922,8 +1940,11 @@ private struct OnboardingRootView: View {
                     selectedAccent = .rollCallOrange
                     visibleStepOverride = nil
                 } label: {
-                    Label("Create Team", systemImage: "plus")
-                        .frame(maxWidth: .infinity)
+                    SettingsRowLabel(
+                        title: "Create Team",
+                        detail: "Save this team and continue setup.",
+                        systemImage: "plus"
+                    )
                 }
                 .rollCallButtonStyle(.primary)
                 .disabled(!canCreateTeam)
@@ -4376,6 +4397,9 @@ private struct GameDayLiveWarning {
 private struct GameDayWarningStrip: View {
     let warning: GameDayLiveWarning
 
+    @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.rollCallTeamAccentTheme) private var teamAccentTheme
+
     var body: some View {
         HStack(spacing: 8) {
             Image(systemName: warning.role == .destructive ? "xmark.octagon.fill" : "exclamationmark.triangle.fill")
@@ -4391,7 +4415,7 @@ private struct GameDayWarningStrip: View {
         .background(Color.rollCall(.neutralSurface, surface: .live), in: RoundedRectangle(cornerRadius: 9, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: 9, style: .continuous)
-                .strokeBorder(Color.rollCall(.neutralStructure, surface: .live), lineWidth: 1)
+                .strokeBorder(liveAccentOutlineColor(theme: teamAccentTheme, colorScheme: colorScheme, lightOpacity: 0.75, darkOpacity: 0.37), lineWidth: 1)
         )
         .accessibilityElement(children: .combine)
     }
@@ -4403,6 +4427,7 @@ private struct GameDayNowBattingHero: View {
     let isActive: Bool
     let announcerMode: GameDayAnnouncerMode
 
+    @Environment(\.colorScheme) private var colorScheme
     @Environment(\.rollCallTeamAccentTheme) private var teamAccentTheme
 
     private var cueTitle: String {
@@ -4582,7 +4607,7 @@ private struct GameDayNowBattingHero: View {
             )
             .overlay(
                 RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .strokeBorder(isActive ? Color(uiColor: .label).opacity(0.50) : Color.rollCall(.neutralStructure, surface: .live), lineWidth: 1)
+                    .strokeBorder(isActive ? Color(uiColor: .label).opacity(0.50) : liveAccentOutlineColor(theme: teamAccentTheme, colorScheme: colorScheme, lightOpacity: 0.8, darkOpacity: 0.4), lineWidth: 1)
             )
         }
         .padding(14)
@@ -4592,7 +4617,7 @@ private struct GameDayNowBattingHero: View {
         )
         .overlay(
             RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .strokeBorder(isActive ? Color.rollCall(.live, surface: .live).opacity(0.95) : Color.rollCall(.neutralStructure, surface: .live), lineWidth: isActive ? 2 : 1)
+                .strokeBorder(isActive ? Color.rollCall(.live, surface: .live).opacity(0.95) : liveAccentOutlineColor(theme: teamAccentTheme, colorScheme: colorScheme, lightOpacity: 0.85, darkOpacity: 0.44), lineWidth: isActive ? 2 : 1)
         )
         .shadow(color: isActive ? Color.rollCall(.live, surface: .live).opacity(0.20) : .clear, radius: 14, y: 8)
         .accessibilityElement(children: .combine)
@@ -4625,6 +4650,7 @@ private struct GameDayOnDeckCard: View {
     let player: Player?
     let announcerMode: GameDayAnnouncerMode
 
+    @Environment(\.colorScheme) private var colorScheme
     @Environment(\.rollCallTeamAccentTheme) private var teamAccentTheme
 
     var body: some View {
@@ -4655,7 +4681,7 @@ private struct GameDayOnDeckCard: View {
         .background(Color.rollCall(.neutralSurface, surface: .live), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .strokeBorder(Color.rollCall(.neutralStructure, surface: .live), lineWidth: 1)
+                .strokeBorder(liveAccentOutlineColor(theme: teamAccentTheme, colorScheme: colorScheme, lightOpacity: 0.8, darkOpacity: 0.4), lineWidth: 1)
         )
         .contentShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
         .accessibilityElement(children: .combine)
@@ -4819,9 +4845,12 @@ private struct GameDayControlRow: View {
 }
 
 private struct GameDayGridDivider: View {
+    @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.rollCallTeamAccentTheme) private var teamAccentTheme
+
     var body: some View {
         Rectangle()
-            .fill(Color.rollCall(.neutralStructure, surface: .live))
+            .fill(liveAccentOutlineColor(theme: teamAccentTheme, colorScheme: colorScheme, lightOpacity: 0.75, darkOpacity: 0.34))
             .frame(height: 1)
             .padding(.vertical, 4)
     }
@@ -4830,6 +4859,9 @@ private struct GameDayGridDivider: View {
 private struct GameDayEmptyHero: View {
     let title: String
     let detail: String
+
+    @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.rollCallTeamAccentTheme) private var teamAccentTheme
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -4849,7 +4881,7 @@ private struct GameDayEmptyHero: View {
         .background(Color.rollCall(.neutralSurface, surface: .live), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .strokeBorder(Color.rollCall(.neutralStructure, surface: .live), lineWidth: 1)
+                .strokeBorder(liveAccentOutlineColor(theme: teamAccentTheme, colorScheme: colorScheme, lightOpacity: 0.8, darkOpacity: 0.4), lineWidth: 1)
         )
     }
 }
@@ -4916,6 +4948,7 @@ private struct GameDayPlayerGrid: View {
     let onDeckPlayerID: UUID?
     let announcerMode: GameDayAnnouncerMode
 
+    @Environment(\.colorScheme) private var colorScheme
     @Environment(\.rollCallTeamAccentTheme) private var teamAccentTheme
 
     init(
@@ -5152,7 +5185,7 @@ private struct GameDayPlayerGrid: View {
     }
 
     private func tileBorder(isActive: Bool) -> Color {
-        isActive ? Color.rollCall(.live, surface: .live).opacity(0.95) : Color.rollCall(.neutralStructure, surface: .live)
+        isActive ? Color.rollCall(.live, surface: .live).opacity(0.95) : liveAccentOutlineColor(theme: teamAccentTheme, colorScheme: colorScheme, lightOpacity: 0.8, darkOpacity: 0.4)
     }
 }
 
@@ -5782,18 +5815,21 @@ private struct PlayerQuickAddView: View {
             .keyboardType(.numberPad)
             .submitLabel(.done)
         HStack {
-            Button("Dismiss Keyboard") {
+            Button {
                 focusedField = nil
+            } label: {
+                Label("Dismiss Keyboard", systemImage: "keyboard.chevron.compact.down")
             }
-            .buttonStyle(.bordered)
-            .foregroundStyle(.secondary)
+            .rollCallButtonStyle(.secondary)
 
             Spacer()
 
-            Button("Add Player") {
+            Button {
                 addPlayerAndReset()
+            } label: {
+                Label("Add Player", systemImage: "plus")
             }
-            .buttonStyle(.borderedProminent)
+            .rollCallButtonStyle(.primary)
             .disabled(!canAddPlayer)
         }
         .toolbar {

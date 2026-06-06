@@ -11,6 +11,7 @@ struct RollCallCardModifier: ViewModifier {
     let family: RollCallCardFamily
     let surface: RollCallSurfaceVariant
 
+    @Environment(\.colorScheme) private var colorScheme
     @Environment(\.rollCallTeamAccentTheme) private var teamAccentTheme
 
     func body(content: Content) -> some View {
@@ -45,6 +46,11 @@ struct RollCallCardModifier: ViewModifier {
     private var borderColor: Color {
         switch family {
         case .utility:
+            if surface == .live {
+                return teamAccentTheme
+                    .color(colorScheme == .dark ? .subtle : .primary, surface: surface)
+                    .opacity(colorScheme == .dark ? 0.34 : 0.7)
+            }
             return Color.rollCall(.neutralStructure, surface: surface).opacity(0.65)
         case .status:
             return Color.rollCall(.warning, surface: surface).opacity(0.35)
