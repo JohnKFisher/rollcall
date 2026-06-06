@@ -4224,18 +4224,25 @@ private struct GameDayBoard: View {
     @ObservedObject var appModel: AppModel
     let onLineup: () -> Void
 
+    private enum Layout {
+        static let sectionSpacing: CGFloat = 12
+        static let horizontalPadding: CGFloat = 17
+        static let topPadding: CGFloat = 12
+        static let bottomPadding: CGFloat = 29
+    }
+
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 10) {
+            VStack(alignment: .leading, spacing: Layout.sectionSpacing) {
                 if let team = appModel.selectedTeam {
                     GameDayTeamStack(appModel: appModel, team: team, onLineup: onLineup)
                 } else {
                     GameDayNoTeamStack()
                 }
             }
-            .padding(.horizontal, 14)
-            .padding(.top, 10)
-            .padding(.bottom, 24)
+            .padding(.horizontal, Layout.horizontalPadding)
+            .padding(.top, Layout.topPadding)
+            .padding(.bottom, Layout.bottomPadding)
         }
     }
 }
@@ -4300,7 +4307,7 @@ private struct GameDayTeamStack: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: 12) {
             GameDayAnnouncerModePicker(
                 selectedMode: team.session.gameDayAnnouncerMode,
                 onSelect: appModel.setGameDayAnnouncerMode
@@ -4833,7 +4840,7 @@ private struct GameDayControlRow: View {
     let onLineup: () -> Void
 
     var body: some View {
-        HStack(spacing: 8) {
+        HStack(spacing: 10) {
             Button {
                 appModel.goToPreviousBatter()
             } label: {
@@ -4985,7 +4992,7 @@ private struct GameDayPlayerGrid: View {
     }
 
     var body: some View {
-        LazyVGrid(columns: columns, spacing: 8) {
+        LazyVGrid(columns: columns, spacing: 10) {
             ForEach(players) { player in
                 let isActive = isActive(player)
                 let tileState = tileState(for: player, isActive: isActive)
@@ -5045,7 +5052,7 @@ private struct GameDayPlayerGrid: View {
     }
 
     private var columns: [GridItem] {
-        Array(repeating: GridItem(.flexible(), spacing: 8), count: 3)
+        Array(repeating: GridItem(.flexible(), spacing: 10), count: 3)
     }
 
     private func isActive(_ player: Player) -> Bool {
