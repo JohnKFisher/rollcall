@@ -2,6 +2,19 @@
 
 Use this file as a concise decision log for project-specific architectural, behavioral, tooling, and scope decisions.
 
+## 2026-06-05
+
+- Approved: add a polite rating request flow that waits for five successful Game Day sessions, counts a session after real player playback when leaving Game Day or backgrounding from it, enforces a four-hour cooldown between counted sessions, never interrupts Game Day/Clips, shows Roll Call's own rating-request sheet before any handoff, sends an explicit `Rate Roll Call` tap straight to the App Store review page, exposes a Settings > About rating entry only after that threshold is earned, and allows one later automatic retry after another five successful sessions if the first ask is dismissed or skipped.
+  Rationale: the app should ask only after repeated proven value in the real live-use flow, while still giving heavy Game Day users credit even if they usually close the app straight from Game Day; using Roll Call's own sheet keeps the copy testable and ensures an explicit rating tap is never lost to StoreKit suppression.
+  Status: approved
+
+- Approved: non-Release Developer Tools may include a rating-threshold testing control that flips the threshold between met and not met and resets the automatic prompt attempt state so the flow can be exercised repeatedly during testing.
+  Rationale: the rating prompt is intentionally rare in production, so internal testing needs a compact way to re-enter the earned state without waiting through real sessions or getting stuck after prior spent attempts.
+  Status: approved
+
+- Approved: non-Release Developer Tools may launch the same rating-request sheet used in the real app, while also keeping separate diagnostics for the native StoreKit prompt and direct App Store review page.
+  Rationale: the rating ask needs a trustworthy internal test path that matches production exactly, while still preserving low-level diagnostics for Apple-controlled review surfaces.
+  Status: approved
 
 ## 2026-06-01
 

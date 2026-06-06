@@ -134,7 +134,8 @@ enum RollCallTestFixtures {
             lastSeenWhatsNewReleaseID: nil,
             recentAppleMusicSelections: [],
             trimDefaults: .default,
-            onboarding: teams.isEmpty ? .notStarted : .completed(at: now)
+            onboarding: teams.isEmpty ? .notStarted : .completed(at: now),
+            ratingRequest: .default
         )
     }
 }

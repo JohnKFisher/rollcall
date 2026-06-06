@@ -432,6 +432,13 @@ final class GameDayHaptics {
 
 @MainActor
 final class AppModel: ObservableObject {
+    private enum RatingRequestPolicy {
+        static let sessionThreshold = 5
+        static let retrySessionIncrement = 5
+        static let maxAutomaticPromptAttempts = 2
+        static let cooldown: TimeInterval = 4 * 60 * 60
+    }
+
     // Central default so a future settings UI can replace this with user selection.
     private let defaultNoSongFallbackBuiltInClipSourceID = "small-cheer"
 
@@ -480,6 +487,22 @@ final class AppModel: ObservableObject {
 
     var hasUnseenWhatsNew: Bool {
         state.lastSeenWhatsNewReleaseID != AppMetadata.whatsNewReleaseID
+    }
+
+    var hasEarnedRatingRequest: Bool {
+        state.ratingRequest.successfulGameDaySessionCount >= RatingRequestPolicy.sessionThreshold
+    }
+
+    var canPresentAutomaticRatingRequest: Bool {
+        state.ratingRequest.successfulGameDaySessionCount >= state.ratingRequest.nextAutomaticPromptSessionThreshold
+            && state.ratingRequest.automaticPromptAttemptCount < RatingRequestPolicy.maxAutomaticPromptAttempts
+    }
+
+    var ratingRequestDebugSummary: String {
+        let count = state.ratingRequest.successfulGameDaySessionCount
+        let nextThreshold = state.ratingRequest.nextAutomaticPromptSessionThreshold
+        let attempts = state.ratingRequest.automaticPromptAttemptCount
+        return "\(count) sessions, attempt \(attempts)/\(RatingRequestPolicy.maxAutomaticPromptAttempts), next auto at \(nextThreshold)"
     }
 
     init() {
@@ -954,6 +977,7 @@ final class AppModel: ObservableObject {
                     fadeOutVolumeAutomationEnabled: state.settings.fadeOutVolumeAutomationEnabled
                 )
             }
+            markGameDayPlayerCuePlayedForRating()
             haptics.success(isEnabled: state.settings.hapticsEnabled)
         } catch {
             lastError = error.localizedDescription
@@ -1111,6 +1135,45 @@ final class AppModel: ObservableObject {
         persist()
     }
 
+    func beginGameDayVisitForRatingIfNeeded() {
+        guard state.ratingRequest.hasPlayedQualifyingCueInCurrentGameDayVisit
+                || state.ratingRequest.hasCountedCurrentGameDayVisit else { return }
+        state.ratingRequest.hasPlayedQualifyingCueInCurrentGameDayVisit = false
+        state.ratingRequest.hasCountedCurrentGameDayVisit = false
+        persist()
+    }
+
+    func finalizeGameDayVisitForRatingIfNeeded(at date: Date = .now) {
+        guard state.ratingRequest.hasPlayedQualifyingCueInCurrentGameDayVisit,
+              !state.ratingRequest.hasCountedCurrentGameDayVisit else { return }
+
+        if shouldCountSuccessfulGameDaySession(at: date) {
+            state.ratingRequest.successfulGameDaySessionCount += 1
+            state.ratingRequest.lastCountedSuccessfulGameDaySessionAt = date
+        }
+        state.ratingRequest.hasCountedCurrentGameDayVisit = true
+        persist()
+    }
+
+    func markAutomaticRatingPromptAttempted() {
+        guard state.ratingRequest.automaticPromptAttemptCount < RatingRequestPolicy.maxAutomaticPromptAttempts else { return }
+        state.ratingRequest.automaticPromptAttemptCount += 1
+        if state.ratingRequest.automaticPromptAttemptCount < RatingRequestPolicy.maxAutomaticPromptAttempts {
+            state.ratingRequest.nextAutomaticPromptSessionThreshold += RatingRequestPolicy.retrySessionIncrement
+        }
+        persist()
+    }
+
+    func setRatingThresholdMetForTesting(_ isMet: Bool) {
+        state.ratingRequest.successfulGameDaySessionCount = isMet ? RatingRequestPolicy.sessionThreshold : 0
+        state.ratingRequest.hasPlayedQualifyingCueInCurrentGameDayVisit = false
+        state.ratingRequest.hasCountedCurrentGameDayVisit = false
+        state.ratingRequest.lastCountedSuccessfulGameDaySessionAt = nil
+        state.ratingRequest.automaticPromptAttemptCount = 0
+        state.ratingRequest.nextAutomaticPromptSessionThreshold = RatingRequestPolicy.sessionThreshold
+        persist()
+    }
+
     func setGameDayAnnouncerMode(_ mode: GameDayAnnouncerMode) {
         guard let teamIndex else { return }
         state.teams[teamIndex].session.gameDayAnnouncerMode = mode
@@ -1145,6 +1208,19 @@ final class AppModel: ObservableObject {
             state.experimental.acknowledgedAt = .now
         }
         persist()
+    }
+
+    private func markGameDayPlayerCuePlayedForRating() {
+        guard !state.ratingRequest.hasPlayedQualifyingCueInCurrentGameDayVisit else { return }
+        state.ratingRequest.hasPlayedQualifyingCueInCurrentGameDayVisit = true
+        persist()
+    }
+
+    private func shouldCountSuccessfulGameDaySession(at date: Date) -> Bool {
+        guard let lastCountedAt = state.ratingRequest.lastCountedSuccessfulGameDaySessionAt else {
+            return true
+        }
+        return date.timeIntervalSince(lastCountedAt) >= RatingRequestPolicy.cooldown
     }
 
     func selectedTeamAppleMusicPlaylistSummary() -> TeamAppleMusicPlaylistSummary? {

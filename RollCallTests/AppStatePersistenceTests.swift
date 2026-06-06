@@ -37,6 +37,7 @@ final class AppStatePersistenceTests: XCTestCase {
             XCTFail("Expected a deleted player payload.")
         }
         XCTAssertEqual(decoded.settings, .default)
+        XCTAssertEqual(decoded.ratingRequest, .default)
     }
 
     func testPlayerDecodeDefaultsMissingPresenceToPresent() throws {
@@ -65,5 +66,74 @@ final class AppStatePersistenceTests: XCTestCase {
         let decoded = try decoder.decode(AppState.self, from: try encoder.encode(state))
 
         XCTAssertGreaterThan(decoded.schemaVersion, AppState.currentSchemaVersion)
+    }
+
+    func testAppStateDecodeDefaultsMissingRatingRequestState() throws {
+        let json = """
+        {
+          "schemaVersion": 6,
+          "appVersion": "1.1.0",
+          "deviceIdentity": { "label": "This iPhone" },
+          "teams": [],
+          "recentlyDeleted": [],
+          "snapshots": [],
+          "experimental": {
+            "showExperimentalFeatures": false,
+            "unlockPremiumForTesting": false,
+            "appleMusicLocalCopyEnabled": false,
+            "appleMusicTeamPlaylistSyncEnabled": false
+          },
+          "settings": {
+            "hapticsEnabled": true,
+            "fadeOutVolumeAutomationEnabled": false,
+            "alwaysUseDarkLiveMode": true,
+            "keepScreenAwakeDuringLiveUse": false
+          },
+          "recentAppleMusicSelections": [],
+          "trimDefaults": { "preferredLength": 8 }
+        }
+        """
+
+        let decoded = try JSONDecoder().decode(AppState.self, from: Data(json.utf8))
+
+        XCTAssertEqual(decoded.ratingRequest, .default)
+    }
+
+    func testAppStateDecodeMigratesLegacySingleAttemptRatingState() throws {
+        let json = """
+        {
+          "schemaVersion": 7,
+          "appVersion": "1.1.0",
+          "deviceIdentity": { "label": "This iPhone" },
+          "teams": [],
+          "recentlyDeleted": [],
+          "snapshots": [],
+          "experimental": {
+            "showExperimentalFeatures": false,
+            "unlockPremiumForTesting": false,
+            "appleMusicLocalCopyEnabled": false,
+            "appleMusicTeamPlaylistSyncEnabled": false
+          },
+          "settings": {
+            "hapticsEnabled": true,
+            "fadeOutVolumeAutomationEnabled": false,
+            "alwaysUseDarkLiveMode": true,
+            "keepScreenAwakeDuringLiveUse": false
+          },
+          "recentAppleMusicSelections": [],
+          "trimDefaults": { "preferredLength": 8 },
+          "ratingRequest": {
+            "successfulGameDaySessionCount": 5,
+            "hasPlayedQualifyingCueInCurrentGameDayVisit": false,
+            "hasCountedCurrentGameDayVisit": true,
+            "hasAttemptedAutomaticPrompt": true
+          }
+        }
+        """
+
+        let decoded = try JSONDecoder().decode(AppState.self, from: Data(json.utf8))
+
+        XCTAssertEqual(decoded.ratingRequest.automaticPromptAttemptCount, 1)
+        XCTAssertEqual(decoded.ratingRequest.nextAutomaticPromptSessionThreshold, 5)
     }
 }

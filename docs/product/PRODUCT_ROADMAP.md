@@ -12,18 +12,6 @@ This roadmap replaces the earlier 1.x / Later list with a clearer release sequen
 
 ---
 
-## 1.0.2 - Stopgap Release due to 1.1 complications
-
-**Purpose:** Ship low-risk improvements that make the existing app feel safer, cleaner, and more useful without delaying the larger audio work.
-
-This release should not become a dumping ground for every easy idea. It should remain focused on practical improvements that do not require the Song Select or Game Day revamps.
-
-
-
-
-
----
-
 ## 1.1 - Polish & Practical Improvements
 
 **Purpose:** Ship low-risk improvements that make the existing app feel safer, cleaner, and more useful without delaying the larger audio work.

@@ -9,6 +9,7 @@ enum AppMetadata {
     static let buildNumber = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "0"
     static let customIntroStorageMarker = "flat-custom-intro-v2"
     static let whatsNewReleaseID = "\(appVersion) (\(buildNumber))"
+    static let appStoreWriteReviewURL = URL(string: "https://apps.apple.com/us/app/roll-call-walk-up-music/id6769516985?action=write-review")!
 }
 
 enum CueSource: Codable, Equatable {
@@ -780,8 +781,73 @@ struct DeviceIdentity: Codable, Equatable {
     var label: String
 }
 
+struct RatingRequestState: Codable, Equatable {
+    var successfulGameDaySessionCount: Int
+    var hasPlayedQualifyingCueInCurrentGameDayVisit: Bool
+    var hasCountedCurrentGameDayVisit: Bool
+    var lastCountedSuccessfulGameDaySessionAt: Date?
+    var automaticPromptAttemptCount: Int
+    var nextAutomaticPromptSessionThreshold: Int
+
+    static let `default` = RatingRequestState(
+        successfulGameDaySessionCount: 0,
+        hasPlayedQualifyingCueInCurrentGameDayVisit: false,
+        hasCountedCurrentGameDayVisit: false,
+        lastCountedSuccessfulGameDaySessionAt: nil,
+        automaticPromptAttemptCount: 0,
+        nextAutomaticPromptSessionThreshold: 5
+    )
+
+    enum CodingKeys: String, CodingKey {
+        case successfulGameDaySessionCount
+        case hasPlayedQualifyingCueInCurrentGameDayVisit
+        case hasCountedCurrentGameDayVisit
+        case lastCountedSuccessfulGameDaySessionAt
+        case automaticPromptAttemptCount
+        case nextAutomaticPromptSessionThreshold
+        case hasAttemptedAutomaticPrompt
+    }
+
+    init(
+        successfulGameDaySessionCount: Int,
+        hasPlayedQualifyingCueInCurrentGameDayVisit: Bool,
+        hasCountedCurrentGameDayVisit: Bool,
+        lastCountedSuccessfulGameDaySessionAt: Date?,
+        automaticPromptAttemptCount: Int,
+        nextAutomaticPromptSessionThreshold: Int
+    ) {
+        self.successfulGameDaySessionCount = successfulGameDaySessionCount
+        self.hasPlayedQualifyingCueInCurrentGameDayVisit = hasPlayedQualifyingCueInCurrentGameDayVisit
+        self.hasCountedCurrentGameDayVisit = hasCountedCurrentGameDayVisit
+        self.lastCountedSuccessfulGameDaySessionAt = lastCountedSuccessfulGameDaySessionAt
+        self.automaticPromptAttemptCount = automaticPromptAttemptCount
+        self.nextAutomaticPromptSessionThreshold = nextAutomaticPromptSessionThreshold
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        successfulGameDaySessionCount = try container.decodeIfPresent(Int.self, forKey: .successfulGameDaySessionCount) ?? 0
+        hasPlayedQualifyingCueInCurrentGameDayVisit = try container.decodeIfPresent(Bool.self, forKey: .hasPlayedQualifyingCueInCurrentGameDayVisit) ?? false
+        hasCountedCurrentGameDayVisit = try container.decodeIfPresent(Bool.self, forKey: .hasCountedCurrentGameDayVisit) ?? false
+        lastCountedSuccessfulGameDaySessionAt = try container.decodeIfPresent(Date.self, forKey: .lastCountedSuccessfulGameDaySessionAt)
+        automaticPromptAttemptCount = try container.decodeIfPresent(Int.self, forKey: .automaticPromptAttemptCount)
+            ?? ((try container.decodeIfPresent(Bool.self, forKey: .hasAttemptedAutomaticPrompt)) == true ? 1 : 0)
+        nextAutomaticPromptSessionThreshold = try container.decodeIfPresent(Int.self, forKey: .nextAutomaticPromptSessionThreshold) ?? 5
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(successfulGameDaySessionCount, forKey: .successfulGameDaySessionCount)
+        try container.encode(hasPlayedQualifyingCueInCurrentGameDayVisit, forKey: .hasPlayedQualifyingCueInCurrentGameDayVisit)
+        try container.encode(hasCountedCurrentGameDayVisit, forKey: .hasCountedCurrentGameDayVisit)
+        try container.encodeIfPresent(lastCountedSuccessfulGameDaySessionAt, forKey: .lastCountedSuccessfulGameDaySessionAt)
+        try container.encode(automaticPromptAttemptCount, forKey: .automaticPromptAttemptCount)
+        try container.encode(nextAutomaticPromptSessionThreshold, forKey: .nextAutomaticPromptSessionThreshold)
+    }
+}
+
 struct AppState: Codable, Equatable {
-    static let currentSchemaVersion = 6
+    static let currentSchemaVersion = 7
 
     var schemaVersion: Int
     var appVersion: String
@@ -797,6 +863,7 @@ struct AppState: Codable, Equatable {
     var recentAppleMusicSelections: [RecentAppleMusicSelection]
     var trimDefaults: TrimDefaults
     var onboarding: OnboardingState
+    var ratingRequest: RatingRequestState
 
     enum CodingKeys: String, CodingKey {
         case schemaVersion
@@ -813,6 +880,7 @@ struct AppState: Codable, Equatable {
         case recentAppleMusicSelections
         case trimDefaults
         case onboarding
+        case ratingRequest
     }
 
     init(
@@ -829,7 +897,8 @@ struct AppState: Codable, Equatable {
         lastSeenWhatsNewReleaseID: String?,
         recentAppleMusicSelections: [RecentAppleMusicSelection],
         trimDefaults: TrimDefaults,
-        onboarding: OnboardingState
+        onboarding: OnboardingState,
+        ratingRequest: RatingRequestState
     ) {
         self.schemaVersion = schemaVersion
         self.appVersion = appVersion
@@ -845,6 +914,7 @@ struct AppState: Codable, Equatable {
         self.recentAppleMusicSelections = recentAppleMusicSelections
         self.trimDefaults = trimDefaults
         self.onboarding = onboarding
+        self.ratingRequest = ratingRequest
     }
 
     init(from decoder: Decoder) throws {
@@ -867,6 +937,7 @@ struct AppState: Codable, Equatable {
         } else {
             onboarding = teams.isEmpty ? .notStarted : .completed()
         }
+        ratingRequest = try container.decodeIfPresent(RatingRequestState.self, forKey: .ratingRequest) ?? .default
     }
 
     static let empty = AppState(
@@ -883,7 +954,8 @@ struct AppState: Codable, Equatable {
         lastSeenWhatsNewReleaseID: AppMetadata.whatsNewReleaseID,
         recentAppleMusicSelections: [],
         trimDefaults: .default,
-        onboarding: .notStarted
+        onboarding: .notStarted,
+        ratingRequest: .default
     )
 }
 

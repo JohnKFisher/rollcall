@@ -9,6 +9,7 @@ Internal notes for building public-facing changelogs. Keep entries understandabl
 - [public candidate] Team colors now shape Roll Call's accent styling across the app, including Game Day, Clips, setup progress, primary actions, and selected controls.
 - [public candidate] Added an optional Keep Screen Awake setting so Game Day and Clips can prevent auto-lock during live use, with a battery-use note in Settings.
 - [public candidate] Added an in-app What's New sheet for update notes, with a Settings > About entry and a Full Changelog link.
+- [public candidate] Roll Call can now politely ask for a rating after repeated successful Game Day use, while still waiting until a later non-live screen instead of interrupting Game Day, and explicit `Rate Roll Call` taps now go straight to the App Store review page.
 - [public candidate] Teams can now update a managed Apple Music playlist from their Apple Music song cues, with a preview of included and skipped songs before anything changes.
 - [public candidate] Added a new Recovery screen with Recently Deleted for teams and players, including 60-day recovery, item-by-item restore, and item-by-item permanent delete.
 
@@ -38,3 +39,5 @@ Internal notes for building public-facing changelogs. Keep entries understandabl
 
 ### Internal / Maintenance
 - Semantic colors such as warning, destructive, ready, disabled, and live playback remain separate from team accent colors.
+- Non-Release Developer Tools now includes rating diagnostics and a threshold testing control that can flip the rating flow between earned and not earned while resetting automatic prompt attempts.
+- Non-Release Developer Tools can now launch the exact same rating-request sheet used in the real app, while still keeping separate native StoreKit and App Store review diagnostics.

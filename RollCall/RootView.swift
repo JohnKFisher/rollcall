@@ -1,5 +1,6 @@
 import Foundation
 import PhotosUI
+import StoreKit
 import SwiftUI
 import UIKit
 import UniformTypeIdentifiers
@@ -222,6 +223,13 @@ private func applyTabBarAccent(_ tintColor: UIColor, to tabBar: UITabBar) {
     tabBar.scrollEdgeAppearance = standardAppearance
 }
 
+fileprivate enum RatingRequestPresentation: String, Identifiable {
+    case automatic
+    case manual
+
+    var id: String { rawValue }
+}
+
 struct RootView: View {
     private struct PlayerEditorRoute: Identifiable {
         let id: UUID
@@ -245,6 +253,7 @@ struct RootView: View {
     @State private var hasEnteredOnboardingFlow = false
     @State private var hasResolvedInitialTab = false
     @State private var whatsNewPresentation: WhatsNewPresentation?
+    @State private var ratingRequestPresentation: RatingRequestPresentation?
     @State private var teamPlaylistPreview: TeamAppleMusicPlaylistSummary?
 
     private var errorBinding: Binding<Bool> {
@@ -287,6 +296,7 @@ struct RootView: View {
             || showRemoveTeamConfirmation
             || packageSharePresented
             || whatsNewPresentation != nil
+            || ratingRequestPresentation != nil
             || teamPlaylistPreview != nil
     }
 
@@ -295,6 +305,45 @@ struct RootView: View {
             && !appModel.shouldShowOnboarding
             && isSafeNonLiveTabForWhatsNew
             && !hasBlockingWhatsNewPresentation
+    }
+
+    private var canPresentAutomaticRatingRequest: Bool {
+        appModel.canPresentAutomaticRatingRequest
+            && !appModel.hasUnseenWhatsNew
+            && !appModel.shouldShowOnboarding
+            && isSafeNonLiveTabForWhatsNew
+            && !hasBlockingWhatsNewPresentation
+    }
+
+    private var automaticRatingRequestDebugStatus: String {
+        if !appModel.hasEarnedRatingRequest {
+            return "Below threshold"
+        }
+        if appModel.state.ratingRequest.automaticPromptAttemptCount >= 2 {
+            return "All automatic attempts spent"
+        }
+        if appModel.hasUnseenWhatsNew {
+            return "Waiting for What's New to clear"
+        }
+        if appModel.shouldShowOnboarding {
+            return "Blocked by onboarding"
+        }
+        if !isSafeNonLiveTabForWhatsNew {
+            return "Blocked on Game Day or Clips"
+        }
+        if appModel.isBusy {
+            return "Blocked while app is busy"
+        }
+        if appModel.lastError != nil {
+            return "Blocked by active alert"
+        }
+        if appModel.pendingPackageImport != nil || appModel.pendingRosterImport != nil {
+            return "Blocked by import flow"
+        }
+        if showExperimentalWarning || packageImportPresented || csvImportPresented || playerEditorRoute != nil || showLineupEditor || showRenameTeamAlert || showRemoveTeamConfirmation || packageSharePresented || whatsNewPresentation != nil || teamPlaylistPreview != nil {
+            return "Blocked by another sheet or modal"
+        }
+        return "Eligible now"
     }
 
     private var clipsSurface: RollCallSurfaceVariant {
@@ -322,6 +371,51 @@ struct RootView: View {
         whatsNewPresentation = .automatic
     }
 
+    private func presentAutomaticRatingRequestIfPossible() {
+        guard canPresentAutomaticRatingRequest else { return }
+        appModel.markAutomaticRatingPromptAttempted()
+        ratingRequestPresentation = .automatic
+    }
+
+    private func requestNativeInAppRatingPrompt() {
+        guard let windowScene = UIApplication.shared.connectedScenes
+            .compactMap({ $0 as? UIWindowScene })
+            .first(where: { $0.activationState == .foregroundActive }) else {
+            return
+        }
+        SKStoreReviewController.requestReview(in: windowScene)
+    }
+
+    private func requestManualRatingReview() {
+        UIApplication.shared.open(AppMetadata.appStoreWriteReviewURL)
+    }
+
+    private func requestRatingSupportEmail() {
+        UIApplication.shared.open(feedbackEmailURL)
+    }
+
+    private func presentManualRatingRequestSheet() {
+        ratingRequestPresentation = .manual
+    }
+
+    private func handleSelectedTabChange(from previousTab: RootTab, to newTab: RootTab) {
+        updateIdleTimer()
+
+        if newTab == .gameDay {
+            appModel.beginGameDayVisitForRatingIfNeeded()
+        }
+        if previousTab == .gameDay, newTab != .gameDay {
+            appModel.finalizeGameDayVisitForRatingIfNeeded()
+        }
+    }
+
+    private func handleScenePhaseChange(from previousPhase: ScenePhase, to newPhase: ScenePhase) {
+        updateIdleTimer()
+
+        guard previousPhase == .active, newPhase != .active, selectedTab == .gameDay else { return }
+        appModel.finalizeGameDayVisitForRatingIfNeeded()
+    }
+
     private func handleRosterImportResult(_ result: Result<[URL], Error>) {
         guard case .success(let urls) = result, let url = urls.first else { return }
         Task { await appModel.prepareRosterImport(from: url) }
@@ -330,7 +424,11 @@ struct RootView: View {
     private func finishLaunchingTask() async {
         await appModel.finishLaunchingIfNeeded()
         resolveInitialTabIfNeeded()
+        if selectedTab == .gameDay {
+            appModel.beginGameDayVisitForRatingIfNeeded()
+        }
         presentAutomaticWhatsNewIfPossible()
+        presentAutomaticRatingRequestIfPossible()
     }
 
     private func handlePackageImportPick(_ url: URL) {
@@ -396,6 +494,11 @@ struct RootView: View {
             .onChange(of: canPresentAutomaticWhatsNew) { _, canPresent in
                 if canPresent {
                     presentAutomaticWhatsNewIfPossible()
+                }
+            }
+            .onChange(of: canPresentAutomaticRatingRequest) { _, canPresent in
+                if canPresent {
+                    presentAutomaticRatingRequestIfPossible()
                 }
             }
             .overlay(alignment: .top) {
@@ -527,11 +630,11 @@ struct RootView: View {
             .onDisappear {
                 UIApplication.shared.isIdleTimerDisabled = false
             }
-            .onChange(of: selectedTab) { _, _ in
-                updateIdleTimer()
+            .onChange(of: selectedTab) { previousTab, newTab in
+                handleSelectedTabChange(from: previousTab, to: newTab)
             }
-            .onChange(of: scenePhase) { _, _ in
-                updateIdleTimer()
+            .onChange(of: scenePhase) { previousPhase, newPhase in
+                handleScenePhaseChange(from: previousPhase, to: newPhase)
             }
             .onChange(of: appModel.state.settings.keepScreenAwakeDuringLiveUse) { _, _ in
                 updateIdleTimer()
@@ -1385,6 +1488,19 @@ struct RootView: View {
                             }
                             .buttonStyle(.plain)
 
+                            if appModel.hasEarnedRatingRequest {
+                                Button {
+                                    presentManualRatingRequestSheet()
+                                } label: {
+                                    SettingsRowLabel(
+                                        title: "Rate Roll Call",
+                                        detail: "If Roll Call has been helpful, leave a quick rating.",
+                                        systemImage: "star.bubble.fill"
+                                    )
+                                }
+                                .buttonStyle(.plain)
+                            }
+
                             NavigationLink {
                                 AttributionsView()
                             } label: {
@@ -1404,7 +1520,15 @@ struct RootView: View {
                             helperText: "Experimental and diagnostic features stay out of normal user flows."
                         ) {
                             NavigationLink {
-                                DeveloperToolsView(appModel: appModel, showExperimentalWarning: $showExperimentalWarning)
+                                DeveloperToolsView(
+                                    appModel: appModel,
+                                    showExperimentalWarning: $showExperimentalWarning,
+                                    ratingRequestStatus: automaticRatingRequestDebugStatus,
+                                    onTestAutomaticRatingPrompt: requestNativeInAppRatingPrompt,
+                                    onShowRatingRequestSheet: presentManualRatingRequestSheet,
+                                    onEmailSupport: requestRatingSupportEmail,
+                                    onOpenReviewPage: requestManualRatingReview
+                                )
                             } label: {
                                 SettingsNavigationLabel(
                                     title: "Developer Tools",
@@ -1433,6 +1557,12 @@ struct RootView: View {
             }
         }
         .tint(Color(uiColor: .label))
+        .sheet(item: $ratingRequestPresentation) { _ in
+            RatingRequestSheet(
+                onRate: requestManualRatingReview,
+                onEmailSupport: requestRatingSupportEmail
+            )
+        }
     }
 
     private func playerAudioReadinessChecks(from checks: [ReadinessCheck]) -> [ReadinessCheck] {
@@ -3797,9 +3927,11 @@ private struct SettingsRowLabel: View {
                 Text(title)
                     .rollCallText(.cardTitle)
                     .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
                 Text(detail)
                     .rollCallText(.helperText)
                     .lineLimit(3)
+                    .fixedSize(horizontal: false, vertical: true)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         }
@@ -5206,6 +5338,11 @@ private struct RecoveryCenterView: View {
 private struct DeveloperToolsView: View {
     @ObservedObject var appModel: AppModel
     @Binding var showExperimentalWarning: Bool
+    let ratingRequestStatus: String
+    let onTestAutomaticRatingPrompt: () -> Void
+    let onShowRatingRequestSheet: () -> Void
+    let onEmailSupport: () -> Void
+    let onOpenReviewPage: () -> Void
 
     private var flags: FeatureFlags {
         appModel.featureFlags
@@ -5287,12 +5424,31 @@ private struct DeveloperToolsView: View {
                             )
                         }
                         .disabled(!flags.showExperimentalFeatures)
-
                     }
 
                     Section("Diagnostics") {
                         Button("Reset What's New Prompt") {
                             appModel.resetWhatsNewSeenForTesting()
+                        }
+
+                        LabeledContent("Rating Request", value: appModel.ratingRequestDebugSummary)
+                        LabeledContent("Successful Game Day Sessions", value: "\(appModel.state.ratingRequest.successfulGameDaySessionCount)")
+                        LabeledContent("Rating Prompt Status", value: ratingRequestStatus)
+
+                        Button(appModel.hasEarnedRatingRequest ? "Mark Rating Threshold Not Met" : "Mark Rating Threshold Met") {
+                            appModel.setRatingThresholdMetForTesting(!appModel.hasEarnedRatingRequest)
+                        }
+
+                        Button("Test In-App Rating Prompt") {
+                            onTestAutomaticRatingPrompt()
+                        }
+
+                        Button("Show Real Rating Request Sheet") {
+                            onShowRatingRequestSheet()
+                        }
+
+                        Button("Open App Store Review Page") {
+                            onOpenReviewPage()
                         }
 
                         Button("Generate Support Bundle") {
@@ -5313,6 +5469,108 @@ private struct DeveloperToolsView: View {
         }
         .accentWashBackground()
         .navigationTitle("Developer Tools")
+    }
+}
+
+private struct RatingRequestSheet: View {
+    @Environment(\.dismiss) private var dismiss
+
+    let onRate: () -> Void
+    let onEmailSupport: () -> Void
+
+    var body: some View {
+        NavigationStack {
+            ZStack {
+                LinearGradient(
+                    colors: [
+                        Color(red: 0.95, green: 0.97, blue: 1.0),
+                        Color(red: 0.89, green: 0.93, blue: 0.99)
+                    ],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
+                .ignoresSafeArea()
+
+                VStack(spacing: 24) {
+                    Spacer(minLength: 12)
+
+                    VStack(spacing: 18) {
+                        Image(systemName: "star.bubble.fill")
+                            .font(.system(size: 30, weight: .semibold))
+                            .foregroundStyle(.yellow, Color.accentColor)
+
+                        VStack(spacing: 8) {
+                            Text("Enjoying Roll Call?")
+                                .font(.title3.weight(.semibold))
+                                .multilineTextAlignment(.center)
+
+                            Text("Roll Call is free to use. If it has helped your team, a quick App Store rating is a great way to say thanks.")
+                                .font(.body)
+                                .foregroundStyle(.secondary)
+                                .multilineTextAlignment(.center)
+                        }
+
+                        HStack(spacing: 10) {
+                            ForEach(0..<5, id: \.self) { _ in
+                                Image(systemName: "star.fill")
+                                    .font(.title3)
+                                    .foregroundStyle(.yellow)
+                            }
+                        }
+
+                        VStack(spacing: 12) {
+                            Button("Rate Roll Call") {
+                                dismiss()
+                                onRate()
+                            }
+                            .buttonStyle(.borderedProminent)
+                            .controlSize(.large)
+
+                            Button("Email Support Instead") {
+                                dismiss()
+                                onEmailSupport()
+                            }
+                            .buttonStyle(.bordered)
+                            .controlSize(.large)
+
+                            Button("Not Now") {
+                                dismiss()
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                    .padding(24)
+                    .frame(maxWidth: 360)
+                    .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 28, style: .continuous))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 28, style: .continuous)
+                            .stroke(Color.white.opacity(0.35), lineWidth: 1)
+                    )
+                    .shadow(color: Color.black.opacity(0.12), radius: 22, y: 10)
+
+                    VStack(spacing: 10) {
+                        Text("If something isn't working right, email me and I'll take a look.")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                            .multilineTextAlignment(.center)
+                    }
+                    .frame(maxWidth: 360)
+
+                    Spacer()
+                }
+                .padding(.horizontal, 24)
+                .padding(.bottom, 24)
+            }
+            .navigationTitle("Rate Roll Call")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Done") {
+                        dismiss()
+                    }
+                }
+            }
+        }
     }
 }
 
