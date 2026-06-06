@@ -16,6 +16,8 @@ Internal notes for building public-facing changelogs. Keep entries understandabl
 
 ### Changed
 - [public candidate] Built-in crowd clips now use a smaller, more sports-specific set built around cheers, a stadium swell, a chant, and rhythmic clap instead of generic audience-applause sounds.
+- [needs review] Game Day now uses smaller announcer and song status icons across the live board so player tiles, Now Batting, and On Deck can show what is available with less repeated gray text.
+- [needs review] Game Day's Now Batting and On Deck headers now carry the player number in the compact status line instead of giving the number its own larger placement.
 - The What's New sheet now uses a more compact layout with less repeated version text.
 - The Full Changelog link in What's New is now easier to recognize as a tappable web link.
 - Missing player-photo placeholders and the player editor now better reflect the selected team's accent color.
@@ -34,6 +36,7 @@ Internal notes for building public-facing changelogs. Keep entries understandabl
 
 ### Reliability / Data Safety
 - Playback and preview cleanup now ignore stale stop tasks after a newer cue starts, reducing silent or stuck Game Day playback after rapid taps.
+- [needs review] Game Day now refreshes next-batter warmup when you open the Game Day tab or return to the app there, giving Apple Music cues a fresher prewarm attempt before live use.
 - [public candidate] If deleted items are missing some saved media, Roll Call now tells you what could not be recovered and offers a clear `Restore What We Can` fallback instead of silently restoring a broken result.
 - Shared team media now stays on the device while any active team or Recovery item still references it, and regenerated built-in announcer files now clean up old unused copies instead of leaving orphaned assets behind.
 

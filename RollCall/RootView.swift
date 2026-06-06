@@ -403,6 +403,7 @@ struct RootView: View {
 
         if newTab == .gameDay {
             appModel.beginGameDayVisitForRatingIfNeeded()
+            appModel.refreshGameDayWarmup()
         }
         if previousTab == .gameDay, newTab != .gameDay {
             appModel.finalizeGameDayVisitForRatingIfNeeded()
@@ -411,6 +412,10 @@ struct RootView: View {
 
     private func handleScenePhaseChange(from previousPhase: ScenePhase, to newPhase: ScenePhase) {
         updateIdleTimer()
+
+        if newPhase == .active, selectedTab == .gameDay {
+            appModel.refreshGameDayWarmup()
+        }
 
         guard previousPhase == .active, newPhase != .active, selectedTab == .gameDay else { return }
         appModel.finalizeGameDayVisitForRatingIfNeeded()
@@ -426,6 +431,7 @@ struct RootView: View {
         resolveInitialTabIfNeeded()
         if selectedTab == .gameDay {
             appModel.beginGameDayVisitForRatingIfNeeded()
+            appModel.refreshGameDayWarmup()
         }
         presentAutomaticWhatsNewIfPossible()
         presentAutomaticRatingRequestIfPossible()
@@ -4447,18 +4453,51 @@ private struct GameDayNowBattingHero: View {
         }
     }
 
-    private var announcerSummary: String {
+    private var cueIcons: [GameDayTileCueIcon] {
+        let hasSong = player.cue != nil
+        let availableColor = Color(uiColor: .secondaryLabel)
+        let missingColor = Color(uiColor: .tertiaryLabel)
+
         switch announcerMode {
         case .announcerOnly:
-            return hasCustomAnnouncer ? "Announcer Only" : "Announcement not recorded, Small Cheer fallback"
+            return [
+                GameDayTileCueIcon(
+                    id: "announcer",
+                    systemImage: hasCustomAnnouncer ? "microphone.fill" : "microphone.slash.fill",
+                    color: hasCustomAnnouncer ? availableColor : missingColor
+                )
+            ]
         case .announcerAndSong:
-            if player.cue == nil {
-                return hasCustomAnnouncer ? "Announcer + Small Cheer" : "Small Cheer fallback"
-            }
-            return hasCustomAnnouncer ? "Announcer + Song" : "Song only"
+            return [
+                GameDayTileCueIcon(
+                    id: "announcer",
+                    systemImage: hasCustomAnnouncer ? "microphone.fill" : "microphone.slash.fill",
+                    color: hasCustomAnnouncer ? availableColor : missingColor
+                ),
+                GameDayTileCueIcon(
+                    id: "song",
+                    systemImage: hasSong ? "music.note" : "music.note.slash",
+                    color: hasSong ? availableColor : missingColor
+                )
+            ]
         case .songOnly:
-            return player.cue == nil ? "Song not selected, Small Cheer fallback" : "Song only"
+            return [
+                GameDayTileCueIcon(
+                    id: "song",
+                    systemImage: hasSong ? "music.note" : "music.note.slash",
+                    color: hasSong ? availableColor : missingColor
+                )
+            ]
         }
+    }
+
+    private var heroStateIcon: GameDayTileState? {
+        GameDayTileState(
+            text: statusText,
+            systemImage: isActive ? "speaker.wave.3.fill" : "figure.baseball",
+            color: isActive ? Color.rollCall(.live, surface: .live) : Color.rollCall(.ready, surface: .live),
+            animatesSymbol: isActive
+        )
     }
 
     var body: some View {
@@ -4481,10 +4520,21 @@ private struct GameDayNowBattingHero: View {
                 PlayerPhotoThumbnail(relativePath: player.photoRelativePath, size: 72, cornerRadius: 18)
 
                 VStack(alignment: .leading, spacing: 7) {
-                    Text("Now Batting")
-                        .font(.caption.weight(.bold))
-                        .textCase(.uppercase)
-                        .foregroundStyle(Color(uiColor: .secondaryLabel))
+                    HStack(alignment: .firstTextBaseline, spacing: 4) {
+                        Text("Now Batting")
+                            .font(.caption.weight(.bold))
+                            .textCase(.uppercase)
+                            .foregroundStyle(Color(uiColor: .secondaryLabel))
+
+                        if !player.uniformNumber.isEmpty {
+                            Text("•")
+                                .font(.caption.weight(.bold))
+                                .foregroundStyle(Color(uiColor: .tertiaryLabel))
+                            Text("#\(player.uniformNumber)")
+                                .font(.caption.weight(.bold))
+                                .foregroundStyle(teamAccentTheme.color(.primary, surface: .live))
+                        }
+                    }
 
                     Text(player.displayName)
                         .font(.system(.largeTitle, design: .rounded).weight(.bold))
@@ -4493,23 +4543,10 @@ private struct GameDayNowBattingHero: View {
                         .minimumScaleFactor(0.45)
                         .allowsTightening(true)
 
-                    HStack(spacing: 8) {
-                        if !player.uniformNumber.isEmpty {
-                            Text("#\(player.uniformNumber)")
-                                .font(.headline.weight(.bold))
-                                .foregroundStyle(teamAccentTheme.color(.primary, surface: .live))
-                        }
-                        GameDayStatePill(
-                            text: statusText,
-                            systemImage: isActive ? "speaker.wave.3.fill" : (willUseFallback ? "music.note.list" : "checkmark.circle.fill"),
-                            role: isActive ? .live : (willUseFallback ? .warning : .ready),
-                            strong: isActive,
-                            animatesSymbol: isActive
-                        )
-                    }
                 }
 
                 Spacer(minLength: 0)
+                GameDayPanelIconRow(tileState: heroStateIcon, cueIcons: cueIcons)
             }
 
             VStack(alignment: .leading, spacing: 5) {
@@ -4523,10 +4560,6 @@ private struct GameDayNowBattingHero: View {
                 .foregroundStyle(Color(uiColor: .label))
                 .lineLimit(1)
                 .minimumScaleFactor(0.78)
-                Text(announcerSummary)
-                    .font(.caption.weight(.medium))
-                    .foregroundStyle(Color(uiColor: .secondaryLabel))
-                    .lineLimit(1)
             }
 
             HStack(spacing: 10) {
@@ -4569,10 +4602,20 @@ private struct GameDayNowBattingHero: View {
         "Now Batting, \(player.displayName), \(statusText), \(cueTitle), \(isActive ? "tap again to stop" : actionTitle)"
     }
 
+    private var cueIconRow: some View {
+        HStack(spacing: 6) {
+            ForEach(cueIcons) { icon in
+                Image(systemName: icon.systemImage)
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(icon.color)
+            }
+        }
+    }
+
     private var isCurrentlyActive: Bool {
         if let cueID = player.cue?.id {
             return appModel.playbackEngine.activeCueID == cueID
-        }
+            }
         return appModel.playbackEngine.activeCueID == player.id
     }
 }
@@ -4622,26 +4665,36 @@ private struct GameDayOnDeckCard: View {
         Group {
             PlayerPhotoThumbnail(relativePath: player.photoRelativePath, size: 42, cornerRadius: 12)
             VStack(alignment: .leading, spacing: 4) {
-                Text("On Deck")
-                    .font(.caption.weight(.bold))
-                    .textCase(.uppercase)
-                    .foregroundStyle(Color(uiColor: .secondaryLabel))
+                HStack(alignment: .firstTextBaseline, spacing: 4) {
+                    Text("On Deck")
+                        .font(.caption.weight(.bold))
+                        .textCase(.uppercase)
+                        .foregroundStyle(Color(uiColor: .secondaryLabel))
+
+                    if !player.uniformNumber.isEmpty {
+                        Text("•")
+                            .font(.caption.weight(.bold))
+                            .foregroundStyle(Color(uiColor: .tertiaryLabel))
+                        Text("#\(player.uniformNumber)")
+                            .font(.caption.weight(.bold))
+                            .foregroundStyle(teamAccentTheme.color(.primary, surface: .live))
+                    }
+                }
                 Text(player.displayName)
                     .font(.title3.weight(.bold))
                     .foregroundStyle(Color(uiColor: .label))
                     .lineLimit(1)
                     .minimumScaleFactor(0.78)
-                Text(onDeckStatus(for: player))
-                    .font(.caption.weight(.medium))
-                    .foregroundStyle(Color(uiColor: .secondaryLabel))
-                    .lineLimit(1)
             }
             Spacer(minLength: 0)
-            if !player.uniformNumber.isEmpty {
-                Text("#\(player.uniformNumber)")
-                    .font(.headline.weight(.bold))
-                    .foregroundStyle(teamAccentTheme.color(.primary, surface: .live))
-            }
+            GameDayPanelIconRow(
+                tileState: GameDayTileState(
+                    text: "On Deck",
+                    systemImage: "person.crop.circle.badge.clock",
+                    color: teamAccentTheme.color(.primary, surface: .live)
+                ),
+                cueIcons: onDeckCueIcons(for: player)
+            )
         }
     }
 
@@ -4663,18 +4716,53 @@ private struct GameDayOnDeckCard: View {
         }
     }
 
-    private func onDeckStatus(for player: Player) -> String {
+    private func onDeckCueIcons(for player: Player) -> [GameDayTileCueIcon] {
         let hasCustomAnnouncer = appModel.hasStoredCustomAnnouncer(for: player)
+        let hasSong = player.cue != nil
+        let availableColor = Color(uiColor: .secondaryLabel)
+        let missingColor = Color(uiColor: .tertiaryLabel)
+
         switch announcerMode {
         case .announcerOnly:
-            return hasCustomAnnouncer ? "Announcer Only" : "Small Cheer fallback"
+            return [
+                GameDayTileCueIcon(
+                    id: "announcer",
+                    systemImage: hasCustomAnnouncer ? "microphone.fill" : "microphone.slash.fill",
+                    color: hasCustomAnnouncer ? availableColor : missingColor
+                )
+            ]
         case .announcerAndSong:
-            if player.cue == nil {
-                return hasCustomAnnouncer ? "Announcer + Small Cheer" : "Small Cheer fallback"
-            }
-            return hasCustomAnnouncer ? "Announcer + Song" : "Song ready"
+            return [
+                GameDayTileCueIcon(
+                    id: "announcer",
+                    systemImage: hasCustomAnnouncer ? "microphone.fill" : "microphone.slash.fill",
+                    color: hasCustomAnnouncer ? availableColor : missingColor
+                ),
+                GameDayTileCueIcon(
+                    id: "song",
+                    systemImage: hasSong ? "music.note" : "music.note.slash",
+                    color: hasSong ? availableColor : missingColor
+                )
+            ]
         case .songOnly:
-            return player.cue == nil ? "Small Cheer fallback" : "Song ready"
+            return [
+                GameDayTileCueIcon(
+                    id: "song",
+                    systemImage: hasSong ? "music.note" : "music.note.slash",
+                    color: hasSong ? availableColor : missingColor
+                )
+            ]
+        }
+    }
+
+    @ViewBuilder
+    private func onDeckCueIconRow(for player: Player) -> some View {
+        HStack(spacing: 6) {
+            ForEach(onDeckCueIcons(for: player)) { icon in
+                Image(systemName: icon.systemImage)
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(icon.color)
+            }
         }
     }
 }
@@ -4850,6 +4938,7 @@ private struct GameDayPlayerGrid: View {
             ForEach(players) { player in
                 let isActive = isActive(player)
                 let tileState = tileState(for: player, isActive: isActive)
+                let cueIcons = tileCueIcons(for: player)
                 Button {
                     if isCurrentlyActive(player) {
                         appModel.stopPlayback()
@@ -4863,16 +4952,7 @@ private struct GameDayPlayerGrid: View {
                                 .font(.caption.weight(.bold))
                                 .foregroundStyle(Color(uiColor: .secondaryLabel))
                             Spacer(minLength: 0)
-                            if let tileState {
-                                if tileState.animatesSymbol {
-                                    PlayingSpeakerSymbol(systemImage: tileState.systemImage, color: tileState.color)
-                                        .font(.caption.weight(.bold))
-                                } else {
-                                    Image(systemName: tileState.systemImage)
-                                        .font(.caption.weight(.bold))
-                                        .foregroundStyle(tileState.color)
-                                }
-                            }
+                            tileIconRow(tileState: tileState, cueIcons: cueIcons)
                         }
 
                         Text(tileName(for: player))
@@ -4889,12 +4969,6 @@ private struct GameDayPlayerGrid: View {
                                 .foregroundStyle(tileState.color)
                                 .lineLimit(2)
                                 .minimumScaleFactor(0.78)
-                        } else if let footerText = tileFooterText(for: player) {
-                            Text(footerText)
-                                .font(.caption2.weight(.semibold))
-                                .textCase(.uppercase)
-                                .foregroundStyle(Color(uiColor: .tertiaryLabel))
-                                .lineLimit(2)
                         }
                     }
                     .padding(10)
@@ -4963,15 +5037,64 @@ private struct GameDayPlayerGrid: View {
         return nil
     }
 
-    private func tileFooterText(for player: Player) -> String? {
+    private func tileCueIcons(for player: Player) -> [GameDayTileCueIcon] {
+        let hasAnnouncer = appModel.hasStoredCustomAnnouncer(for: player)
+        let hasSong = player.cue != nil
+        let availableColor = Color(uiColor: .secondaryLabel)
+        let missingColor = Color(uiColor: .tertiaryLabel)
+
         switch announcerMode {
         case .announcerOnly:
-            return appModel.hasStoredCustomAnnouncer(for: player) ? "Announcer" : nil
+            return [
+                GameDayTileCueIcon(
+                    id: "announcer",
+                    systemImage: hasAnnouncer ? "microphone.fill" : "microphone.slash.fill",
+                    color: hasAnnouncer ? availableColor : missingColor
+                )
+            ]
         case .announcerAndSong:
-            if player.cue == nil { return nil }
-            return appModel.hasStoredCustomAnnouncer(for: player) ? "Announcer + Song" : "Song"
+            return [
+                GameDayTileCueIcon(
+                    id: "announcer",
+                    systemImage: hasAnnouncer ? "microphone.fill" : "microphone.slash.fill",
+                    color: hasAnnouncer ? availableColor : missingColor
+                ),
+                GameDayTileCueIcon(
+                    id: "song",
+                    systemImage: hasSong ? "music.note" : "music.note.slash",
+                    color: hasSong ? availableColor : missingColor
+                )
+            ]
         case .songOnly:
-            return player.cue == nil ? nil : "Song"
+            return [
+                GameDayTileCueIcon(
+                    id: "song",
+                    systemImage: hasSong ? "music.note" : "music.note.slash",
+                    color: hasSong ? availableColor : missingColor
+                )
+            ]
+        }
+    }
+
+    @ViewBuilder
+    private func tileIconRow(tileState: GameDayTileState?, cueIcons: [GameDayTileCueIcon]) -> some View {
+        HStack(spacing: 4) {
+            if let tileState {
+                if tileState.animatesSymbol {
+                    PlayingSpeakerSymbol(systemImage: tileState.systemImage, color: tileState.color)
+                        .font(.caption.weight(.bold))
+                } else {
+                    Image(systemName: tileState.systemImage)
+                        .font(.caption.weight(.bold))
+                        .foregroundStyle(tileState.color)
+                }
+            }
+
+            ForEach(cueIcons) { icon in
+                Image(systemName: icon.systemImage)
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(icon.color)
+            }
         }
     }
 
@@ -5038,6 +5161,38 @@ private struct GameDayTileState {
     let systemImage: String
     let color: Color
     var animatesSymbol: Bool = false
+}
+
+private struct GameDayTileCueIcon: Identifiable {
+    let id: String
+    let systemImage: String
+    let color: Color
+}
+
+private struct GameDayPanelIconRow: View {
+    let tileState: GameDayTileState?
+    let cueIcons: [GameDayTileCueIcon]
+
+    var body: some View {
+        HStack(spacing: 4) {
+            if let tileState {
+                if tileState.animatesSymbol {
+                    PlayingSpeakerSymbol(systemImage: tileState.systemImage, color: tileState.color)
+                        .font(.caption.weight(.bold))
+                } else {
+                    Image(systemName: tileState.systemImage)
+                        .font(.caption.weight(.bold))
+                        .foregroundStyle(tileState.color)
+                }
+            }
+
+            ForEach(cueIcons) { icon in
+                Image(systemName: icon.systemImage)
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(icon.color)
+            }
+        }
+    }
 }
 
 private struct LineupEditorSheet: View {

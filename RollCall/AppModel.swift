@@ -815,6 +815,10 @@ final class AppModel: ObservableObject {
         updatePlayer(updated)
     }
 
+    func refreshGameDayWarmup() {
+        prewarmNextBatterCue()
+    }
+
     func movePlayers(from offsets: IndexSet, to offset: Int) {
         guard let teamIndex else { return }
         state.teams[teamIndex].players.move(fromOffsets: offsets, toOffset: offset)
