@@ -267,6 +267,11 @@ struct RootView: View {
     @State private var ratingRequestPresentation: RatingRequestPresentation?
     @State private var teamPlaylistPreview: TeamAppleMusicPlaylistSummary?
 
+    init(appModel: AppModel) {
+        self.appModel = appModel
+        _selectedTab = State(initialValue: RootTab.sensibleInitialTab(for: appModel.selectedTeam))
+    }
+
     private var errorBinding: Binding<Bool> {
         Binding(get: { appModel.lastError != nil }, set: { newValue in if !newValue { appModel.lastError = nil } })
     }

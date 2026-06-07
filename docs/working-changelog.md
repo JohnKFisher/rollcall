@@ -37,6 +37,7 @@ Internal notes for building public-facing changelogs. Keep entries understandabl
 - Black team accents no longer turn into bright white controls in Dark Mode.
 - The Apple Music playlist preview and What's New panels now use the selected team's color wash.
 - [public candidate] Game Day playback is more reliable when moving quickly between batters; older fade-out cleanup can no longer stop the next player's cue.
+- [needs review] Teams that are already ready for live use now open straight into Game Day on launch instead of briefly flashing the Players tab first.
 
 ### Reliability / Data Safety
 - Playback and preview cleanup now ignore stale stop tasks after a newer cue starts, reducing silent or stuck Game Day playback after rapid taps.
