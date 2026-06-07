@@ -87,7 +87,7 @@ private struct WhatsNewBundle {
                 ],
                 lookingAhead: WhatsNewHighlight(
                     title: "Improvements to Song Selection and Trimming",
-                    detail: "Looking ahead, we're exploring refinements to song selection and trimming for a future update.",
+                    detail: "Looking ahead, we're exploring changes and enhancements to song selection and trimming for a future update.",
                     systemImage: "wand.and.stars"
                 )
             )
