@@ -15,6 +15,9 @@ Internal notes for building public-facing changelogs. Keep entries understandabl
 
 
 ### Changed
+- [needs review] Roll Call's rating request now waits for 10 successful Game Day sessions, with one later retry after 20, so the ask shows up less often before release.
+- [needs review] The Teams screen now calls out that Apple Music playlist creation lives under Team Actions, so the option is easier to discover without turning it into a primary live-use control.
+- [needs review] Apple Music fade-out volume automation now fades subscribed full-song cues down from the phone's current volume level and restores that same level afterward instead of jumping the device volume to 100%.
 - [public candidate] Built-in crowd clips now use a smaller, more sports-specific set built around cheers, a stadium swell, a chant, and rhythmic clap instead of generic audience-applause sounds.
 - [needs review] Game Day's player grid now flows forward from the batter after On Deck and wraps through the lineup so the live board reads more like the expected batting order while still keeping every player available to tap.
 - [needs review] If you tap a later player out of order on Game Day, the big hero now temporarily switches to a `Lineup Override` state for that player without reshuffling the lineup grid or On Deck card.
@@ -37,6 +40,7 @@ Internal notes for building public-facing changelogs. Keep entries understandabl
 - Black team accents no longer turn into bright white controls in Dark Mode.
 - The Apple Music playlist preview and What's New panels now use the selected team's color wash.
 - [public candidate] Game Day playback is more reliable when moving quickly between batters; older fade-out cleanup can no longer stop the next player's cue.
+- [needs review] Rapid Apple Music batter changes no longer risk inheriting a half-faded device-volume baseline as the next cue's new normal volume.
 - [needs review] Teams that are already ready for live use now open straight into Game Day on launch instead of briefly flashing the Players tab first.
 
 ### Reliability / Data Safety
@@ -49,3 +53,4 @@ Internal notes for building public-facing changelogs. Keep entries understandabl
 - Semantic colors such as warning, destructive, ready, disabled, and live playback remain separate from team accent colors.
 - Non-Release Developer Tools now includes rating diagnostics and a threshold testing control that can flip the rating flow between earned and not earned while resetting automatic prompt attempts.
 - Non-Release Developer Tools can now launch the exact same rating-request sheet used in the real app, while still keeping separate native StoreKit and App Store review diagnostics.
+- Non-Release Developer Tools now includes an iOS 18+ Apple Music transition-crossfade experiment so the newer MusicKit playback backend can be compared against the current volume-automation workaround without changing Release behavior.

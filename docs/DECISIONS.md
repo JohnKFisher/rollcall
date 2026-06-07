@@ -2,6 +2,16 @@
 
 Use this file as a concise decision log for project-specific architectural, behavioral, tooling, and scope decisions.
 
+## 2026-06-07
+
+- Approved: raise the rating-request thresholds from 5/10 successful Game Day sessions to 10/20 before the 1.1 release, while keeping the same safe non-live presentation rules, cooldown, and single retry shape.
+  Rationale: the existing prompt cadence felt too eager for a field-use app, so the ask should wait for more repeated proven value before coaches see it.
+  Status: approved
+
+- Approved: add an iOS 18+ Developer Tools experiment that swaps subscribed Apple Music catalog playback from the current MediaPlayer volume-automation backend to MusicKit `ApplicationMusicPlayer.transition` crossfade, while preserving the existing backend everywhere else.
+  Rationale: the current fade-out workaround is still provisional and uses deprecated volume behavior, so an isolated opt-in backend experiment is the safest way to learn whether newer MusicKit transition APIs feel better without destabilizing iOS 17 or Release builds.
+  Status: approved
+
 ## 2026-06-05
 
 - Approved: Game Day's fallback player grid should visually continue the lineup after `On Deck`, wrapping through the present order while still keeping every player visible and every tile tap freeform.
@@ -14,7 +24,7 @@ Use this file as a concise decision log for project-specific architectural, beha
 
 - Approved: add a polite rating request flow that waits for five successful Game Day sessions, counts a session after real player playback when leaving Game Day or backgrounding from it, enforces a four-hour cooldown between counted sessions, never interrupts Game Day/Clips, shows Roll Call's own rating-request sheet before any handoff, sends an explicit `Rate Roll Call` tap straight to the App Store review page, exposes a Settings > About rating entry only after that threshold is earned, and allows one later automatic retry after another five successful sessions if the first ask is dismissed or skipped.
   Rationale: the app should ask only after repeated proven value in the real live-use flow, while still giving heavy Game Day users credit even if they usually close the app straight from Game Day; using Roll Call's own sheet keeps the copy testable and ensures an explicit rating tap is never lost to StoreKit suppression.
-  Status: approved
+  Status: superseded by the 2026-06-07 threshold increase to 10/20 sessions
 
 - Approved: non-Release Developer Tools may include a rating-threshold testing control that flips the threshold between met and not met and resets the automatic prompt attempt state so the flow can be exercised repeatedly during testing.
   Rationale: the rating prompt is intentionally rare in production, so internal testing needs a compact way to re-enter the earned state without waiting through real sessions or getting stuck after prior spent attempts.

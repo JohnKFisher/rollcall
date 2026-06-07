@@ -1194,6 +1194,9 @@ struct RootView: View {
                                     teamAccentTheme: selectedTeamAccentTheme
                                 ))
 
+                                Text("Want an Apple Music team playlist? Use Team Actions to create or update it.")
+                                    .rollCallText(.helperText)
+
                                 Text("Roster CSV format: name, number. Use a header row or simple two-column rows; player number is optional.")
                                     .rollCallText(.helperText)
                             }
@@ -1437,7 +1440,7 @@ struct RootView: View {
                         )) {
                             SettingsRowLabel(
                                 title: "Volume Automation",
-                                detail: "Allow Roll Call to override playback volume to max, then lower it to simulate a fade-out.",
+                                detail: "Let Roll Call fade Apple Music playback down from your current device volume, then restore that same volume afterward.",
                                 systemImage: "speaker.wave.2.fill"
                             )
                         }
@@ -1483,10 +1486,10 @@ struct RootView: View {
                                 )
                             }
 
-                            Divider()
-
                             Text("© 2026 Sidelark Labs; John Kenneth Fisher")
                                 .rollCallText(.helperText)
+
+                            Divider()
 
                             Link(destination: URL(string: "https://sidelarklabs.com/rollcall/")!) {
                                 SettingsRowLabel(
@@ -5642,6 +5645,18 @@ private struct DeveloperToolsView: View {
                                 title: "Apple Music Local Copies",
                                 detail: "Shows the Make Local Copy action for Apple Music cues. This remains experimental and outside the primary product path.",
                                 systemImage: "doc.on.doc"
+                            )
+                        }
+                        .disabled(!flags.showExperimentalFeatures)
+
+                        Toggle(isOn: Binding(
+                            get: { appModel.state.experimental.appleMusicTransitionCrossfadeEnabled },
+                            set: { appModel.setAppleMusicTransitionCrossfadeEnabled($0) }
+                        )) {
+                            SettingsRowLabel(
+                                title: "Apple Music Transition Crossfade",
+                                detail: "iOS 18+ only. Tests MusicKit ApplicationMusicPlayer transition crossfade for subscribed Apple Music cues instead of Roll Call's current volume automation path.",
+                                systemImage: "waveform.path"
                             )
                         }
                         .disabled(!flags.showExperimentalFeatures)

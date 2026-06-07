@@ -433,8 +433,8 @@ final class GameDayHaptics {
 @MainActor
 final class AppModel: ObservableObject {
     private enum RatingRequestPolicy {
-        static let sessionThreshold = 5
-        static let retrySessionIncrement = 5
+        static let sessionThreshold = 10
+        static let retrySessionIncrement = 10
         static let maxAutomaticPromptAttempts = 2
         static let cooldown: TimeInterval = 4 * 60 * 60
     }
@@ -514,6 +514,10 @@ final class AppModel: ObservableObject {
         self.initialStateLoadWarning = loadResult.warning
         self.state.appVersion = AppMetadata.appVersion
         self.state.schemaVersion = max(self.state.schemaVersion, AppState.empty.schemaVersion)
+        normalizeRatingRequestPolicyState()
+        self.playbackEngine.setAppleMusicTransitionCrossfadeExperimentEnabled(
+            FeatureFlags(environment: .current, experimental: self.state.experimental).appleMusicTransitionCrossfadeEnabled
+        )
         self.readinessService.onPathStatusChange = { [weak self] in
             self?.scheduleReadinessRefresh()
         }
@@ -1178,6 +1182,13 @@ final class AppModel: ObservableObject {
         persist()
     }
 
+    private func normalizeRatingRequestPolicyState() {
+        let attemptCount = max(0, min(state.ratingRequest.automaticPromptAttemptCount, RatingRequestPolicy.maxAutomaticPromptAttempts))
+        let retrySteps = min(attemptCount, RatingRequestPolicy.maxAutomaticPromptAttempts - 1)
+        state.ratingRequest.nextAutomaticPromptSessionThreshold = RatingRequestPolicy.sessionThreshold
+            + (retrySteps * RatingRequestPolicy.retrySessionIncrement)
+    }
+
     func setGameDayAnnouncerMode(_ mode: GameDayAnnouncerMode) {
         guard let teamIndex else { return }
         state.teams[teamIndex].session.gameDayAnnouncerMode = mode
@@ -1198,6 +1209,7 @@ final class AppModel: ObservableObject {
 
     func setShowExperimentalFeatures(_ isEnabled: Bool) {
         state.experimental.showExperimentalFeatures = isEnabled
+        playbackEngine.setAppleMusicTransitionCrossfadeExperimentEnabled(featureFlags.appleMusicTransitionCrossfadeEnabled)
         persist()
     }
 
@@ -1211,6 +1223,12 @@ final class AppModel: ObservableObject {
         if isEnabled, state.experimental.acknowledgedAt == nil {
             state.experimental.acknowledgedAt = .now
         }
+        persist()
+    }
+
+    func setAppleMusicTransitionCrossfadeEnabled(_ isEnabled: Bool) {
+        state.experimental.appleMusicTransitionCrossfadeEnabled = isEnabled
+        playbackEngine.setAppleMusicTransitionCrossfadeExperimentEnabled(featureFlags.appleMusicTransitionCrossfadeEnabled)
         persist()
     }
 
@@ -1361,6 +1379,7 @@ final class AppModel: ObservableObject {
             defer {
                 if scoped { url.stopAccessingSecurityScopedResource() }
             }
+            _ = try self.packageService.preview(packageURL: url)
             try await self.createBackupBeforeRiskyOperation(reason: "Automatic backup before package import")
             let manifest = try self.packageService.import(packageURL: url, audioAssetService: self.audioAssetService)
             var imported = manifest.team

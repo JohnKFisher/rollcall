@@ -81,7 +81,8 @@ final class AppStatePersistenceTests: XCTestCase {
             "showExperimentalFeatures": false,
             "unlockPremiumForTesting": false,
             "appleMusicLocalCopyEnabled": false,
-            "appleMusicTeamPlaylistSyncEnabled": false
+            "appleMusicTeamPlaylistSyncEnabled": false,
+            "appleMusicTransitionCrossfadeEnabled": false
           },
           "settings": {
             "hapticsEnabled": true,
@@ -112,7 +113,8 @@ final class AppStatePersistenceTests: XCTestCase {
             "showExperimentalFeatures": false,
             "unlockPremiumForTesting": false,
             "appleMusicLocalCopyEnabled": false,
-            "appleMusicTeamPlaylistSyncEnabled": false
+            "appleMusicTeamPlaylistSyncEnabled": false,
+            "appleMusicTransitionCrossfadeEnabled": false
           },
           "settings": {
             "hapticsEnabled": true,

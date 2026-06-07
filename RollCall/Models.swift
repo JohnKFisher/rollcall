@@ -671,6 +671,7 @@ struct ExperimentalSettings: Codable, Equatable {
     var unlockPremiumForTesting: Bool
     var appleMusicLocalCopyEnabled: Bool
     var appleMusicTeamPlaylistSyncEnabled: Bool
+    var appleMusicTransitionCrossfadeEnabled: Bool
     var acknowledgedAt: Date?
     var appleMusicTeamPlaylistAcknowledgedAt: Date?
 
@@ -679,6 +680,7 @@ struct ExperimentalSettings: Codable, Equatable {
         unlockPremiumForTesting: false,
         appleMusicLocalCopyEnabled: false,
         appleMusicTeamPlaylistSyncEnabled: false,
+        appleMusicTransitionCrossfadeEnabled: false,
         acknowledgedAt: nil,
         appleMusicTeamPlaylistAcknowledgedAt: nil
     )
@@ -688,6 +690,7 @@ struct ExperimentalSettings: Codable, Equatable {
         case unlockPremiumForTesting
         case appleMusicLocalCopyEnabled
         case appleMusicTeamPlaylistSyncEnabled
+        case appleMusicTransitionCrossfadeEnabled
         case acknowledgedAt
         case appleMusicTeamPlaylistAcknowledgedAt
     }
@@ -697,6 +700,7 @@ struct ExperimentalSettings: Codable, Equatable {
         unlockPremiumForTesting: Bool,
         appleMusicLocalCopyEnabled: Bool,
         appleMusicTeamPlaylistSyncEnabled: Bool,
+        appleMusicTransitionCrossfadeEnabled: Bool,
         acknowledgedAt: Date?,
         appleMusicTeamPlaylistAcknowledgedAt: Date?
     ) {
@@ -704,6 +708,7 @@ struct ExperimentalSettings: Codable, Equatable {
         self.unlockPremiumForTesting = unlockPremiumForTesting
         self.appleMusicLocalCopyEnabled = appleMusicLocalCopyEnabled
         self.appleMusicTeamPlaylistSyncEnabled = appleMusicTeamPlaylistSyncEnabled
+        self.appleMusicTransitionCrossfadeEnabled = appleMusicTransitionCrossfadeEnabled
         self.acknowledgedAt = acknowledgedAt
         self.appleMusicTeamPlaylistAcknowledgedAt = appleMusicTeamPlaylistAcknowledgedAt
     }
@@ -714,6 +719,7 @@ struct ExperimentalSettings: Codable, Equatable {
         unlockPremiumForTesting = try container.decodeIfPresent(Bool.self, forKey: .unlockPremiumForTesting) ?? false
         appleMusicLocalCopyEnabled = try container.decodeIfPresent(Bool.self, forKey: .appleMusicLocalCopyEnabled) ?? false
         appleMusicTeamPlaylistSyncEnabled = try container.decodeIfPresent(Bool.self, forKey: .appleMusicTeamPlaylistSyncEnabled) ?? false
+        appleMusicTransitionCrossfadeEnabled = try container.decodeIfPresent(Bool.self, forKey: .appleMusicTransitionCrossfadeEnabled) ?? false
         acknowledgedAt = try container.decodeIfPresent(Date.self, forKey: .acknowledgedAt)
         appleMusicTeamPlaylistAcknowledgedAt = try container.decodeIfPresent(Date.self, forKey: .appleMusicTeamPlaylistAcknowledgedAt)
     }
@@ -795,7 +801,7 @@ struct RatingRequestState: Codable, Equatable {
         hasCountedCurrentGameDayVisit: false,
         lastCountedSuccessfulGameDaySessionAt: nil,
         automaticPromptAttemptCount: 0,
-        nextAutomaticPromptSessionThreshold: 5
+        nextAutomaticPromptSessionThreshold: 10
     )
 
     enum CodingKeys: String, CodingKey {
@@ -832,7 +838,7 @@ struct RatingRequestState: Codable, Equatable {
         lastCountedSuccessfulGameDaySessionAt = try container.decodeIfPresent(Date.self, forKey: .lastCountedSuccessfulGameDaySessionAt)
         automaticPromptAttemptCount = try container.decodeIfPresent(Int.self, forKey: .automaticPromptAttemptCount)
             ?? ((try container.decodeIfPresent(Bool.self, forKey: .hasAttemptedAutomaticPrompt)) == true ? 1 : 0)
-        nextAutomaticPromptSessionThreshold = try container.decodeIfPresent(Int.self, forKey: .nextAutomaticPromptSessionThreshold) ?? 5
+        nextAutomaticPromptSessionThreshold = try container.decodeIfPresent(Int.self, forKey: .nextAutomaticPromptSessionThreshold) ?? 10
     }
 
     func encode(to encoder: Encoder) throws {
