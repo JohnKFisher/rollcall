@@ -1,6 +1,6 @@
 # Roll Call — Application Overview
 
-This document gives a non-code AI everything it needs to discuss the Roll Call app at a product level: what it is, who it's for, how the screens fit together, what the user can do on each one, and the principles that constrain future change. It is current as of build 58 / version 1.1.0.
+This document gives a non-code AI everything it needs to discuss the Roll Call app at a product level: what it is, who it's for, how the screens fit together, what the user can do on each one, and the principles that constrain future change. It is current as of build 63 / version 1.1.0.
 
 If you are an AI reading this to help with planning: assume the human you are talking to is the sole developer and product owner. They want help thinking through changes, tradeoffs, and priorities — not generating code. Quote back the principles in this document when they conflict with a proposal.
 
@@ -10,7 +10,7 @@ If you are an AI reading this to help with planning: assume the human you are ta
 
 Roll Call is an iPhone app for **youth-sports walk-up cues**. The coach (or a parent, sibling, helper) sets up a roster ahead of time. When a player comes to bat (or step onto the field, or up to the line — it is sport-agnostic), the user taps the player's tile and the app plays that player's chosen audio cue: usually a short trimmed clip of their walk-up song, optionally introduced by a recorded "Now batting, number 17, Ellie..." announcement.
 
-It is iPhone-first, currently free, has no required account, no ads, no social features, and no cloud backend. All data lives on device. Teams can be exported as `.rollcall` packages and imported on another device, but that is a manual sharing model, not automated sync.
+It is iPhone-first, all app features are free, optional in-app donations may be offered to support development, and it has no required account, no ads, no social features, and no cloud backend. All data lives on device. Teams can be exported as `.rollcall` packages and imported on another device, but that is a manual sharing model, not automated sync.
 
 ### The product priorities, in order
 
@@ -307,8 +307,7 @@ Be very cautious when proposing features that step on these lines.
 
 **Reliability rules:**
 
-- Premium (when it exists) must never affect Game Day reliability.
-- Existing premium content must continue working even if entitlement lapses (users shouldn't lose creative work).
+- Donations must never affect Game Day reliability or feature access.
 - Game Day must always do *something* when tapped — fallbacks are mandatory.
 
 **UX rules:**
@@ -316,7 +315,7 @@ Be very cautious when proposing features that step on these lines.
 - No long tutorial carousels.
 - No permission barrage (ask only after the user expressed intent).
 - No setup-as-homework feel (no percentages, no checklists styled as required).
-- No surprise paywalls after the user has invested setup effort. Premium markers must be visible *before* effort.
+- No donation pressure or guilt prompts after the user has invested setup effort.
 - No ratings prompt during Game Day.
 - Confirm only irreversible actions; prefer recovery over constant confirmations.
 
@@ -338,7 +337,7 @@ Be very cautious when proposing features that step on these lines.
 - Improved song selection and clip creation flows
 - Adding songs to clips
 
-**Possible Premium candidates (later):**
+**Likely future free feature candidates (later):**
 
 - Presentation styles / Game Day visual themes
 - Announcer Studio (richer announcer authoring — multiple presets, varied templates)
@@ -346,14 +345,14 @@ Be very cautious when proposing features that step on these lines.
 - Save Apple Music clip as a local file (currently feature-flagged Experimental)
 - Lyric-based song selection
 - Multiple intro/song presets per player
-- Premium presentation packs
+- Presentation packs
 - Cloud sync (low priority)
 
-**Premium framing:**
+**Support framing:**
 
-- Priority order for premium value: Creativity > Save Time > Pretty > Control.
-- Premium must be visible before the user invests setup effort (no sunk-cost paywalls).
-- Premium must enhance delight or save time. Never gate the real app.
+- Priority order for future feature value: Creativity > Save Time > Pretty > Control.
+- Donations may support the app, but must stay optional and calm.
+- Never gate the real app.
 
 ---
 
@@ -377,10 +376,10 @@ When uncertain, the developer's preferred resolution is to surface the conflict,
 For deeper specifics, the live docs in the repo are:
 
 - `docs/product/NORTH_STAR.md` — the one-page product philosophy
-- `docs/product/PRODUCT_SCOPE.md` — release boundaries and premium rules
+- `docs/product/PRODUCT_SCOPE.md` — release boundaries and donations/support rules
 - `docs/product/UX_RULEBOOK.md` — onboarding, readiness, missing-data, permissions, confirmations, recovery, ratings
 - `docs/product/READINESS_MODEL.md` — the detailed readiness reasoning
-- `docs/product/PRODUCT_ROADMAP.md` — what is in 1.0, 1.x candidates, future premium candidates, non-goals
+- `docs/product/PRODUCT_ROADMAP.md` — what is in 1.0, 1.x candidates, future free features, support options, non-goals
 - `docs/product/APPEARANCE_RULES.md` — Light/Dark/Live appearance rules
 - `docs/product/ARCHITECTURE_GUARDRAILS.md` — technical guardrails (the user is unlikely to ask an AI to discuss these without specifically requesting it)
 - `docs/WHERE_WE_STAND.md` — current implementation status snapshot

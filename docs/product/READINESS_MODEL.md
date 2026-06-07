@@ -115,7 +115,7 @@ Examples:
 - Presentation styles
 - Theme packs
 - Extra polish
-- Premium presentation
+- Optional presentation polish
 
 Outcome:
 

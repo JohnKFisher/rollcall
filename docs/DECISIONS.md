@@ -4,6 +4,10 @@ Use this file as a concise decision log for project-specific architectural, beha
 
 ## 2026-06-07
 
+- Approved: Roll Call will remain an all-features-free app, with optional in-app donations as the only planned user-payment path instead of a premium or Plus tier.
+  Rationale: the product works best when coaches never have to weigh feature access against trust, setup effort, or Game Day success; optional support can exist without turning delight, convenience, or ownership into gated upgrades.
+  Status: approved
+
 - Approved: raise the rating-request thresholds from 5/10 successful Game Day sessions to 10/20 before the 1.1 release, while keeping the same safe non-live presentation rules, cooldown, and single retry shape.
   Rationale: the existing prompt cadence felt too eager for a field-use app, so the ask should wait for more repeated proven value before coaches see it.
   Status: approved

@@ -33,7 +33,7 @@ Release builds must always resolve to:
 - `showExperimentalFeatures = false`
 - `unlockPremiumForTesting = false`
 
-Debug builds force developer settings, experimental visibility, and premium testing on so local work is easy to exercise. Internal builds show Developer Tools, but experimental visibility and premium testing come from local persisted toggles.
+Debug builds force developer settings and experimental visibility on so local work is easy to exercise. Internal builds show Developer Tools, but experimental visibility comes from local persisted toggles. The legacy premium-testing flag should remain off because live product policy is now all-features-free.
 
 ## Adding A Feature Flag
 

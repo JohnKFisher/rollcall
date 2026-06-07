@@ -18,13 +18,14 @@ Recover. Do not punish.
 
 Users own their teams. Import/export is ownership.
 
-Free should feel complete.
-Premium should add delight and save time, not unlock the real app.
+The full app should stay free.
+Optional donations may support the app, but never unlock the real app.
 
 No ads.
 No required accounts.
 No social network.
 No reliability paywalls.
+No donation pressure during live use.
 
 Protect the product before protecting growth.
 

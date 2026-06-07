@@ -1,6 +1,6 @@
 <!--
 Renamed from PRODUCT_DECISIONS.md during documentation distillation.
-Purpose: define product scope boundaries for 1.0, later releases, premium features, and intentional exclusions.
+Purpose: define product scope boundaries for 1.0, later releases, optional donations, and intentional exclusions.
 -->
 
 # Roll Call Product Scope
@@ -19,10 +19,10 @@ Decision: Preparation is for decisions; Game Day is for execution.
 Reason: Users are under pressure during live use.
 Confidence: High
 
-## Free vs Premium
+## Pricing and Support
 
-Decision: Launch 1.0 free.
-Reason: Current premium candidates are not validated enough to gate.
+Decision: All Roll Call features stay free.
+Reason: The product works best when every coach can use the full app without pricing decisions getting in the way of setup, trust, or Game Day.
 Confidence: High
 
 Decision: Multiple teams stay free.
@@ -37,16 +37,12 @@ Decision: Team identity stays free.
 Reason: Making the team feel like their team is foundational.
 Confidence: High
 
-Decision: Premium should enhance delight and save time.
-Priority: Creativity > Save Time > Pretty > Control.
+Decision: Optional in-app donations may support development.
+Reason: Donations can let grateful users support Roll Call without turning features, setup work, or team ownership into something users have to buy back.
 Confidence: High
 
-Decision: Premium must be visible before effort.
-Reason: No sunk-cost paywalls.
-Confidence: High
-
-Decision: Existing premium content should continue working even if entitlement changes.
-Reason: Users should not lose creative work.
+Decision: Donations must stay low-pressure and clearly optional.
+Reason: Support prompts should never feel like a paywall, guilt prompt, or interruption to live use.
 Confidence: High
 
 ## Business Rules
@@ -60,5 +56,5 @@ Confidence: High
 Decision: No social network.
 Confidence: High
 
-Decision: Premium must never affect Game Day reliability.
+Decision: Donations must never affect Game Day reliability or feature access.
 Confidence: High

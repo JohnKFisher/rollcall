@@ -4,7 +4,7 @@ Use this file as a concise project status snapshot for the current version, what
 
 ## Roll Call
 
-Current version: `1.1.0` (build `61`)
+Current version: `1.1.0` (build `63`)
 
 Status:
 - The `release/1.1` lane now includes a rating request flow that waits for ten successful Game Day sessions, counts real Game Day use even when coaches close the app directly from Game Day, waits for a later safe non-live tab before asking, shows Roll Call's own rating-request sheet, sends an explicit `Rate Roll Call` tap straight to the App Store review page, allows one later automatic retry after another ten successful sessions if the first ask is skipped, and exposes a Settings > About rating entry only after that threshold is earned.
@@ -14,7 +14,7 @@ Status:
 - The `release/1.1` lane now gives the Game Day live board a bit more outer spacing and more room between the control row and player grid so the buttons feel less crowded during live use.
 - The `release/1.1` lane now gives Clips a bit more outer spacing and more room between clip cards so the live reaction board feels less crowded too.
 - Non-Release `Developer Tools` can now launch the same rating-request sheet used in the real app, while still keeping separate native-StoreKit and direct-App-Store diagnostics.
-- `1.1.0` build `61` bumps the checked-in app build number for the current Game Day cleanup pass, including the compact mode-aware cue icons, number-placement polish, and more frequent next-batter warmup refresh when Game Day becomes active.
+- `1.1.0` build `63` bumps the checked-in app build number for the follow-up What's New and Teams/Settings copy polish pass, including the subdued Looking Ahead card and revised team-selection labels.
 - The `release/1.1` lane now ships a narrower built-in General Clips pack that favors more sports-specific cheers, chant, rhythm, and stadium atmosphere over generic audience-applause sounds, and existing teams migrate off both the older placeholder-ish pack and the broader audience-style experiment automatically.
 - The `release/1.1` lane now keeps shared player media on disk while any active team or `Recently Deleted` item still references it, and built-in announcer regeneration now cleans up old unused generated files instead of accumulating orphaned copies.
 - The `release/1.1` lane now includes a `Recovery` screen with `Recently Deleted` for teams and players: deletes move there for 60 days, restores are item-by-item, permanent delete stays manual, blocked player restores explain when the team must be restored first, and backups now read as the broader earlier-app-state tool.
@@ -22,6 +22,7 @@ Status:
 - The `release/1.1` lane now includes a default-off Keep Screen Awake setting that prevents auto-lock while Roll Call is active on Game Day or Clips, with a battery-use note in Settings.
 - The `release/1.1` lane now includes an in-app What's New sheet backed by bundled draft 1.1 summary notes, a Settings > About reopen entry, a Full Changelog web link, and a Developer Tools reset action for testing outside Release builds.
 - The `release/1.1` lane now promotes Apple Music team playlist creation from a Developer Tools experiment to a normal team action with an included/skipped preview, managed-playlist overwrite warning, duplicate handling, unresolved-song recovery before partial updates, and a small Teams-screen helper so coaches can find the option more easily without elevating it into a primary control.
+- Product policy is now all-features-free, with optional in-app donations as the only planned support path instead of premium or Plus feature gating.
 - The `release/1.1` lane now gives `.rollcall` packages a bolder full-bleed file icon treatment so exported teams are easier to recognize in Files, AirDrop, and share sheets than the older small centered badge.
 - Initial `1.0.1` App Store submission candidate with a buildable iPhone app target at [RollCall.xcodeproj](/Users/jkfisher/Documents/Coding/Roll%20Call/RollCall.xcodeproj).
 - The hotfix/iOS17 lane lowers the checked-in app and test deployment target to iOS 17.0 without changing the marketing version, build number, bundle ID, entitlements, dependencies, permissions, or feature behavior.
@@ -66,6 +67,7 @@ Status:
 - The repository is now licensed for noncommercial source-available use with Roll Call-specific attribution, source-sharing, commercial-use, and asset-boundary terms.
 
 What works now:
+- All app features are intended to remain free; optional in-app donations are the planned support path rather than premium feature gating
 - Team selection, duplication, and confirmed removal
 - Recovery now includes `Recently Deleted` for deleted teams and players, with 60-day retention, item-by-item restore, item-by-item permanent delete, and restore-time warnings when some media could not be fully recovered
 - Sensible launch routing: onboarding for no teams, `Players` for an empty selected team, and `Game Day` for a selected team with players

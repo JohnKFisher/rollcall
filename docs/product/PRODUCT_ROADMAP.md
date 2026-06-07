@@ -12,73 +12,6 @@ This roadmap replaces the earlier 1.x / Later list with a clearer release sequen
 
 ---
 
-## 1.1 - Polish & Practical Improvements
-
-**Purpose:** Ship low-risk improvements that make the existing app feel safer, cleaner, and more useful without delaying the larger audio work.
-
-This release should not become a dumping ground for every easy idea. It should remain focused on practical improvements that do not require the Song Select or Game Day revamps.
-
-### Target items
-
-- **Public changelog / What’s New**
-  - Show plain-language update notes once after app update.
-  - Avoid nagging users or interrupting Game Day.
-  
-- **Team Color as App Accent**
-  - Uses Team Color as accent on multiple pages.
-  - Works in Light and Dark mode.
-
-- **Recovery / Recently Deleted**
-  - Add recovery for deleted teams and/or deleted players if implementation is straightforward enough for this release.
-  - If this becomes larger than expected, keep it as an early 1.x trust feature rather than forcing it into 1.1.
-
-- **Minor pre-revamp Game Day cleanup**
-  - Save space.
-  - Improve clarity.
-  - Avoid changes that will be thrown away during the later Game Day revamp.
-
-- **Finish/expand built-in crowd clips**
-  - Replace any remaining weak placeholder clips with real built-in audio clips.
-  - Add useful crowd/hype sounds such as applause, cheers, and simple fallback moments.
-
-- **Keep screen awake option**
-  - Add a setting to prevent the screen from sleeping during Game Day.
-  - Should be opt-in or clearly explained if it affects battery life.
-
-- **Playlist creation from team songs**
-  - Promoted from experiment as a free 1.1 team-management convenience feature.
-  - Lets users update a managed Apple Music playlist from the team's Apple Music song cues.
-  - Shows included/skipped songs before updating and makes clear that manual edits to Roll Call's managed playlist may be overwritten.
-
-- **Rating request**
-  - Add only if it is polite and well-timed.
-  - Never show during Game Day.
-  - Prefer showing after repeated successful use.
-
-- **Better .rollcall file icon / identity polish**
-  - Refine if easy.
-  - Do not spend significant time here before audio improvements.
-
-- **Apple Music offline warning, if easy**
-  - Add a simple warning if it can be done without waiting for the full Song Select revamp.
-  - If it requires deeper picker/workflow changes, move it to 1.2.
-
-- **Donation option - research or lightweight implementation**
-  - Include as a roadmap item, but mark as tentative.
-  - May move, change, or be removed based on App Store rules, product tone, and further discussion.
-  - Should not feel like a paywall or guilt prompt.
-
-### Explicitly not in 1.1
-
-- Full Song Select revamp
-- Full Game Day revamp
-- Team Home
-- Full Clips redesign
-- Between-inning songs
-- Plus subscription/paywall architecture
-- Cloud sync
-
----
 
 ## 1.2 - Song Select & Audio Setup Revamp
 
@@ -144,6 +77,11 @@ This should be the next major feature release after 1.1. If 1.1 threatens to slo
 
 ### Possible but not required for 1.2
 
+- **Donation option - research or lightweight implementation**
+  - Include as a roadmap item, but mark as tentative.
+  - Keep it clearly optional, calm, and separate from feature access.
+  - Should not feel like a paywall or guilt prompt.
+
 - **Make Local Copy of Apple Music selection**
   - Treat as related but higher-risk.
   - This overlaps with the older “Save Apple Music clip as local file” roadmap item.
@@ -156,7 +94,7 @@ This should be the next major feature release after 1.1. If 1.1 threatens to slo
 
 - Full Game Day revamp
 - Team Home
-- Full Plus monetization
+- Any premium or Plus feature tier
 - Heavy audio engineering tools
 - Per-cue gain controls
 - Full DAW-style waveform editing
@@ -241,7 +179,7 @@ This should include light object-model cleanup so the app stops blurring togethe
 ### Likely not in 1.3
 
 - Full Team Home if it grows beyond a light entry point
-- Plus presentation packs
+- Presentation packs if they distract from the core live-use revamp
 - AI-generated announcers
 - Cloud sync
 - Remote control
@@ -309,7 +247,7 @@ These features are useful, but they should not come before fixing the main audio
 
 - **Batch editing**
   - High-value power feature.
-  - Possible Plus candidate, but basic ownership and safety should remain free.
+  - Keep it free when it ships; basic ownership and safety are never gated.
 
 - **Batch player updates**
   - Numbers, colors, photos, cue clearing, present/absent, defaults, etc.
@@ -326,7 +264,7 @@ These features are useful, but they should not come before fixing the main audio
   - Additional convenience features can be evaluated carefully.
 
 - **Easier sharing as a power feature**
-  - Potentially premium if it saves time without restricting ownership.
+  - Keep it free if it ships, even if it mainly saves time.
   - Danger zone: never make basic import/export feel paywalled.
 
 - **Support / diagnostic bundle**
@@ -342,20 +280,20 @@ These features are useful, but they should not come before fixing the main audio
 
 ---
 
-## 1.6 / 2.0 - Monetization, Plus, and Larger Experiments
+## 1.6 / 2.0 - Support Options and Larger Experiments
 
-**Purpose:** Explore optional paid features only after the free app feels complete and trustworthy.
+**Purpose:** Explore optional support options and larger feature experiments only after the free app feels complete and trustworthy.
 
 The exact version number depends on timing and product strategy. These should not block the 1.2 audio revamp or the 1.3 Game Day revamp.
 
 ### Donation / support option
 
 - **Donation option**
-  - Possible stopgap before fuller monetization.
+  - Possible support path once the app feels stable and trustworthy.
   - Research App Store rules, product tone, and whether this creates pressure or confusion.
-  - May move earlier, change form, or be removed.
+  - Keep it clearly optional and never tied to feature access.
 
-### Strong Plus candidates
+### Strong free-feature candidates
 
 - **Presentation styles**
   - Different live visual treatments.
@@ -367,20 +305,19 @@ The exact version number depends on timing and product strategy. These should no
 
 - **Announcer Studio**
   - Advanced announcer intro creation.
-  - Keep basic announcer intros available in the free app.
+  - Keep basic announcer intros simple and available to everyone.
 
 - **Batch editing**
-  - Potential premium time-saver.
+  - High-value time-saver.
   - Do not gate basic team ownership.
 
 - **Easier sharing**
-  - Only premium if it is clearly extra convenience.
   - Basic import/export remains free.
 
-- **Premium presentation packs**
-  - Clean monetization candidate if the free app remains polished.
+- **Presentation packs**
+  - Only worth doing if the free baseline stays polished and easy to understand.
 
-### Possible Plus / future candidates
+### Possible future feature candidates
 
 - **Multiple intro presets**
   - Same family as announcer template options.
@@ -393,7 +330,7 @@ The exact version number depends on timing and product strategy. These should no
   - Event/game templates, special announcements, or presentation templates.
 
 - **Advanced playlist tools**
-  - Could include future premium expansions such as alternate playlist types, lineup-only variants, or richer Apple Music management if demand appears.
+  - Could include future free expansions such as alternate playlist types, lineup-only variants, or richer Apple Music management if demand appears.
   - The basic team-song playlist remains a free 1.1 feature.
 
 - **Make Local Copy of Apple Music selection / Save Apple Music clip as local file**
@@ -439,7 +376,7 @@ Do not build unless the product strategy changes substantially:
 - Event production software
 - Social network
 - Reliability paywalls
-- Premium-gated Game Day success
+- Donation-gated or payment-gated Game Day success
 - Heavy audio engineering tools
 
 ---

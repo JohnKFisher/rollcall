@@ -39,7 +39,17 @@ private enum WhatsNewPresentation: Identifiable {
 private struct WhatsNewRelease: Identifiable {
     var id: String { version }
     let version: String
-    let bullets: [String]
+    let intro: String?
+    let highlights: [WhatsNewHighlight]
+    let lookingAhead: WhatsNewHighlight?
+}
+
+private struct WhatsNewHighlight: Identifiable {
+    let title: String
+    let detail: String
+    let systemImage: String
+
+    var id: String { title }
 }
 
 private struct WhatsNewBundle {
@@ -52,15 +62,37 @@ private struct WhatsNewBundle {
         releases: [
             WhatsNewRelease(
                 version: "1.1",
-                bullets: [
-                    "Team colors now shape more of Roll Call, including Game Day, Clips, setup progress, primary actions, and selected controls.",
-                    "Keep Screen Awake can prevent auto-lock while Game Day or Clips is open.",
-                    "Teams can update a managed Apple Music playlist from their Apple Music song cues.",
-                    "Game Day playback is more reliable when moving quickly between batters."
-                ]
+                intro: "Thanks for using Roll Call! Here are the biggest improvements in this release.",
+                highlights: [
+                    WhatsNewHighlight(
+                        title: "A Better Game Day Experience",
+                        detail: "Game Day is now cleaner and less busy, and the player grid now flows through the advancing batting order. In Settings -> Game Day, you can keep the screen awake during games, and Volume Automation now respects your pre-set volume.",
+                        systemImage: "figure.baseball"
+                    ),
+                    WhatsNewHighlight(
+                        title: "Create Apple Music Playlists",
+                        detail: "Create and update Apple Music playlists of your team songs directly from Team Actions.",
+                        systemImage: "music.note.list"
+                    ),
+                    WhatsNewHighlight(
+                        title: "Recovery & Recently Deleted",
+                        detail: "Restore deleted teams and players when mistakes happen.",
+                        systemImage: "trash.slash.circle.fill"
+                    ),
+                    WhatsNewHighlight(
+                        title: "Team Colors Throughout the App",
+                        detail: "Your team color now appears throughout Roll Call.",
+                        systemImage: "paintpalette.fill"
+                    )
+                ],
+                lookingAhead: WhatsNewHighlight(
+                    title: "Improvements to Song Selection and Trimming",
+                    detail: "Looking ahead, we're exploring refinements to song selection and trimming for a future update.",
+                    systemImage: "wand.and.stars"
+                )
             )
         ],
-        fullChangelogURL: URL(string: "https://sidelarklabs.com/rollcall/support/roll-call-support")!
+        fullChangelogURL: URL(string: "https://sidelarklabs.com/rollcall/support/roll-call-support#changelog")!
     )
 }
 
@@ -1155,7 +1187,7 @@ struct RootView: View {
                 VStack(alignment: .leading, spacing: RollCallSpacingTier.large.value) {
                     if let team = appModel.selectedTeam {
                         TeamsSectionGroup(
-                            title: "Selected Team",
+                            title: "Currently Selected Team",
                             helperText: "Lifecycle tools stay here so they do not interrupt normal team selection."
                         ) {
                             VStack(alignment: .leading, spacing: RollCallSpacingTier.standard.value) {
@@ -1227,7 +1259,7 @@ struct RootView: View {
                     }
 
                     TeamsSectionGroup(
-                        title: "Teams",
+                        title: "Select Active Team",
                         helperText: "Choose the roster Roll Call should use for setup and game day."
                     ) {
                         if appModel.state.teams.isEmpty {
@@ -1440,7 +1472,7 @@ struct RootView: View {
                         )) {
                             SettingsRowLabel(
                                 title: "Volume Automation",
-                                detail: "Let Roll Call fade Apple Music playback down from your current device volume, then restore that same volume afterward.",
+                                detail: "Fade Apple Music down at end of song clip, then restore your previous volume",
                                 systemImage: "speaker.wave.2.fill"
                             )
                         }
@@ -3758,7 +3790,7 @@ private struct WhatsNewSheet: View {
                 .padding(RollCallSpacingTier.large.value)
             }
             .accentWashBackground()
-            .navigationTitle("What's New")
+            .navigationTitle("What's New in 1.1")
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button("Done", action: onDone)
@@ -3770,26 +3802,70 @@ private struct WhatsNewSheet: View {
     @ViewBuilder
     private func releaseSection(_ release: WhatsNewRelease) -> some View {
         if bundle.releases.count == 1 {
-            releaseBulletList(release)
+            releaseHighlightList(release)
         } else {
             SettingsSectionGroup(title: release.version) {
-                releaseBulletList(release)
+                releaseHighlightList(release)
             }
         }
     }
 
-    private func releaseBulletList(_ release: WhatsNewRelease) -> some View {
+    private func releaseHighlightList(_ release: WhatsNewRelease) -> some View {
         VStack(alignment: .leading, spacing: RollCallSpacingTier.standard.value) {
-            ForEach(release.bullets, id: \.self) { bullet in
-                HStack(alignment: .top, spacing: RollCallSpacingTier.tight.value) {
-                    Image(systemName: "checkmark.circle.fill")
-                        .foregroundStyle(Color.rollCall(.ready))
-                        .padding(.top, 2)
-                    Text(bullet)
-                        .rollCallText(.body)
+            if let intro = release.intro {
+                Text(intro)
+                    .rollCallText(.body)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            ForEach(release.highlights) { highlight in
+                whatsNewHighlightCard(highlight)
+            }
+
+            if let lookingAhead = release.lookingAhead {
+                subduedLookingAheadCard(lookingAhead)
+            }
+        }
+    }
+
+    private func whatsNewHighlightCard(_ highlight: WhatsNewHighlight) -> some View {
+        SectionCard(family: .utility) {
+            HStack(alignment: .top, spacing: RollCallSpacingTier.standard.value) {
+                SettingsIcon(systemImage: highlight.systemImage, role: .accent)
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(highlight.title)
+                        .rollCallText(.cardTitle)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Text(highlight.detail)
+                        .rollCallText(.helperText)
                         .fixedSize(horizontal: false, vertical: true)
                 }
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
+        }
+    }
+
+    private func subduedLookingAheadCard(_ highlight: WhatsNewHighlight) -> some View {
+        SectionCard(family: .utility) {
+            HStack(alignment: .top, spacing: RollCallSpacingTier.standard.value) {
+                SettingsIcon(systemImage: highlight.systemImage, role: .accent)
+                    .opacity(0.65)
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Looking Ahead")
+                        .rollCallText(.helperText)
+                    Text(highlight.title)
+                        .rollCallText(.body)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Text(highlight.detail)
+                        .rollCallText(.helperText)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .foregroundStyle(.secondary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .opacity(0.82)
         }
     }
 }

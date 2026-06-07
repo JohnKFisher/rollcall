@@ -69,17 +69,17 @@ User can leave the app without feeling like they must save/finalize anything.
 
 Game Day and Clips are the only live screens. Their Light/Dark behavior, including the lineup sheet opened from Game Day, is defined in `docs/product/APPEARANCE_RULES.md`.
 
-## Premium UX
+## Donations and Support UX
 
-Do not mention Premium during onboarding.
+Do not mention donations during onboarding.
 
-Show Premium where the action happens.
+If donations are offered, place them in calm support-oriented surfaces, not in the middle of task flows.
 
-Premium features should be clearly labeled before the user invests setup effort.
+Never interrupt setup or Game Day with donation prompts.
 
-Never let a user carefully configure something and then surprise them with a paywall.
+Never let a user carefully configure something and then imply they should pay to finish using what they already set up.
 
-Free users should feel like they have a complete product.
+Users should feel like they have the complete product without paying.
 
 ## Permissions
 

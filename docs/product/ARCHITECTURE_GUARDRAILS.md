@@ -33,11 +33,7 @@ Special entries should be possible later:
 
 Export is archival, not entitlement.
 
-Exports should preserve premium metadata.
-
 Importing users should be able to play imported content.
-
-Editing premium parts may require Plus later.
 
 ## Sharing
 
@@ -49,11 +45,11 @@ Do not build cloud just because sharing exists.
 
 ## Reliability
 
-Premium never affects whether Game Day works.
+Donations never affect whether Game Day works.
 
 Reliability is free.
 
-Premium may improve preparation or presentation, but not basic success.
+All app features remain available without payment.
 
 ## Codex Working Agreement
 
