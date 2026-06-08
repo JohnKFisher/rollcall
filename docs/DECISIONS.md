@@ -4,6 +4,10 @@ Use this file as a concise decision log for project-specific architectural, beha
 
 ## 2026-06-07
 
+- Approved: Apple Music Volume Automation must capture the phone's pre-cue volume, leave playback volume untouched until fade-out begins, and restore that exact pre-cue level only after playback has fully stopped; cue handoff may discard the old pending restore only when a new cue is replacing the old one.
+  Rationale: coaches will notice even brief volume jumps before a song starts or after a fade ends, so the automation contract must be explicit and stable instead of inferred from provisional MediaPlayer behavior.
+  Status: approved
+
 - Approved: Roll Call will remain an all-features-free app, with optional in-app donations as the only planned user-payment path instead of a premium or Plus tier.
   Rationale: the product works best when coaches never have to weigh feature access against trust, setup effort, or Game Day success; optional support can exist without turning delight, convenience, or ownership into gated upgrades.
   Status: approved

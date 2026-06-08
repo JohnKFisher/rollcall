@@ -12,9 +12,11 @@ Internal notes for building public-facing changelogs. Keep entries understandabl
 
 
 ### Fixed
+- [needs review] Volume Automation now keeps Apple Music fades anchored to the phone's real current volume instead of starting too quietly after recent fades or quick back-to-back cue changes.
 
 
 ### Reliability / Data Safety
 
 
 ### Internal / Maintenance
+- Checked-in app build number is now `64` for the current 1.1 release-lane checkpoint.

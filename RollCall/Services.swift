@@ -2,6 +2,7 @@ import AVFAudio
 import AVFoundation
 import Foundation
 import MediaPlayer
+import OSLog
 @preconcurrency import MusicKit
 import Network
 import UniformTypeIdentifiers
@@ -581,13 +582,19 @@ private protocol AppleMusicCatalogPlaybackControlling: AnyObject {
     ) async throws
     func setVolume(_ volume: Float)
     func restoreVolume()
+    func discardPendingRestore()
     func stop(restoresVolume: Bool)
 }
 
 @MainActor
 private final class MediaPlayerCatalogPlaybackController: AppleMusicCatalogPlaybackControlling {
     private let player: MPMusicPlayerApplicationController
-    private var fadeAnchorVolume: Float = 1
+    private static let logger = Logger(
+        subsystem: Bundle.main.bundleIdentifier ?? "RollCall",
+        category: "AppleMusicVolumeAutomation"
+    )
+
+    private var capturedSystemVolumeBaseline: Float = 1
     private var volumeAutomationEnabledForCurrentCue = true
     private var hasPendingVolumeRestore = false
 
@@ -613,18 +620,17 @@ private final class MediaPlayerCatalogPlaybackController: AppleMusicCatalogPlayb
     ) async throws {
         volumeAutomationEnabledForCurrentCue = volumeAutomationEnabled
         if volumeAutomationEnabled {
-            // Preserve the user's real system-volume baseline until we intentionally
-            // restore it, even if rapid cue changes interrupt an in-progress fade.
-            if !hasPendingVolumeRestore {
-                fadeAnchorVolume = AVAudioSession.sharedInstance().outputVolume
-            }
+            // Volume Automation must not touch Apple Music volume before playback starts.
+            // Capture the pre-cue baseline here, only apply volume changes once fade-out
+            // begins, then restore this exact baseline after playback has fully stopped.
+            captureSystemVolumeBaseline()
             hasPendingVolumeRestore = true
         } else {
             hasPendingVolumeRestore = false
         }
         player.stop()
-        if volumeAutomationEnabled, setsInitialVolumeToMax {
-            setPlayerVolume(fadeAnchorVolume)
+        if !volumeAutomationEnabled {
+            normalizePlayerVolumeForNextCue(reason: "preplay-no-automation")
         }
 
         let descriptor = MPMusicPlayerStoreQueueDescriptor(storeIDs: [songID])
@@ -640,9 +646,6 @@ private final class MediaPlayerCatalogPlaybackController: AppleMusicCatalogPlayb
         }
 
         player.play()
-        if volumeAutomationEnabled, setsInitialVolumeToMax {
-            setPlayerVolume(fadeAnchorVolume)
-        }
 
         if startTime > 0 {
             await Task.yield()
@@ -652,13 +655,24 @@ private final class MediaPlayerCatalogPlaybackController: AppleMusicCatalogPlayb
 
     func setVolume(_ volume: Float) {
         let clamped = min(max(0, volume), 1)
-        setPlayerVolume(fadeAnchorVolume * clamped)
+        setPlayerVolume(capturedSystemVolumeBaseline * clamped)
     }
 
     func restoreVolume() {
         guard hasPendingVolumeRestore else { return }
-        setPlayerVolume(fadeAnchorVolume)
+        setPlayerVolume(capturedSystemVolumeBaseline)
+        Self.logger.debug(
+            "Restored Apple Music player volume to captured baseline \(self.formattedVolume(self.capturedSystemVolumeBaseline), privacy: .public) after playback stopped"
+        )
         hasPendingVolumeRestore = false
+    }
+
+    func discardPendingRestore() {
+        guard hasPendingVolumeRestore else { return }
+        hasPendingVolumeRestore = false
+        Self.logger.debug(
+            "Discarded pending Apple Music restore during cue handoff; next cue will recapture system volume baseline from \(self.formattedVolume(self.capturedSystemVolumeBaseline), privacy: .public)"
+        )
     }
 
     func stop(restoresVolume: Bool = true) {
@@ -667,6 +681,24 @@ private final class MediaPlayerCatalogPlaybackController: AppleMusicCatalogPlayb
             restoreVolume()
         }
         volumeAutomationEnabledForCurrentCue = false
+    }
+
+    private func captureSystemVolumeBaseline() {
+        capturedSystemVolumeBaseline = AVAudioSession.sharedInstance().outputVolume
+        Self.logger.debug(
+            "Captured system volume baseline \(self.formattedVolume(self.capturedSystemVolumeBaseline), privacy: .public) before Apple Music automation"
+        )
+    }
+
+    private func normalizePlayerVolumeForNextCue(reason: String) {
+        setPlayerVolume(1)
+        Self.logger.debug(
+            "Normalized Apple Music player volume to 1.000 for \(reason, privacy: .public)"
+        )
+    }
+
+    private func formattedVolume(_ volume: Float) -> String {
+        String(format: "%.3f", volume)
     }
 
     private func setPlayerVolume(_ volume: Float) {
@@ -727,6 +759,9 @@ private final class MusicKitTransitionCatalogPlaybackController: AppleMusicCatal
     }
 
     func restoreVolume() {
+    }
+
+    func discardPendingRestore() {
     }
 
     func stop(restoresVolume: Bool = true) {
@@ -964,6 +999,7 @@ final class CuePlaybackEngine: NSObject, ObservableObject {
         // When replacing one cue with another, keep the outgoing cue from briefly
         // restoring its old Apple Music volume before the new cue captures its own anchor.
         stop(restoresCatalogVolume: false)
+        catalogPlaybackController.discardPendingRestore()
         let sessionID = UUID()
         playbackSessionID = sessionID
         self.activeCueID = activeCueID
