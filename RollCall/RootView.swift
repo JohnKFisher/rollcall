@@ -66,7 +66,7 @@ private struct WhatsNewBundle {
                 highlights: [
                     WhatsNewHighlight(
                         title: "A Better Game Day Experience",
-                        detail: "Game Day is now cleaner and less busy, and the player grid now flows through the advancing batting order. In Settings -> Game Day, you can keep the screen awake during games, and Volume Automation now respects your pre-set volume.",
+                        detail: "Game Day is now cleaner and less busy, and the player grid now follows the batting order more clearly. In Settings -> Game Day, you can turn on an optional lineup progress hint animation, and you can set the screen to stay awake during games. Volume Automation also now respects your pre-set volume.",
                         systemImage: "figure.baseball"
                     ),
                     WhatsNewHighlight(
@@ -1462,6 +1462,18 @@ struct RootView: View {
                                 title: "Keep Screen Awake",
                                 detail: "Prevent auto-lock while Game Day or Clips is open. This can use more battery.",
                                 systemImage: "lock.open.iphone"
+                            )
+                        }
+                        .tint(selectedTeamAccentTheme.color(.primary))
+
+                        Toggle(isOn: Binding(
+                            get: { appModel.state.settings.showLineupProgressHints },
+                            set: { appModel.setShowLineupProgressHints($0) }
+                        )) {
+                            SettingsRowLabel(
+                                title: "Show Lineup Progress Hints",
+                                detail: "Show the subtle lineup flow animation when you advance batters from Next or On Deck.",
+                                systemImage: "sparkles.rectangle.stack.fill"
                             )
                         }
                         .tint(selectedTeamAccentTheme.color(.primary))
@@ -4337,6 +4349,10 @@ private struct GameDayTeamStack: View {
     let team: Team
     let onLineup: () -> Void
 
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var lineupProgressFocus: GameDayLineupProgressFocus?
+    @State private var lineupProgressTask: Task<Void, Never>?
+
     init(appModel: AppModel, team: Team, onLineup: @escaping () -> Void) {
         self.appModel = appModel
         self.team = team
@@ -4376,6 +4392,26 @@ private struct GameDayTeamStack: View {
         nextPlayer(after: lineupNowPlayer)
     }
 
+    private var hintParticipantPlayers: [Player] {
+        let excludedIDs = Set([lineupNowPlayer?.id, onDeckPlayer?.id].compactMap { $0 })
+        return gameDayGridPlayers.filter { !excludedIDs.contains($0.id) }
+    }
+
+    private var fullLineupProgressSequence: [GameDayLineupProgressFocus] {
+        var sequence = hintParticipantPlayers
+            .prefix(3)
+            .reversed()
+            .map { GameDayLineupProgressFocus.grid($0.id) }
+
+        if let onDeckPlayer {
+            sequence.append(.onDeck(onDeckPlayer.id))
+        }
+        if let lineupNowPlayer {
+            sequence.append(.nowBatting(lineupNowPlayer.id))
+        }
+        return sequence
+    }
+
     private var liveWarning: GameDayLiveWarning? {
         if presentPlayers.isEmpty {
             return GameDayLiveWarning(text: "No present players in the lineup", role: .warning)
@@ -4407,7 +4443,8 @@ private struct GameDayTeamStack: View {
                     player: displayedNowPlayer,
                     titleLabel: nowBattingLabel,
                     isActive: isActive(displayedNowPlayer),
-                    announcerMode: team.session.gameDayAnnouncerMode
+                    announcerMode: team.session.gameDayAnnouncerMode,
+                    isLineupProgressFocused: lineupProgressFocus == .nowBatting(displayedNowPlayer.id)
                 )
             } else {
                 GameDayEmptyHero(
@@ -4419,7 +4456,8 @@ private struct GameDayTeamStack: View {
             GameDayOnDeckCard(
                 appModel: appModel,
                 player: onDeckPlayer,
-                announcerMode: team.session.gameDayAnnouncerMode
+                announcerMode: team.session.gameDayAnnouncerMode,
+                isLineupProgressFocused: onDeckPlayer.map { lineupProgressFocus == .onDeck($0.id) } ?? false
             )
 
             GameDayControlRow(
@@ -4434,9 +4472,34 @@ private struct GameDayTeamStack: View {
                 players: gameDayGridPlayers,
                 nowPlayerID: lineupNowPlayer?.id,
                 onDeckPlayerID: onDeckPlayer?.id,
-                announcerMode: team.session.gameDayAnnouncerMode
+                announcerMode: team.session.gameDayAnnouncerMode,
+                lineupProgressFocusedPlayerID: lineupProgressGridPlayerID
             )
         }
+        .onChange(of: appModel.gameDayLineupProgressHintEvent) { _, event in
+            guard let event, event.teamID == team.id else { return }
+            restartLineupProgressHintIfNeeded(source: event.source)
+        }
+        .onChange(of: appModel.state.settings.showLineupProgressHints) { _, isEnabled in
+            if !isEnabled {
+                cancelLineupProgressHint()
+            }
+        }
+        .onChange(of: reduceMotion) { _, shouldReduce in
+            if shouldReduce {
+                cancelLineupProgressHint()
+            }
+        }
+        .onDisappear {
+            cancelLineupProgressHint()
+        }
+    }
+
+    private var lineupProgressGridPlayerID: UUID? {
+        if case .grid(let playerID) = lineupProgressFocus {
+            return playerID
+        }
+        return nil
     }
 
     private func isActive(_ player: Player) -> Bool {
@@ -4483,6 +4546,60 @@ private struct GameDayTeamStack: View {
     private func role(for state: ReadinessState) -> StatusChipRole {
         state == .issue ? .destructive : .warning
     }
+
+    private func restartLineupProgressHintIfNeeded(source: GameDayLineupProgressHintSource) {
+        cancelLineupProgressHint()
+        guard appModel.state.settings.showLineupProgressHints else { return }
+        guard !reduceMotion else { return }
+        let sequence = lineupProgressSequence(for: source)
+        guard !sequence.isEmpty else { return }
+
+        lineupProgressTask = Task { @MainActor in
+            defer { lineupProgressTask = nil }
+            for focus in sequence {
+                guard !Task.isCancelled else { return }
+                withAnimation(.easeInOut(duration: 0.14)) {
+                    lineupProgressFocus = focus
+                }
+                try? await Task.sleep(for: .milliseconds(140))
+            }
+
+            guard !Task.isCancelled else { return }
+            withAnimation(.easeOut(duration: 0.14)) {
+                lineupProgressFocus = nil
+            }
+        }
+    }
+
+    private func cancelLineupProgressHint() {
+        lineupProgressTask?.cancel()
+        lineupProgressTask = nil
+        lineupProgressFocus = nil
+    }
+
+    private func lineupProgressSequence(for source: GameDayLineupProgressHintSource) -> [GameDayLineupProgressFocus] {
+        switch source {
+        case .nextButton:
+            // Experimental narrower Next hint: keep only the closest grid slot,
+            // then the existing On Deck -> Now Batting handoff.
+            return Array(fullLineupProgressSequence.suffix(3))
+        case .onDeckCard:
+            var sequence: [GameDayLineupProgressFocus] = []
+            if let onDeckPlayer {
+                sequence.append(.onDeck(onDeckPlayer.id))
+            }
+            if let lineupNowPlayer {
+                sequence.append(.nowBatting(lineupNowPlayer.id))
+            }
+            return sequence
+        }
+    }
+}
+
+private enum GameDayLineupProgressFocus: Equatable {
+    case grid(UUID)
+    case onDeck(UUID)
+    case nowBatting(UUID)
 }
 
 private struct GameDayNoTeamStack: View {
@@ -4535,6 +4652,7 @@ private struct GameDayNowBattingHero: View {
     let titleLabel: String
     let isActive: Bool
     let announcerMode: GameDayAnnouncerMode
+    let isLineupProgressFocused: Bool
 
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.rollCallTeamAccentTheme) private var teamAccentTheme
@@ -4722,13 +4840,14 @@ private struct GameDayNowBattingHero: View {
         .padding(14)
         .background(
             RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .fill(isActive ? Color.rollCall(.live, surface: .live).opacity(0.24) : Color.rollCall(.neutralSurface, surface: .live))
+                .fill(heroBackgroundColor)
         )
         .overlay(
             RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .strokeBorder(isActive ? Color.rollCall(.live, surface: .live).opacity(0.95) : liveAccentOutlineColor(theme: teamAccentTheme, colorScheme: colorScheme, lightOpacity: 0.85, darkOpacity: 0.44), lineWidth: isActive ? 2 : 1)
+                .strokeBorder(heroBorderColor, lineWidth: heroBorderWidth)
         )
-        .shadow(color: isActive ? Color.rollCall(.live, surface: .live).opacity(0.20) : .clear, radius: 14, y: 8)
+        .shadow(color: heroShadowColor, radius: isActive ? 14 : 10, y: isActive ? 8 : 6)
+        .animation(.easeInOut(duration: 0.18), value: isLineupProgressFocused)
         .accessibilityElement(children: .combine)
     }
 
@@ -4752,12 +4871,50 @@ private struct GameDayNowBattingHero: View {
             }
         return appModel.playbackEngine.activeCueID == player.id
     }
+
+    private var heroBackgroundColor: Color {
+        if isActive {
+            return Color.rollCall(.live, surface: .live).opacity(0.24)
+        }
+        if isLineupProgressFocused {
+            return teamAccentTheme.color(.primary, surface: .live).opacity(0.22)
+        }
+        return Color.rollCall(.neutralSurface, surface: .live)
+    }
+
+    private var heroBorderColor: Color {
+        if isActive {
+            return Color.rollCall(.live, surface: .live).opacity(0.95)
+        }
+        if isLineupProgressFocused {
+            return teamAccentTheme.color(.primary, surface: .live).opacity(0.95)
+        }
+        return liveAccentOutlineColor(theme: teamAccentTheme, colorScheme: colorScheme, lightOpacity: 0.85, darkOpacity: 0.44)
+    }
+
+    private var heroBorderWidth: CGFloat {
+        if isActive {
+            return 2
+        }
+        return isLineupProgressFocused ? 1.75 : 1
+    }
+
+    private var heroShadowColor: Color {
+        if isActive {
+            return Color.rollCall(.live, surface: .live).opacity(0.20)
+        }
+        if isLineupProgressFocused {
+            return teamAccentTheme.color(.primary, surface: .live).opacity(0.18)
+        }
+        return .clear
+    }
 }
 
 private struct GameDayOnDeckCard: View {
     @ObservedObject var appModel: AppModel
     let player: Player?
     let announcerMode: GameDayAnnouncerMode
+    let isLineupProgressFocused: Bool
 
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.rollCallTeamAccentTheme) private var teamAccentTheme
@@ -4766,7 +4923,7 @@ private struct GameDayOnDeckCard: View {
         Group {
             if player != nil {
                 Button {
-                    appModel.advanceNextBatter()
+                    appModel.advanceNextBatterFromOnDeck()
                 } label: {
                     content
                 }
@@ -4787,11 +4944,13 @@ private struct GameDayOnDeckCard: View {
             }
         }
         .padding(12)
-        .background(Color.rollCall(.neutralSurface, surface: .live), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .background(onDeckBackgroundColor, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .strokeBorder(liveAccentOutlineColor(theme: teamAccentTheme, colorScheme: colorScheme, lightOpacity: 0.8, darkOpacity: 0.4), lineWidth: 1)
+                .strokeBorder(onDeckBorderColor, lineWidth: isLineupProgressFocused ? 2 : 1)
         )
+        .shadow(color: isLineupProgressFocused ? teamAccentTheme.color(.primary, surface: .live).opacity(0.18) : .clear, radius: 10, y: 6)
+        .animation(.easeInOut(duration: 0.18), value: isLineupProgressFocused)
         .contentShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
         .accessibilityElement(children: .combine)
     }
@@ -4888,6 +5047,20 @@ private struct GameDayOnDeckCard: View {
                 )
             ]
         }
+    }
+
+    private var onDeckBackgroundColor: Color {
+        if isLineupProgressFocused {
+            return teamAccentTheme.color(.primary, surface: .live).opacity(0.18)
+        }
+        return Color.rollCall(.neutralSurface, surface: .live)
+    }
+
+    private var onDeckBorderColor: Color {
+        if isLineupProgressFocused {
+            return teamAccentTheme.color(.primary, surface: .live).opacity(0.95)
+        }
+        return liveAccentOutlineColor(theme: teamAccentTheme, colorScheme: colorScheme, lightOpacity: 0.8, darkOpacity: 0.4)
     }
 
     @ViewBuilder
@@ -5056,6 +5229,7 @@ private struct GameDayPlayerGrid: View {
     let nowPlayerID: UUID?
     let onDeckPlayerID: UUID?
     let announcerMode: GameDayAnnouncerMode
+    let lineupProgressFocusedPlayerID: UUID?
 
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.rollCallTeamAccentTheme) private var teamAccentTheme
@@ -5065,13 +5239,15 @@ private struct GameDayPlayerGrid: View {
         players: [Player],
         nowPlayerID: UUID?,
         onDeckPlayerID: UUID?,
-        announcerMode: GameDayAnnouncerMode
+        announcerMode: GameDayAnnouncerMode,
+        lineupProgressFocusedPlayerID: UUID?
     ) {
         self.appModel = appModel
         self.players = players
         self.nowPlayerID = nowPlayerID
         self.onDeckPlayerID = onDeckPlayerID
         self.announcerMode = announcerMode
+        self.lineupProgressFocusedPlayerID = lineupProgressFocusedPlayerID
         _playbackEngine = ObservedObject(initialValue: appModel.playbackEngine)
     }
 
@@ -5081,6 +5257,7 @@ private struct GameDayPlayerGrid: View {
                 let isActive = isActive(player)
                 let tileState = tileState(for: player, isActive: isActive)
                 let cueIcons = tileCueIcons(for: player)
+                let isLineupProgressFocused = lineupProgressFocusedPlayerID == player.id
                 Button {
                     if isCurrentlyActive(player) {
                         appModel.stopPlayback()
@@ -5117,15 +5294,17 @@ private struct GameDayPlayerGrid: View {
                     .frame(maxWidth: .infinity, minHeight: 82, alignment: .topLeading)
                     .background(
                         RoundedRectangle(cornerRadius: 13, style: .continuous)
-                            .fill(tileBackground(isActive: isActive))
+                            .fill(tileBackground(isActive: isActive, isLineupProgressFocused: isLineupProgressFocused))
                     )
                     .overlay(
                         RoundedRectangle(cornerRadius: 13, style: .continuous)
-                            .strokeBorder(tileBorder(isActive: isActive), lineWidth: isActive ? 2 : 1)
+                            .strokeBorder(tileBorder(isActive: isActive, isLineupProgressFocused: isLineupProgressFocused), lineWidth: tileBorderWidth(isActive: isActive, isLineupProgressFocused: isLineupProgressFocused))
                     )
                 }
                 .buttonStyle(.plain)
+                .shadow(color: tileShadowColor(isActive: isActive, isLineupProgressFocused: isLineupProgressFocused), radius: isLineupProgressFocused ? 8 : 0, y: isLineupProgressFocused ? 4 : 0)
                 .animation(.easeInOut(duration: 0.16), value: isActive)
+                .animation(.easeInOut(duration: 0.18), value: isLineupProgressFocused)
                 .accessibilityElement(children: .ignore)
                 .accessibilityAddTraits(.isButton)
                 .accessibilityLabel(tileAccessibilityLabel(for: player, tileState: tileState))
@@ -5289,12 +5468,41 @@ private struct GameDayPlayerGrid: View {
         return "Plays this player's cue."
     }
 
-    private func tileBackground(isActive: Bool) -> Color {
-        isActive ? Color.rollCall(.live, surface: .live).opacity(0.22) : Color.rollCall(.neutralSurface, surface: .live)
+    private func tileBackground(isActive: Bool, isLineupProgressFocused: Bool) -> Color {
+        if isActive {
+            return Color.rollCall(.live, surface: .live).opacity(0.22)
+        }
+        if isLineupProgressFocused {
+            return teamAccentTheme.color(.primary, surface: .live).opacity(colorScheme == .dark ? 0.20 : 0.14)
+        }
+        return Color.rollCall(.neutralSurface, surface: .live)
     }
 
-    private func tileBorder(isActive: Bool) -> Color {
-        isActive ? Color.rollCall(.live, surface: .live).opacity(0.95) : liveAccentOutlineColor(theme: teamAccentTheme, colorScheme: colorScheme, lightOpacity: 0.8, darkOpacity: 0.4)
+    private func tileBorder(isActive: Bool, isLineupProgressFocused: Bool) -> Color {
+        if isActive {
+            return Color.rollCall(.live, surface: .live).opacity(0.95)
+        }
+        if isLineupProgressFocused {
+            return teamAccentTheme.color(.primary, surface: .live).opacity(0.95)
+        }
+        return liveAccentOutlineColor(theme: teamAccentTheme, colorScheme: colorScheme, lightOpacity: 0.8, darkOpacity: 0.4)
+    }
+
+    private func tileBorderWidth(isActive: Bool, isLineupProgressFocused: Bool) -> CGFloat {
+        if isActive {
+            return 2
+        }
+        return isLineupProgressFocused ? 1.75 : 1
+    }
+
+    private func tileShadowColor(isActive: Bool, isLineupProgressFocused: Bool) -> Color {
+        if isActive {
+            return Color.rollCall(.live, surface: .live).opacity(0.20)
+        }
+        if isLineupProgressFocused {
+            return teamAccentTheme.color(.primary, surface: .live).opacity(0.16)
+        }
+        return .clear
     }
 }
 

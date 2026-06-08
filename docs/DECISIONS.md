@@ -4,6 +4,10 @@ Use this file as a concise decision log for project-specific architectural, beha
 
 ## 2026-06-07
 
+- Approved: Game Day may show a subtle lineup-progress hint animation only when coaches explicitly advance the batting order from `Next` or `On Deck`, with a default-off Settings toggle and automatic suppression when iOS `Reduce Motion` is enabled.
+  Rationale: the live board should help coaches understand how the lineup flows toward `On Deck` and `Now Batting` without turning the screen into a constant animation surface; keeping it opt-in also avoids surprising motion for existing users while still preserving an accessible path for coaches who want the hint.
+  Status: approved
+
 - Approved: Apple Music Volume Automation must capture the phone's pre-cue volume, leave playback volume untouched until fade-out begins, and restore that exact pre-cue level only after playback has fully stopped; cue handoff may discard the old pending restore only when a new cue is replacing the old one.
   Rationale: coaches will notice even brief volume jumps before a song starts or after a fade ends, so the automation contract must be explicit and stable instead of inferred from provisional MediaPlayer behavior.
   Status: approved

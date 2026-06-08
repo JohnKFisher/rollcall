@@ -98,6 +98,7 @@ final class AppStatePersistenceTests: XCTestCase {
         let decoded = try JSONDecoder().decode(AppState.self, from: Data(json.utf8))
 
         XCTAssertEqual(decoded.ratingRequest, .default)
+        XCTAssertFalse(decoded.settings.showLineupProgressHints)
     }
 
     func testAppStateDecodeMigratesLegacySingleAttemptRatingState() throws {
@@ -137,5 +138,45 @@ final class AppStatePersistenceTests: XCTestCase {
 
         XCTAssertEqual(decoded.ratingRequest.automaticPromptAttemptCount, 1)
         XCTAssertEqual(decoded.ratingRequest.nextAutomaticPromptSessionThreshold, 5)
+        XCTAssertFalse(decoded.settings.showLineupProgressHints)
+    }
+
+    func testAppStateDecodeDefaultsMissingLineupProgressHintsSettingToDisabled() throws {
+        let json = """
+        {
+          "schemaVersion": 8,
+          "appVersion": "1.1.0",
+          "deviceIdentity": { "label": "This iPhone" },
+          "teams": [],
+          "recentlyDeleted": [],
+          "snapshots": [],
+          "experimental": {
+            "showExperimentalFeatures": false,
+            "unlockPremiumForTesting": false,
+            "appleMusicLocalCopyEnabled": false,
+            "appleMusicTeamPlaylistSyncEnabled": false,
+            "appleMusicTransitionCrossfadeEnabled": false
+          },
+          "settings": {
+            "hapticsEnabled": true,
+            "fadeOutVolumeAutomationEnabled": false,
+            "alwaysUseDarkLiveMode": true,
+            "keepScreenAwakeDuringLiveUse": false
+          },
+          "recentAppleMusicSelections": [],
+          "trimDefaults": { "preferredLength": 8 },
+          "ratingRequest": {
+            "successfulGameDaySessionCount": 0,
+            "hasPlayedQualifyingCueInCurrentGameDayVisit": false,
+            "hasCountedCurrentGameDayVisit": false,
+            "automaticPromptAttemptCount": 0,
+            "nextAutomaticPromptSessionThreshold": 10
+          }
+        }
+        """
+
+        let decoded = try JSONDecoder().decode(AppState.self, from: Data(json.utf8))
+
+        XCTAssertFalse(decoded.settings.showLineupProgressHints)
     }
 }

@@ -231,6 +231,17 @@ struct AppleMusicPlaylistRecovery: Equatable, Identifiable {
     var availableSongIDs: [String]
 }
 
+enum GameDayLineupProgressHintSource: Equatable {
+    case nextButton
+    case onDeckCard
+}
+
+struct GameDayLineupProgressHintEvent: Equatable {
+    let id = UUID()
+    let teamID: UUID
+    let source: GameDayLineupProgressHintSource
+}
+
 fileprivate struct RenderedAnnouncerAudio {
     var data: Data
     var resolvedVoiceIdentifier: String?
@@ -458,6 +469,7 @@ final class AppModel: ObservableObject {
     @Published private(set) var appleMusicPlaybackCapability: AppleMusicPlaybackCapability = .unknown
     @Published private(set) var customAnnouncerRecordingPhase: CustomAnnouncerRecordingPhase = .idle
     @Published var pendingRecoveryNavigationToken: UUID?
+    @Published private(set) var gameDayLineupProgressHintEvent: GameDayLineupProgressHintEvent?
     private var hasFinishedLaunching = false
     private let persistenceWriter = StatePersistenceWriter()
     private var persistSequence = 0
@@ -1085,6 +1097,14 @@ final class AppModel: ObservableObject {
     }
 
     func advanceNextBatter() {
+        advanceNextBatter(hintSource: .nextButton)
+    }
+
+    func advanceNextBatterFromOnDeck() {
+        advanceNextBatter(hintSource: .onDeckCard)
+    }
+
+    private func advanceNextBatter(hintSource: GameDayLineupProgressHintSource) {
         guard let teamIndex else { return }
         let present = state.teams[teamIndex].presentPlayersInBattingOrder
         guard !present.isEmpty else {
@@ -1093,6 +1113,7 @@ final class AppModel: ObservableObject {
         }
         state.teams[teamIndex].session.nextBatterIndex = (state.teams[teamIndex].session.nextBatterIndex + 1) % present.count
         state.teams[teamIndex].modifiedAt = .now
+        gameDayLineupProgressHintEvent = GameDayLineupProgressHintEvent(teamID: state.teams[teamIndex].id, source: hintSource)
         haptics.success(isEnabled: state.settings.hapticsEnabled)
         prewarmNextBatterCue()
         persist()
@@ -1130,6 +1151,11 @@ final class AppModel: ObservableObject {
 
     func setKeepScreenAwakeDuringLiveUse(_ isEnabled: Bool) {
         state.settings.keepScreenAwakeDuringLiveUse = isEnabled
+        persist()
+    }
+
+    func setShowLineupProgressHints(_ isEnabled: Bool) {
+        state.settings.showLineupProgressHints = isEnabled
         persist()
     }
 

@@ -6,6 +6,7 @@ Roll Call 1.1 adds new recovery tools, Apple Music playlist creation, expanded t
 
 • Game Day Improvements
 • Added a new flowing player list that keeps the current batter and upcoming players closer to the center of the Game Day screen.
+• Settings → Game Day now includes an optional lineup progress hint that can animate how the next player moves from the grid to On Deck and Now Batting when you advance the lineup.
 • Added a Keep Screen Awake option in Settings → Game Day.
 • Volume Automation (in Settings → Game Day) now uses your current device volume as its starting point instead of automatically jumping to full volume.
 • Refreshed the built-in crowd clip library with a more focused collection of cheers, chants, claps, and stadium sounds.

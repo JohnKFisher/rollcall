@@ -396,12 +396,14 @@ struct AppSettings: Codable, Equatable {
     var fadeOutVolumeAutomationEnabled: Bool
     var alwaysUseDarkLiveMode: Bool
     var keepScreenAwakeDuringLiveUse: Bool
+    var showLineupProgressHints: Bool
 
     static let `default` = AppSettings(
         hapticsEnabled: true,
         fadeOutVolumeAutomationEnabled: false,
         alwaysUseDarkLiveMode: true,
-        keepScreenAwakeDuringLiveUse: false
+        keepScreenAwakeDuringLiveUse: false,
+        showLineupProgressHints: false
     )
 
     enum CodingKeys: String, CodingKey {
@@ -409,18 +411,21 @@ struct AppSettings: Codable, Equatable {
         case fadeOutVolumeAutomationEnabled
         case alwaysUseDarkLiveMode
         case keepScreenAwakeDuringLiveUse
+        case showLineupProgressHints
     }
 
     init(
         hapticsEnabled: Bool,
         fadeOutVolumeAutomationEnabled: Bool,
         alwaysUseDarkLiveMode: Bool,
-        keepScreenAwakeDuringLiveUse: Bool
+        keepScreenAwakeDuringLiveUse: Bool,
+        showLineupProgressHints: Bool
     ) {
         self.hapticsEnabled = hapticsEnabled
         self.fadeOutVolumeAutomationEnabled = fadeOutVolumeAutomationEnabled
         self.alwaysUseDarkLiveMode = alwaysUseDarkLiveMode
         self.keepScreenAwakeDuringLiveUse = keepScreenAwakeDuringLiveUse
+        self.showLineupProgressHints = showLineupProgressHints
     }
 
     init(from decoder: Decoder) throws {
@@ -429,6 +434,7 @@ struct AppSettings: Codable, Equatable {
         fadeOutVolumeAutomationEnabled = try container.decodeIfPresent(Bool.self, forKey: .fadeOutVolumeAutomationEnabled) ?? false
         alwaysUseDarkLiveMode = try container.decodeIfPresent(Bool.self, forKey: .alwaysUseDarkLiveMode) ?? true
         keepScreenAwakeDuringLiveUse = try container.decodeIfPresent(Bool.self, forKey: .keepScreenAwakeDuringLiveUse) ?? false
+        showLineupProgressHints = try container.decodeIfPresent(Bool.self, forKey: .showLineupProgressHints) ?? false
     }
 }
 
