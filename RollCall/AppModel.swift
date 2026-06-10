@@ -476,6 +476,7 @@ final class AppModel: ObservableObject {
     @Published private(set) var customAnnouncerRecordingPhase: CustomAnnouncerRecordingPhase = .idle
     @Published var pendingRecoveryNavigationToken: UUID?
     @Published private(set) var gameDayLineupProgressHintEvent: GameDayLineupProgressHintEvent?
+    @Published private(set) var pendingSongClipPreparationCount = 0
     private var hasFinishedLaunching = false
     private let persistenceWriter = StatePersistenceWriter()
     private var persistSequence = 0
@@ -489,6 +490,8 @@ final class AppModel: ObservableObject {
     private var isPreparingIncomingPackagePreview = false
     private var initialStateLoadWarning: String?
     private var bannerDismissTask: Task<Void, Never>?
+    private var songClipPreparationTask: Task<Void, Never>?
+    private var lowPowerModeTask: Task<Void, Never>?
 
     let audioAssetService = AudioAssetService()
     let musicCatalogService = MusicCatalogService()
@@ -499,6 +502,8 @@ final class AppModel: ObservableObject {
     let readinessService: ReadinessService
     let playbackEngine: CuePlaybackEngine
     let customAnnouncerRecorder = CustomAnnouncerRecorder()
+    let songClipGenerationService = SongClipGenerationService()
+    private let songClipGenerationQueue = SongClipGenerationQueue()
 
     var featureFlags: FeatureFlags {
         FeatureFlags(environment: .current, experimental: state.experimental)
@@ -542,6 +547,7 @@ final class AppModel: ObservableObject {
             self?.scheduleReadinessRefresh()
         }
         observeReadinessInputs()
+        observeLowPowerMode()
         FeatureFlags.assertReleaseSafety(featureFlags)
         normalizeSelectedTeamIfNeeded()
         normalizeAllTeams()
@@ -577,6 +583,7 @@ final class AppModel: ObservableObject {
             await refreshAppleMusicPlaybackCapability()
             refreshReadiness()
             scheduleStartupGameDayWarmup()
+            scheduleAllSongClipPreparation(trigger: .appLaunch)
             persist()
             await preparePendingIncomingPackageIfNeeded()
         } catch {
@@ -798,6 +805,20 @@ final class AppModel: ObservableObject {
         prewarmNextBatterCue()
         scheduleReadinessRefresh()
         persist()
+        if previousPlayer.songAssignment != player.songAssignment {
+            if player.songAssignment == nil {
+                Task {
+                    await songClipGenerationQueue.cancel(teamID: state.teams[teamIndex].id, playerID: player.id)
+                    await refreshPendingSongClipPreparationCount()
+                }
+            } else {
+                scheduleSongClipPreparation(
+                    teamID: state.teams[teamIndex].id,
+                    playerID: player.id,
+                    trigger: .assignmentSaved
+                )
+            }
+        }
     }
 
     func removePlayer(_ player: Player) {
@@ -1339,6 +1360,39 @@ final class AppModel: ObservableObject {
         persist()
     }
 
+    func setSongClipPreparationLiveUsePaused(_ paused: Bool) {
+        Task {
+            await songClipGenerationQueue.setPaused(paused, reason: .liveUse)
+            if !paused {
+                await runSongClipPreparationQueueIfNeeded()
+            }
+            await refreshPendingSongClipPreparationCount()
+        }
+    }
+
+    func prepareSongClipForPlayerEditor(_ playerID: UUID) {
+        guard let teamID = selectedTeam?.id else { return }
+        scheduleSongClipPreparation(teamID: teamID, playerID: playerID, trigger: .playerEditor)
+    }
+
+    func prepareSongsForReadiness() {
+        scheduleAllSongClipPreparation(trigger: .readiness)
+    }
+
+    func prepareSongsAfterForeground() {
+        scheduleAllSongClipPreparation(trigger: .foreground)
+    }
+
+    func tryPreparingSongNow(for playerID: UUID) {
+        guard let teamID = selectedTeam?.id else { return }
+        scheduleSongClipPreparation(
+            teamID: teamID,
+            playerID: playerID,
+            trigger: .explicitTryNow,
+            isExplicit: true
+        )
+    }
+
     func markCurrentWhatsNewSeen() {
         state.lastSeenWhatsNewReleaseID = AppMetadata.whatsNewReleaseID
         persist()
@@ -1599,6 +1653,13 @@ final class AppModel: ObservableObject {
             }
             self.completedPackageImportTeamID = imported.id
             self.persist()
+            for player in imported.players where player.songAssignment?.privateClip != nil {
+                self.scheduleSongClipPreparation(
+                    teamID: imported.id,
+                    playerID: player.id,
+                    trigger: .importRepair
+                )
+            }
         }
     }
 
@@ -1653,6 +1714,7 @@ final class AppModel: ObservableObject {
         let status = await MusicAuthorization.request()
         await refreshAppleMusicPlaybackCapability()
         refreshReadiness()
+        scheduleAllSongClipPreparation(trigger: .authorizationChanged)
         return status
     }
 
@@ -1996,6 +2058,9 @@ final class AppModel: ObservableObject {
         if case .localAudio(let source)? = player.cue?.source {
             paths.append(source.relativePath)
         }
+        if let generatedRelativePath = player.songAssignment?.privateClip?.generatedAsset.relativePath {
+            paths.append(generatedRelativePath)
+        }
         return paths
     }
 
@@ -2310,12 +2375,270 @@ final class AppModel: ObservableObject {
         }
     }
 
+    private func observeLowPowerMode() {
+        let applyCurrentState: @MainActor () -> Void = { [weak self] in
+            guard let self else { return }
+            Task {
+                let isLowPowerModeEnabled = ProcessInfo.processInfo.isLowPowerModeEnabled
+                await self.songClipGenerationQueue.setPaused(isLowPowerModeEnabled, reason: .lowPowerMode)
+                if !isLowPowerModeEnabled {
+                    await self.runSongClipPreparationQueueIfNeeded()
+                }
+                await self.refreshPendingSongClipPreparationCount()
+            }
+        }
+        applyCurrentState()
+        lowPowerModeTask = Task { [weak self] in
+            let notifications = NotificationCenter.default.notifications(
+                named: .NSProcessInfoPowerStateDidChange
+            )
+            for await _ in notifications {
+                await MainActor.run {
+                    guard self != nil else { return }
+                    applyCurrentState()
+                }
+            }
+        }
+    }
+
+    private func scheduleAllSongClipPreparation(trigger: SongClipPreparationTrigger) {
+        for team in state.teams {
+            for player in team.players where player.songAssignment?.privateClip != nil {
+                scheduleSongClipPreparation(teamID: team.id, playerID: player.id, trigger: trigger)
+            }
+        }
+    }
+
+    private func scheduleSongClipPreparation(
+        teamID: UUID,
+        playerID: UUID,
+        trigger: SongClipPreparationTrigger,
+        isExplicit: Bool = false
+    ) {
+        guard let teamIndex = state.teams.firstIndex(where: { $0.id == teamID }),
+              let playerIndex = state.teams[teamIndex].players.firstIndex(where: { $0.id == playerID }),
+              case .privateClip(var clip)? = state.teams[teamIndex].players[playerIndex].songAssignment else {
+            return
+        }
+
+        let generationKey = clip.generationKey
+        if !isExplicit,
+           clip.generatedAsset.status == .ready,
+           clip.generatedAsset.generationKey == generationKey {
+            return
+        }
+        if !isExplicit,
+           let nextRetryAt = clip.retryMetadata.nextRetryAt,
+           nextRetryAt > .now {
+            return
+        }
+
+        if clip.generatedAsset.status != .ready {
+            clip.generatedAsset.status = .pending
+            clip.generatedAsset.generationKey = generationKey
+            state.teams[teamIndex].players[playerIndex].songAssignment = .privateClip(clip)
+            persist()
+        }
+
+        let request = SongClipPreparationRequest(
+            id: UUID(),
+            teamID: teamID,
+            playerID: playerID,
+            clipID: clip.id,
+            generationKey: generationKey,
+            trigger: trigger,
+            isExplicit: isExplicit
+        )
+        Task {
+            await songClipGenerationQueue.enqueue(request)
+            await refreshPendingSongClipPreparationCount()
+            await runSongClipPreparationQueueIfNeeded()
+        }
+    }
+
+    private func runSongClipPreparationQueueIfNeeded() async {
+        guard songClipPreparationTask == nil else { return }
+        songClipPreparationTask = Task { @MainActor [weak self] in
+            guard let self else { return }
+            defer { self.songClipPreparationTask = nil }
+
+            while !Task.isCancelled, let request = await self.songClipGenerationQueue.next() {
+                guard let clip = self.privateSongClip(
+                    teamID: request.teamID,
+                    playerID: request.playerID,
+                    matching: request
+                ) else {
+                    await self.songClipGenerationQueue.complete(request)
+                    continue
+                }
+
+                let service = self.songClipGenerationService
+                let outcome = await Task.detached(priority: .utility) {
+                    await service.prepare(clip)
+                }.value
+                self.applySongClipPreparationOutcome(outcome, request: request)
+                await self.songClipGenerationQueue.complete(request)
+                await self.refreshPendingSongClipPreparationCount()
+            }
+        }
+        await songClipPreparationTask?.value
+    }
+
+    private func privateSongClip(
+        teamID: UUID,
+        playerID: UUID,
+        matching request: SongClipPreparationRequest
+    ) -> SongClip? {
+        guard let team = state.teams.first(where: { $0.id == teamID }),
+              let player = team.players.first(where: { $0.id == playerID }),
+              case .privateClip(let clip)? = player.songAssignment,
+              request.matches(clip) else {
+            return nil
+        }
+        return clip
+    }
+
+    private func applySongClipPreparationOutcome(
+        _ outcome: SongClipPreparationOutcome,
+        request: SongClipPreparationRequest
+    ) {
+        guard let teamIndex = state.teams.firstIndex(where: { $0.id == request.teamID }),
+              let playerIndex = state.teams[teamIndex].players.firstIndex(where: { $0.id == request.playerID }),
+              case .privateClip(var clip)? = state.teams[teamIndex].players[playerIndex].songAssignment,
+              request.matches(clip) else {
+            if case .generated(let asset) = outcome {
+                audioAssetService.removeAsset(relativePath: asset.relativePath)
+            }
+            return
+        }
+
+        let previousGeneratedPath = clip.generatedAsset.status == .ready
+            ? clip.generatedAsset.relativePath
+            : nil
+        clip.retryMetadata.lastAttemptAt = .now
+
+        switch outcome {
+        case .generated(let asset):
+            clip.generatedAsset = asset
+            clip.readinessInputs = SongClipReadinessInputs(
+                playback: .localClipReady,
+                sourceAvailableOnDevice: true,
+                downloadedOnDevice: true
+            )
+            clip.portabilityInputs = SongClipPortabilityInputs(
+                portability: .portableLocalClip,
+                generatedAssetCanBeExported: true
+            )
+            clip.retryMetadata = .none
+        case .sourceBacked(let downloadedOnDevice):
+            if clip.generatedAsset.status != .ready {
+                clip.generatedAsset = GeneratedClipAsset(
+                    relativePath: nil,
+                    status: .none,
+                    renderedSelection: nil,
+                    generationKey: request.generationKey,
+                    generatedAt: nil
+                )
+            }
+            clip.readinessInputs = SongClipReadinessInputs(
+                playback: downloadedOnDevice ? .sourceBackedDownloaded : .sourceBackedReady,
+                sourceAvailableOnDevice: true,
+                downloadedOnDevice: downloadedOnDevice
+            )
+            clip.portabilityInputs = SongClipPortabilityInputs(
+                portability: .sourceReferenceOnly,
+                generatedAssetCanBeExported: false
+            )
+            clip.retryMetadata = .none
+        case .needsAppleMusic:
+            let hasReadyGeneratedAsset = clip.generatedAsset.status == .ready
+            if !hasReadyGeneratedAsset {
+                clip.generatedAsset.status = .failedRetryable
+                clip.readinessInputs = SongClipReadinessInputs(
+                    playback: .needsAppleMusic,
+                    sourceAvailableOnDevice: false,
+                    downloadedOnDevice: false
+                )
+            }
+            recordPreparationFailure(
+                on: &clip,
+                code: .musicAuthorizationRequired,
+                retryable: true,
+                request: request
+            )
+        case .failed(let code, let retryable):
+            let hasReadyGeneratedAsset = clip.generatedAsset.status == .ready
+            if !hasReadyGeneratedAsset {
+                clip.generatedAsset.status = retryable ? .failedRetryable : .failedPermanent
+                if !retryable {
+                    clip.readinessInputs.playback = .needsRepair
+                    clip.readinessInputs.sourceAvailableOnDevice = false
+                }
+            }
+            recordPreparationFailure(on: &clip, code: code, retryable: retryable, request: request)
+        }
+
+        state.teams[teamIndex].players[playerIndex].songAssignment = .privateClip(clip)
+        state.teams[teamIndex].modifiedAt = .now
+        persist()
+        scheduleReadinessRefresh()
+
+        if let previousGeneratedPath,
+           previousGeneratedPath != clip.generatedAsset.relativePath {
+            removeAssetIfUnreferenced(relativePath: previousGeneratedPath)
+        }
+    }
+
+    private func recordPreparationFailure(
+        on clip: inout SongClip,
+        code: SongClipPreparationFailureCode,
+        retryable: Bool,
+        request: SongClipPreparationRequest
+    ) {
+        clip.retryMetadata.attemptCount += 1
+        clip.retryMetadata.lastFailureCode = code.rawValue
+        guard retryable, clip.retryMetadata.attemptCount < 3 else {
+            clip.retryMetadata.nextRetryAt = nil
+            return
+        }
+
+        let delay: TimeInterval = clip.retryMetadata.attemptCount == 1 ? 30 : 120
+        let retryAt = Date().addingTimeInterval(delay)
+        clip.retryMetadata.nextRetryAt = retryAt
+        let teamID = request.teamID
+        let playerID = request.playerID
+        Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .seconds(delay))
+            guard let self, !Task.isCancelled else { return }
+            self.scheduleSongClipPreparation(
+                teamID: teamID,
+                playerID: playerID,
+                trigger: .retry
+            )
+        }
+    }
+
+    private func refreshPendingSongClipPreparationCount() async {
+        pendingSongClipPreparationCount = await songClipGenerationQueue.pendingCount()
+    }
+
     private func persist() {
         let snapshot = state
+        let destinationURL: URL
+        do {
+            destinationURL = try AppPaths.stateURL()
+        } catch {
+            lastError = error.localizedDescription
+            return
+        }
         persistSequence += 1
         let sequence = persistSequence
         Task(priority: .utility) { [persistenceWriter] in
-            let errorDescription = await persistenceWriter.enqueue(snapshot, sequence: sequence)
+            let errorDescription = await persistenceWriter.enqueue(
+                snapshot,
+                sequence: sequence,
+                destinationURL: destinationURL
+            )
 
             if let errorDescription {
                 await MainActor.run {
@@ -2375,11 +2698,11 @@ final class AppModel: ObservableObject {
         }
     }
 
-    nonisolated fileprivate static func write(_ state: AppState) throws {
+    nonisolated fileprivate static func write(_ state: AppState, to destinationURL: URL) throws {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
         encoder.dateEncodingStrategy = .iso8601
-        try encoder.encode(state).write(to: AppPaths.stateURL(), options: .atomic)
+        try encoder.encode(state).write(to: destinationURL, options: .atomic)
     }
 
     private func busy(_ operation: @escaping () async throws -> Void) async {
@@ -2765,13 +3088,13 @@ struct GeneratedAnnouncerAsset {
 
 private actor StatePersistenceWriter {
     private var latestSequence = 0
-    private var pending: (state: AppState, sequence: Int)?
+    private var pending: (state: AppState, sequence: Int, destinationURL: URL)?
     private var isWriting = false
 
-    func enqueue(_ state: AppState, sequence: Int) async -> String? {
+    func enqueue(_ state: AppState, sequence: Int, destinationURL: URL) async -> String? {
         guard sequence >= latestSequence else { return nil }
         latestSequence = sequence
-        pending = (state, sequence)
+        pending = (state, sequence, destinationURL)
 
         guard !isWriting else { return nil }
         isWriting = true
@@ -2781,7 +3104,7 @@ private actor StatePersistenceWriter {
         while let next = pending {
             pending = nil
             do {
-                try AppModel.write(next.state)
+                try AppModel.write(next.state, to: next.destinationURL)
             } catch {
                 latestError = error.localizedDescription
             }

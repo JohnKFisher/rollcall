@@ -2,6 +2,18 @@
 
 Last updated: 2026-06-09
 
+## 2026-06-10 Phase 2 Follow-Up
+
+The Phase 2 SDK/API review confirmed that public iOS APIs do not let Roll Call request or control an Apple Music offline download. `MPMediaLibrary.addItem(withProductID:)` can add an item to the library, but that is not a download request and provides no reliable download-state workflow.
+
+Phase 2 therefore implements only the supported paths:
+
+- inspect existing Music Library items,
+- observe `isCloudItem`,
+- use `assetURL` only when iOS exposes a readable file,
+- generate from that readable file,
+- otherwise retain normal source-backed Apple Music playback.
+
 ## Purpose
 
 Phase 0 adds a non-Release in-app `Music Render Probe` so Roll Call can test real renderability inside the app's own bundle, permission, and playback context before the broader 1.2 cue revamp changes land.

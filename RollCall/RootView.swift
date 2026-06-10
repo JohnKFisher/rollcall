@@ -407,6 +407,7 @@ struct RootView: View {
     }
 
     private func presentPlayerEditor(for player: Player) {
+        appModel.prepareSongClipForPlayerEditor(player.id)
         playerEditorRoute = PlayerEditorRoute(id: player.id)
     }
 
@@ -448,6 +449,7 @@ struct RootView: View {
 
     private func handleSelectedTabChange(from previousTab: RootTab, to newTab: RootTab) {
         updateIdleTimer()
+        appModel.setSongClipPreparationLiveUsePaused(newTab == .gameDay || newTab == .generalClips)
 
         if newTab == .gameDay {
             appModel.beginGameDayVisitForRatingIfNeeded()
@@ -456,6 +458,9 @@ struct RootView: View {
         if previousTab == .gameDay, newTab != .gameDay {
             appModel.finalizeGameDayVisitForRatingIfNeeded()
         }
+        if newTab == .readiness {
+            appModel.prepareSongsForReadiness()
+        }
     }
 
     private func handleScenePhaseChange(from previousPhase: ScenePhase, to newPhase: ScenePhase) {
@@ -463,6 +468,9 @@ struct RootView: View {
 
         if newPhase == .active, selectedTab == .gameDay {
             appModel.refreshGameDayWarmup()
+        }
+        if newPhase == .active {
+            appModel.prepareSongsAfterForeground()
         }
 
         guard previousPhase == .active, newPhase != .active, selectedTab == .gameDay else { return }
@@ -475,8 +483,14 @@ struct RootView: View {
     }
 
     private func finishLaunchingTask() async {
+        appModel.setSongClipPreparationLiveUsePaused(
+            selectedTab == .gameDay || selectedTab == .generalClips
+        )
         await appModel.finishLaunchingIfNeeded()
         resolveInitialTabIfNeeded()
+        appModel.setSongClipPreparationLiveUsePaused(
+            selectedTab == .gameDay || selectedTab == .generalClips
+        )
         if selectedTab == .gameDay {
             appModel.beginGameDayVisitForRatingIfNeeded()
             appModel.refreshGameDayWarmup()
@@ -680,6 +694,9 @@ struct RootView: View {
         rootSheetContent
             .onAppear {
                 updateIdleTimer()
+                appModel.setSongClipPreparationLiveUsePaused(
+                    selectedTab == .gameDay || selectedTab == .generalClips
+                )
             }
             .onDisappear {
                 UIApplication.shared.isIdleTimerDisabled = false

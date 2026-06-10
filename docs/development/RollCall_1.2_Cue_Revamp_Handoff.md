@@ -689,6 +689,8 @@ Tests:
 
 ### Phase 2: Generation And Reliability Engine
 
+Status: complete as of 2026-06-10, with the Apple Music download-request branch closed as unsupported by public APIs.
+
 Add:
 
 - `SongClipGenerationService`
@@ -705,6 +707,17 @@ Scope:
 - local generation for readable-local media
 - bounded reliability work for Apple Music-linked songs
 - optional auto-download help if legitimate API support exists
+
+Phase 2 result:
+
+- readable app-owned and device-library sources can render generated `.m4a` clips
+- preparation is serialized, key-validated, retry-bounded, and paused around live use/Low Power Mode
+- existing ready generated assets survive failed regeneration attempts
+- Apple Music library state and readable `assetURL` availability can be observed
+- iOS exposes no public API to request or control an Apple Music offline download
+- `MPMediaLibrary.addItem(withProductID:)` only adds to the library and is not used as a download substitute
+- `autoDownloadEligibleSongsEnabled` remains off because the promised behavior cannot be implemented honestly
+- generated-clip package/export/import handling remains Phase 5
 
 Tests:
 

@@ -1095,14 +1095,28 @@ enum AppPaths {
         return url
     }
 
+    static func generatedClipsDirectory() throws -> URL {
+        let url = try baseDirectory().appendingPathComponent("GeneratedClips", isDirectory: true)
+        try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+        return url
+    }
+
     static func assetURL(relativePath: String) throws -> URL {
         let trimmed = relativePath.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty, !trimmed.hasPrefix("/") else { throw AppError.invalidImport }
 
-        return try trimmed
-            .split(separator: "/")
-            .reduce(assetsDirectory()) { partialURL, component in
-                let part = String(component)
+        let components = trimmed.split(separator: "/").map(String.init)
+        let rootURL: URL
+        let pathComponents: ArraySlice<String>
+        if components.first == "GeneratedClips" {
+            rootURL = try generatedClipsDirectory()
+            pathComponents = components.dropFirst()
+        } else {
+            rootURL = try assetsDirectory()
+            pathComponents = components[...]
+        }
+
+        return try pathComponents.reduce(rootURL) { partialURL, part in
                 guard part != ".", part != ".." else { throw AppError.invalidImport }
                 return partialURL.appendingPathComponent(part)
             }

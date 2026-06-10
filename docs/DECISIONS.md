@@ -4,6 +4,14 @@ Use this file as a concise decision log for project-specific architectural, beha
 
 ## 2026-06-10
 
+- Approved: Roll Call 1.2 will not attempt to request Apple Music offline downloads because the public iOS SDK exposes library addition but no supported API to request or control a Music download; `MPMediaLibrary.addItem(withProductID:)` will not be used as a misleading substitute.
+  Rationale: adding a song to the Music Library does not guarantee that iOS downloads it, does not expose download progress or completion, and would silently mutate the user's library without delivering the promised reliability behavior. Roll Call may detect existing device-library/download state and use a readable `MPMediaItem.assetURL` when one is legitimately available.
+  Status: approved
+
+- Approved: cue preparation runs through a one-job-at-a-time queue, stores job truth on `SongClip`, uses deterministic generation keys to reject stale results, preserves an older working generated asset when regeneration fails, pauses during Game Day/Clips and Low Power Mode, and permits explicit `Try Now` to bypass only the Low Power pause.
+  Rationale: derived audio work must remain bounded, cancellable by replacement, safe around live use, and unable to overwrite a known-good clip with a late or failed result.
+  Status: approved
+
 - Approved: Roll Call 1.2 will generate local song clips only when public APIs expose a genuinely readable local source; Apple Music-linked songs remain a normal source-backed playback path, downloaded availability may improve readiness on the current device without implying portability, and no remote policy switch or unsupported capture/extraction behavior will be added.
   Rationale: the Phase 0 probe successfully narrowed the public-API reality and did not support the earlier assumption that Apple Music songs could generally be localized, so the product must preserve the easy Apple Music path while reporting readiness and portability honestly.
   Status: approved

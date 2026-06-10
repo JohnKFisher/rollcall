@@ -1,4 +1,5 @@
 import Foundation
+import CryptoKit
 
 enum SongSource: Codable, Equatable {
     case appleMusic(AppleMusicSource)
@@ -129,6 +130,14 @@ struct SongClipRetryMetadata: Codable, Equatable {
     )
 }
 
+enum SongClipPreparationFailureCode: String, Codable, Equatable {
+    case sourceMissing
+    case sourceUnreadable
+    case renderFailed
+    case musicAuthorizationRequired
+    case transientSystemFailure
+}
+
 enum AppleMusicHandlingPolicy: String, Codable, Equatable {
     case readableLocalOnly
 }
@@ -142,7 +151,7 @@ struct SongClipPolicy: Codable, Equatable {
     static let current = SongClipPolicy(
         localClipGenerationEnabled: true,
         appleMusicHandlingPolicy: .readableLocalOnly,
-        autoDownloadEligibleSongsEnabled: true,
+        autoDownloadEligibleSongsEnabled: false,
         generationPolicyVersion: 1
     )
 }
@@ -214,6 +223,30 @@ struct SongClip: Codable, Equatable, Identifiable {
         )
     }
 
+    var generationKey: String {
+        let sourceKey: String
+        switch originalSource {
+        case .appleMusic(let source):
+            sourceKey = "appleMusic|\(source.songID)"
+        case .localAudio(let source):
+            sourceKey = "localAudio|\(source.id.uuidString)|\(source.relativePath)"
+        case .builtInClip(let source):
+            sourceKey = "builtInClip|\(source.id)"
+        }
+
+        let rawValue = [
+            sourceKey,
+            String(format: "%.3f", requestedSelection.startTime),
+            String(format: "%.3f", requestedSelection.duration),
+            String(format: "%.3f", requestedSelection.fadeOutDuration),
+            String(policy.generationPolicyVersion),
+            policy.appleMusicHandlingPolicy.rawValue
+        ].joined(separator: "|")
+        return SHA256.hash(data: Data(rawValue.utf8))
+            .map { String(format: "%02x", $0) }
+            .joined()
+    }
+
     private static func defaultReadiness(for source: CueSource) -> SongClipReadinessInputs {
         switch source {
         case .localAudio, .builtInClip:
@@ -245,6 +278,39 @@ struct SongClip: Codable, Equatable, Identifiable {
             )
         }
     }
+}
+
+enum SongClipPreparationTrigger: String, Codable, Equatable {
+    case assignmentSaved
+    case appLaunch
+    case foreground
+    case playerEditor
+    case readiness
+    case authorizationChanged
+    case importRepair
+    case explicitTryNow
+    case retry
+}
+
+struct SongClipPreparationRequest: Equatable, Identifiable {
+    var id: UUID
+    var teamID: UUID
+    var playerID: UUID
+    var clipID: UUID
+    var generationKey: String
+    var trigger: SongClipPreparationTrigger
+    var isExplicit: Bool
+
+    func matches(_ clip: SongClip) -> Bool {
+        clip.id == clipID && clip.generationKey == generationKey
+    }
+}
+
+enum SongClipPreparationOutcome: Equatable {
+    case generated(GeneratedClipAsset)
+    case sourceBacked(downloadedOnDevice: Bool)
+    case needsAppleMusic
+    case failed(code: SongClipPreparationFailureCode, retryable: Bool)
 }
 
 enum SongAssignment: Codable, Equatable {
