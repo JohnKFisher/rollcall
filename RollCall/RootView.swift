@@ -6366,13 +6366,11 @@ private struct PlayerEditorSheet: View {
     @Environment(\.dismiss) private var dismiss
     @ObservedObject var appModel: AppModel
     @State var player: Player
-    @State private var importPresented = false
     @State private var photoItem: PhotosPickerItem?
     @State private var pendingPhotoCrop: PendingPhotoCrop?
     @State private var photoCropFallbackTask: Task<Void, Never>?
     @State private var didCropperRender = false
-    @State private var showAppleMusicPicker = false
-    @State private var showAppleMusicAccessPrimer = false
+    @State private var showSongPicker = false
     @State private var trimMode: TrimSuggestionMode = .suggestedHook
     @State private var showAdvancedTrim = false
     @State private var liveScrubTask: Task<Void, Never>?
@@ -6439,7 +6437,7 @@ private struct PlayerEditorSheet: View {
                                 }
 
                                 Button {
-                                    presentAppleMusicPicker()
+                                    showSongPicker = true
                                 } label: {
                                     Label("Change Song", systemImage: "music.note.list")
                                 }
@@ -6458,7 +6456,7 @@ private struct PlayerEditorSheet: View {
                                 }
 
                                 Button {
-                                    presentAppleMusicPicker()
+                                    showSongPicker = true
                                 } label: {
                                     Label("Choose Song", systemImage: "music.note")
                                         .frame(maxWidth: .infinity)
@@ -6467,22 +6465,7 @@ private struct PlayerEditorSheet: View {
                             }
                         }
 
-                        DisclosureGroup("Other Audio Options") {
-                            Button {
-                                importPresented = true
-                            } label: {
-                                Label("Import Audio or Video", systemImage: "square.and.arrow.down")
-                            }
-                            .rollCallButtonStyle(.secondary)
-                            .padding(.top, 6)
-
-                            Text("Use a device-owned audio or video file when Apple Music is not the right source.")
-                                .rollCallText(.helperText)
-                                .padding(.top, 2)
-                        }
-                        .font(.subheadline.weight(.semibold))
-
-                        Text("Song choices and imported audio save right away. Use Save for name, number, photo, and trim edits.")
+                        Text("Choose or change the song, shape the clip, then save it before returning here.")
                             .rollCallText(.helperText)
 
                         if player.cue != nil {
@@ -6500,16 +6483,6 @@ private struct PlayerEditorSheet: View {
                     PlayerEditorSectionHeader("Song Cue")
                 }
                 .playerEditorListRow()
-
-                if let cue = player.cue {
-                    Section {
-                        cueTrimSection(for: cue)
-                            .rollCallCard(.utility)
-                    } header: {
-                        PlayerEditorSectionHeader("Fine Tune Clip")
-                    }
-                    .playerEditorListRow()
-                }
 
                 Section {
                     VStack(alignment: .leading, spacing: 12) {
@@ -6662,44 +6635,14 @@ private struct PlayerEditorSheet: View {
             } message: {
                 Text("Closing now will lose unsaved name, number, photo, and trim edits. Song, imported audio, and Announcement Cue changes are already saved.")
             }
-            .alert("Use Apple Music?", isPresented: $showAppleMusicAccessPrimer) {
-                Button("Not Now", role: .cancel) { }
-                Button("Continue") {
-                    Task {
-                        await appModel.requestAppleMusicAccess()
-                        await MainActor.run {
-                            showAppleMusicPicker = true
-                        }
+            .sheet(isPresented: $showSongPicker) {
+                SongPickerFlow(
+                    appModel: appModel,
+                    onSave: { cue in
+                        appModel.saveSongCue(cue, to: player.id)
+                        player.cue = cue
                     }
-                }
-            } message: {
-                Text("Roll Call uses Apple Music access when you choose songs, play full tracks your subscription allows, or update team playlists. Song playback depends on your subscription and what Apple Music makes available on this device.")
-            }
-            .fileImporter(isPresented: $importPresented, allowedContentTypes: [.audio, .movie], allowsMultipleSelection: false) { result in
-                if case .success(let urls) = result, let url = urls.first {
-                    let currentPlayer = player
-                    let previousCueID = currentPlayer.cue?.id
-                    Task {
-                        await appModel.importMedia(from: url, for: currentPlayer)
-                        await MainActor.run { refreshPlayerFromModel(enableStartTrimForCueReplacing: previousCueID) }
-                    }
-                }
-            }
-            .sheet(isPresented: $showAppleMusicPicker) {
-                AppleMusicPickerSheet(appModel: appModel) { result in
-                    let currentPlayer = player
-                    let previousCueID = currentPlayer.cue?.id
-                    Task {
-                        let didAssign = await appModel.assignAppleMusic(result, to: currentPlayer)
-                        guard didAssign else { return }
-                        await MainActor.run {
-                            refreshPlayerFromModel(enableStartTrimForCueReplacing: previousCueID)
-                            trimMode = .suggestedHook
-                            applyTrimSuggestion(mode: .suggestedHook)
-                            showAppleMusicPicker = false
-                        }
-                    }
-                }
+                )
             }
             .sheet(isPresented: $showAdvancedTrim) {
                 if player.cue != nil {
@@ -6735,14 +6678,6 @@ private struct PlayerEditorSheet: View {
                     }
                 )
             }
-        }
-    }
-
-    private func presentAppleMusicPicker() {
-        if appModel.needsAppleMusicAccessPrompt {
-            showAppleMusicAccessPrimer = true
-        } else {
-            showAppleMusicPicker = true
         }
     }
 
@@ -6835,6 +6770,34 @@ private struct PlayerEditorSheet: View {
                     .rollCallText(.body)
             }
             cueSourceChip(for: cue)
+            savedSongReadinessChip
+        }
+    }
+
+    @ViewBuilder
+    private var savedSongReadinessChip: some View {
+        if let savedPlayer = appModel.selectedTeam?.players.first(where: { $0.id == player.id }),
+           case .privateClip(let clip)? = savedPlayer.songAssignment {
+            switch clip.generatedAsset.status {
+            case .pending:
+                StatusChip(
+                    text: "Preparing",
+                    role: .neutral,
+                    systemImage: "clock",
+                    emphasis: .subdued
+                )
+            default:
+                switch clip.readinessInputs.playback {
+                case .localClipReady:
+                    StatusChip(text: "Ready", role: .ready, systemImage: "checkmark.circle", emphasis: .subdued)
+                case .sourceBackedReady, .sourceBackedDownloaded:
+                    StatusChip(text: "Ready Here", role: .ready, systemImage: "iphone", emphasis: .subdued)
+                case .needsAppleMusic:
+                    StatusChip(text: "Needs Apple Music", role: .warning, systemImage: "music.note", emphasis: .subdued)
+                case .needsRepair:
+                    StatusChip(text: "Needs Repair", role: .destructive, systemImage: "wrench.and.screwdriver", emphasis: .subdued)
+                }
+            }
         }
     }
 

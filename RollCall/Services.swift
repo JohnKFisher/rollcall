@@ -261,7 +261,7 @@ struct AudioAssetService: Sendable {
     }
 }
 
-struct MusicSearchResult: Identifiable {
+struct MusicSearchResult: Identifiable, Hashable {
     var id: String { songID }
     var songID: String
     var title: String

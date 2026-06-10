@@ -6,9 +6,12 @@ Internal notes for building public-facing changelogs. Keep entries understandabl
 
 ### Added
 
+- Added a Music Library-first song picker with Recently Added, Artists, Albums, Songs, Library search, explicit Apple Music search, and an optional Files fallback. [public candidate] [needs review]
+- Added a focused clip editor with a draggable song window, clip-length choices up to 20 seconds, preview, advanced start/fade controls, and a simple saved readiness result. [public candidate] [needs review]
 
 ### Changed
 
+- Choosing a song or imported file now creates a draft first. The player's existing Game Day cue is not replaced until Save is tapped in the clip editor. [public candidate] [needs review]
 
 ### Fixed
 

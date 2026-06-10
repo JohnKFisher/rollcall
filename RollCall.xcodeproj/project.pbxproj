@@ -42,6 +42,7 @@
 		A70000000000000000000001 /* SongClipModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A70000000000000000000101 /* SongClipModels.swift */; };
 		A70000000000000000000002 /* SongClipGenerationService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A70000000000000000000102 /* SongClipGenerationService.swift */; };
 		A70000000000000000000003 /* SongClipGenerationQueue.swift in Sources */ = {isa = PBXBuildFile; fileRef = A70000000000000000000103 /* SongClipGenerationQueue.swift */; };
+		A70000000000000000000004 /* SongPickerFlow.swift in Sources */ = {isa = PBXBuildFile; fileRef = A70000000000000000000104 /* SongPickerFlow.swift */; };
 		A60000000000000000000001 /* MusicRenderProbeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A60000000000000000000101 /* MusicRenderProbeTests.swift */; };
 		A60000000000000000000002 /* SongClipGenerationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A60000000000000000000102 /* SongClipGenerationTests.swift */; };
 /* End PBXBuildFile section */
@@ -94,6 +95,7 @@
 		A70000000000000000000101 /* SongClipModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SongClipModels.swift; sourceTree = "<group>"; };
 		A70000000000000000000102 /* SongClipGenerationService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SongClipGenerationService.swift; sourceTree = "<group>"; };
 		A70000000000000000000103 /* SongClipGenerationQueue.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SongClipGenerationQueue.swift; sourceTree = "<group>"; };
+		A70000000000000000000104 /* SongPickerFlow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SongPickerFlow.swift; sourceTree = "<group>"; };
 		A60000000000000000000101 /* MusicRenderProbeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MusicRenderProbeTests.swift; sourceTree = "<group>"; };
 		A60000000000000000000102 /* SongClipGenerationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SongClipGenerationTests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
@@ -134,6 +136,7 @@
 				A70000000000000000000101 /* SongClipModels.swift */,
 				A70000000000000000000102 /* SongClipGenerationService.swift */,
 				A70000000000000000000103 /* SongClipGenerationQueue.swift */,
+				A70000000000000000000104 /* SongPickerFlow.swift */,
 				A10000000000000000000103 /* Services.swift */,
 				A10000000000000000000104 /* AppModel.swift */,
 				A10000000000000000000105 /* RootView.swift */,
@@ -310,6 +313,7 @@
 				A70000000000000000000001 /* SongClipModels.swift in Sources */,
 				A70000000000000000000002 /* SongClipGenerationService.swift in Sources */,
 				A70000000000000000000003 /* SongClipGenerationQueue.swift in Sources */,
+				A70000000000000000000004 /* SongPickerFlow.swift in Sources */,
 				A10000000000000000000003 /* Services.swift in Sources */,
 				A10000000000000000000004 /* AppModel.swift in Sources */,
 				A10000000000000000000005 /* RootView.swift in Sources */,

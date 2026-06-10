@@ -4,6 +4,10 @@ Use this file as a concise decision log for project-specific architectural, beha
 
 ## 2026-06-10
 
+- Approved: the 1.2 player song flow uses one Music Library-first `Choose Song` picker followed by a draft `Make Your Clip` editor; selecting or importing a source does not change the player until the editor's explicit Save action.
+  Rationale: coaches should be able to browse, preview, drag the selected window, and change its length without accidentally replacing a working Game Day cue. Apple Music catalog search remains an explicit Search scope and Files remains an optional fallback.
+  Status: approved
+
 - Approved: Roll Call 1.2 will not attempt to request Apple Music offline downloads because the public iOS SDK exposes library addition but no supported API to request or control a Music download; `MPMediaLibrary.addItem(withProductID:)` will not be used as a misleading substitute.
   Rationale: adding a song to the Music Library does not guarantee that iOS downloads it, does not expose download progress or completion, and would silently mutate the user's library without delivering the promised reliability behavior. Roll Call may detect existing device-library/download state and use a readable `MPMediaItem.assetURL` when one is legitimately available.
   Status: approved

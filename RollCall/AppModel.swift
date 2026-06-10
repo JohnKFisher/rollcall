@@ -917,6 +917,47 @@ final class AppModel: ObservableObject {
         }
     }
 
+    func makeAppleMusicCueDraft(_ result: MusicSearchResult) -> Cue {
+        makeDefaultAppleMusicCue(for: result)
+    }
+
+    func makeImportedSongCueDraft(from url: URL) async -> Cue? {
+        do {
+            let source = try await audioAssetService.importMedia(from: url)
+            return .localDefault(source: source)
+        } catch {
+            lastError = error.localizedDescription
+            return nil
+        }
+    }
+
+    func discardImportedSongCueDraft(_ cue: Cue) {
+        guard case .localAudio(let source) = cue.source else { return }
+        audioAssetService.removeAsset(relativePath: source.relativePath)
+    }
+
+    func saveSongCue(_ cue: Cue, to playerID: UUID) {
+        guard let teamIndex,
+              let playerIndex = state.teams[teamIndex].players.firstIndex(where: { $0.id == playerID }) else {
+            return
+        }
+        var updated = state.teams[teamIndex].players[playerIndex]
+        updated.cue = cue
+        if case .appleMusic(let source) = cue.source {
+            rememberAppleMusicSelection(
+                MusicSearchResult(
+                    songID: source.songID,
+                    title: source.title,
+                    artistName: source.artistName,
+                    duration: source.duration,
+                    previewURL: source.previewURL,
+                    isCatalogBacked: source.isCatalogBacked ?? true
+                )
+            )
+        }
+        updatePlayer(updated)
+    }
+
     func importMedia(from url: URL, for player: Player) async {
         await busy {
             let source = try await self.audioAssetService.importMedia(from: url)

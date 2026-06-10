@@ -730,6 +730,8 @@ Tests:
 
 ### Phase 3: Picker And Editor
 
+Status: implemented on 2026-06-10; simulator build, launch, navigation smoke check, and the existing 59-test executed suite pass. Real-device Music library/catalog and audible preview verification remain open.
+
 Create reusable flow:
 
 - `SongPickerView`
@@ -755,6 +757,15 @@ Editor:
 - preview selected clip
 - advanced trim retained
 - readiness/result summary after save
+
+Implemented notes:
+
+- `SongPickerFlow.swift` contains the reusable picker, draft editor, song-shape rail, and device-library adapter.
+- Music permission remains just-in-time and uses the approved Library-first primer.
+- Library songs need a usable Apple playback/store identifier for the current Apple Music cue/playback model. Rows without one remain visible but unavailable rather than creating an unreliable saved cue.
+- Imported files are copied into an unsaved draft, removed if the draft is cancelled, and assigned only after Save.
+- Saving updates only the player's song assignment and starts the Phase 2 preparation queue.
+- The Player Editor now reports `Preparing`, `Ready`, `Ready Here`, `Needs Apple Music`, or `Needs Repair`.
 
 ### Phase 4: Team Clips
 
