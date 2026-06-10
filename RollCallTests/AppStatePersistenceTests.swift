@@ -57,6 +57,90 @@ final class AppStatePersistenceTests: XCTestCase {
         XCTAssertNil(player.photoRelativePath)
     }
 
+    func testLegacyPlayerCueDecodesAsPrivateSongAssignment() throws {
+        let cueData = try JSONEncoder().encode(RollCallTestFixtures.localCue())
+        let cueObject = try XCTUnwrap(JSONSerialization.jsonObject(with: cueData) as? [String: Any])
+        let playerObject: [String: Any] = [
+            "id": RollCallTestFixtures.alexID.uuidString,
+            "displayName": "Alex Ramirez",
+            "uniformNumber": "12",
+            "pronunciationOverride": "",
+            "cue": cueObject
+        ]
+        let playerData = try JSONSerialization.data(withJSONObject: playerObject)
+
+        let player = try JSONDecoder().decode(Player.self, from: playerData)
+
+        guard case .privateClip(let clip)? = player.songAssignment else {
+            return XCTFail("Expected the legacy cue to migrate to a private song assignment.")
+        }
+        XCTAssertEqual(clip.playbackCue, RollCallTestFixtures.localCue())
+    }
+
+    func testPlayerEncodingWritesSongAssignmentWithoutLegacyCue() throws {
+        var player = RollCallTestFixtures.player(
+            id: RollCallTestFixtures.alexID,
+            name: "Alex Ramirez",
+            number: "12"
+        )
+        player.cue = RollCallTestFixtures.localCue()
+
+        let data = try JSONEncoder().encode(player)
+        let object = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+
+        XCTAssertNotNil(object["songAssignment"])
+        XCTAssertNil(object["cue"])
+    }
+
+    func testMigratedAppleMusicClipIsSourceBackedAndNotPortable() {
+        let clip = SongClip(
+            cue: RollCallTestFixtures.appleMusicCue(
+                songID: "song.alex",
+                title: "Thunder",
+                artistName: "The Bats"
+            )
+        )
+
+        XCTAssertEqual(clip.readinessInputs.playback, .sourceBackedReady)
+        XCTAssertFalse(clip.readinessInputs.downloadedOnDevice)
+        XCTAssertEqual(clip.portabilityInputs.portability, .sourceReferenceOnly)
+        XCTAssertFalse(clip.portabilityInputs.generatedAssetCanBeExported)
+        XCTAssertEqual(clip.policy.appleMusicHandlingPolicy, .readableLocalOnly)
+    }
+
+    func testSongAssignmentRoundTripsPrivateAndSharedCases() throws {
+        let privateAssignment = SongAssignment.privateClip(
+            SongClip(cue: RollCallTestFixtures.localCue())
+        )
+        let sharedID = UUID()
+        let encoder = JSONEncoder()
+        let decoder = JSONDecoder()
+
+        XCTAssertEqual(
+            try decoder.decode(SongAssignment.self, from: encoder.encode(privateAssignment)),
+            privateAssignment
+        )
+        XCTAssertEqual(
+            try decoder.decode(SongAssignment.self, from: encoder.encode(SongAssignment.sharedTeamClip(sharedID))),
+            .sharedTeamClip(sharedID)
+        )
+    }
+
+    func testTeamDecodeDefaultsMissingTeamClipsToEmpty() throws {
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        let teamData = try encoder.encode(RollCallTestFixtures.team())
+        var object = try XCTUnwrap(JSONSerialization.jsonObject(with: teamData) as? [String: Any])
+        object.removeValue(forKey: "teamClips")
+        let legacyData = try JSONSerialization.data(withJSONObject: object)
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+
+        let team = try decoder.decode(Team.self, from: legacyData)
+
+        XCTAssertTrue(team.teamClips.isEmpty)
+    }
+
     func testFutureSavedStateSchemaCanBeDetectedByCallers() throws {
         var state = RollCallTestFixtures.appState(team: RollCallTestFixtures.team())
         state.schemaVersion = AppState.currentSchemaVersion + 1
@@ -137,7 +221,7 @@ final class AppStatePersistenceTests: XCTestCase {
         let decoded = try JSONDecoder().decode(AppState.self, from: Data(json.utf8))
 
         XCTAssertEqual(decoded.ratingRequest.automaticPromptAttemptCount, 1)
-        XCTAssertEqual(decoded.ratingRequest.nextAutomaticPromptSessionThreshold, 5)
+        XCTAssertEqual(decoded.ratingRequest.nextAutomaticPromptSessionThreshold, 10)
         XCTAssertFalse(decoded.settings.showLineupProgressHints)
     }
 

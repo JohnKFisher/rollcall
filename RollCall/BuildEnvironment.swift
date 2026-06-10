@@ -66,6 +66,10 @@ struct FeatureFlags: Equatable {
         showExperimentalFeatures && experimental.appleMusicTransitionCrossfadeEnabled
     }
 
+    var musicRenderProbeAvailable: Bool {
+        showDeveloperSettings
+    }
+
     static func assertReleaseSafety(_ flags: FeatureFlags = .currentBuildDefaults) {
         guard flags.isReleaseBuild else { return }
         precondition(!flags.showDeveloperSettings, "Release builds must not show Developer Settings.")

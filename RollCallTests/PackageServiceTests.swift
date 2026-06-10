@@ -48,6 +48,48 @@ final class PackageServiceTests: XCTestCase {
         }
     }
 
+    func testPreviewMigratesLegacyPlayerCuePackage() throws {
+        let player = RollCallTestFixtures.player(
+            id: RollCallTestFixtures.alexID,
+            name: "Alex Ramirez",
+            number: "12",
+            cue: RollCallTestFixtures.localCue()
+        )
+        let manifest = TeamPackageManifest(
+            schemaVersion: 7,
+            appVersion: "1.1.0",
+            exportedAt: RollCallTestFixtures.now,
+            deviceLabel: "Legacy Device",
+            team: RollCallTestFixtures.team(players: [player], battingOrder: [player.id])
+        )
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        var manifestObject = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: encoder.encode(manifest)) as? [String: Any]
+        )
+        var teamObject = try XCTUnwrap(manifestObject["team"] as? [String: Any])
+        var players = try XCTUnwrap(teamObject["players"] as? [[String: Any]])
+        var legacyPlayer = try XCTUnwrap(players.first)
+        legacyPlayer.removeValue(forKey: "songAssignment")
+        legacyPlayer["cue"] = try JSONSerialization.jsonObject(
+            with: encoder.encode(RollCallTestFixtures.localCue())
+        )
+        players[0] = legacyPlayer
+        teamObject["players"] = players
+        teamObject.removeValue(forKey: "teamClips")
+        manifestObject["team"] = teamObject
+
+        let packageURL = temp.fileURL("Legacy.rollcall")
+        try FileManager.default.createDirectory(at: packageURL, withIntermediateDirectories: true)
+        try JSONSerialization.data(withJSONObject: manifestObject)
+            .write(to: packageURL.appendingPathComponent("manifest.json"))
+
+        let preview = try service.preview(packageURL: packageURL)
+
+        XCTAssertEqual(preview.team.players.first?.cue, RollCallTestFixtures.localCue())
+        XCTAssertTrue(preview.team.teamClips.isEmpty)
+    }
+
     func testPreviewRejectsFutureSchemaPackages() throws {
         let packageURL = try writePackageDirectory(
             name: "Future.rollcall",

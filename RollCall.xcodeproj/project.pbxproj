@@ -36,6 +36,11 @@
 		A40000000000000000000007 /* BackupRestoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A40000000000000000000107 /* BackupRestoreTests.swift */; };
 		A40000000000000000000008 /* RootTabStartupTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A40000000000000000000109 /* RootTabStartupTests.swift */; };
 		A40000000000000000000009 /* TeamAppleMusicPlaylistSummaryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A40000000000000000000110 /* TeamAppleMusicPlaylistSummaryTests.swift */; };
+		A50000000000000000000001 /* MusicRenderProbeModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A50000000000000000000101 /* MusicRenderProbeModels.swift */; };
+		A50000000000000000000002 /* MusicRenderProbeService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A50000000000000000000102 /* MusicRenderProbeService.swift */; };
+		A50000000000000000000003 /* MusicRenderProbeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A50000000000000000000103 /* MusicRenderProbeView.swift */; };
+		A70000000000000000000001 /* SongClipModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A70000000000000000000101 /* SongClipModels.swift */; };
+		A60000000000000000000001 /* MusicRenderProbeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A60000000000000000000101 /* MusicRenderProbeTests.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -80,6 +85,11 @@
 		A40000000000000000000108 /* RollCallTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = RollCallTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		A40000000000000000000109 /* RootTabStartupTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RootTabStartupTests.swift; sourceTree = "<group>"; };
 		A40000000000000000000110 /* TeamAppleMusicPlaylistSummaryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TeamAppleMusicPlaylistSummaryTests.swift; sourceTree = "<group>"; };
+		A50000000000000000000101 /* MusicRenderProbeModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MusicRenderProbeModels.swift; sourceTree = "<group>"; };
+		A50000000000000000000102 /* MusicRenderProbeService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MusicRenderProbeService.swift; sourceTree = "<group>"; };
+		A50000000000000000000103 /* MusicRenderProbeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MusicRenderProbeView.swift; sourceTree = "<group>"; };
+		A70000000000000000000101 /* SongClipModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SongClipModels.swift; sourceTree = "<group>"; };
+		A60000000000000000000101 /* MusicRenderProbeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MusicRenderProbeTests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -115,10 +125,14 @@
 			children = (
 				A10000000000000000000101 /* RollCallApp.swift */,
 				A10000000000000000000102 /* Models.swift */,
+				A70000000000000000000101 /* SongClipModels.swift */,
 				A10000000000000000000103 /* Services.swift */,
 				A10000000000000000000104 /* AppModel.swift */,
 				A10000000000000000000105 /* RootView.swift */,
 				A10000000000000000000110 /* BuildEnvironment.swift */,
+				A50000000000000000000101 /* MusicRenderProbeModels.swift */,
+				A50000000000000000000102 /* MusicRenderProbeService.swift */,
+				A50000000000000000000103 /* MusicRenderProbeView.swift */,
 				A30000000000000000000142 /* DesignSystem */,
 				A10000000000000000000113 /* Info.plist */,
 				A10000000000000000000106 /* Assets.xcassets */,
@@ -166,6 +180,7 @@
 				A40000000000000000000107 /* BackupRestoreTests.swift */,
 				A40000000000000000000109 /* RootTabStartupTests.swift */,
 				A40000000000000000000110 /* TeamAppleMusicPlaylistSummaryTests.swift */,
+				A60000000000000000000101 /* MusicRenderProbeTests.swift */,
 			);
 			path = RollCallTests;
 			sourceTree = "<group>";
@@ -283,10 +298,14 @@
 			files = (
 				A10000000000000000000001 /* RollCallApp.swift in Sources */,
 				A10000000000000000000002 /* Models.swift in Sources */,
+				A70000000000000000000001 /* SongClipModels.swift in Sources */,
 				A10000000000000000000003 /* Services.swift in Sources */,
 				A10000000000000000000004 /* AppModel.swift in Sources */,
 				A10000000000000000000005 /* RootView.swift in Sources */,
 				A10000000000000000000009 /* BuildEnvironment.swift in Sources */,
+				A50000000000000000000001 /* MusicRenderProbeModels.swift in Sources */,
+				A50000000000000000000002 /* MusicRenderProbeService.swift in Sources */,
+				A50000000000000000000003 /* MusicRenderProbeView.swift in Sources */,
 				A30000000000000000000001 /* RollCallDesignSystem.swift in Sources */,
 				A30000000000000000000002 /* RollCallColors.swift in Sources */,
 				A30000000000000000000003 /* RollCallTypography.swift in Sources */,
@@ -311,6 +330,7 @@
 				A40000000000000000000007 /* BackupRestoreTests.swift in Sources */,
 				A40000000000000000000008 /* RootTabStartupTests.swift in Sources */,
 				A40000000000000000000009 /* TeamAppleMusicPlaylistSummaryTests.swift in Sources */,
+				A60000000000000000000001 /* MusicRenderProbeTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -472,13 +492,13 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = YES;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 65;
+				CURRENT_PROJECT_VERSION = 66;
 				DEVELOPMENT_TEAM = 5Y9T5WZ4J3;
 				ENABLE_DEBUG_DYLIB = NO;
 				ENABLE_PREVIEWS = NO;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = RollCall/Info.plist;
-				MARKETING_VERSION = 1.1.0;
+				MARKETING_VERSION = 1.2;
 				PRODUCT_BUNDLE_IDENTIFIER = com.jkfisher.rollcall;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SUPPORTED_PLATFORMS = "iphonesimulator iphoneos";
@@ -494,13 +514,13 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = YES;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 65;
+				CURRENT_PROJECT_VERSION = 66;
 				DEVELOPMENT_TEAM = 5Y9T5WZ4J3;
 				ENABLE_DEBUG_DYLIB = NO;
 				ENABLE_PREVIEWS = NO;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = RollCall/Info.plist;
-				MARKETING_VERSION = 1.1.0;
+				MARKETING_VERSION = 1.2;
 				PRODUCT_BUNDLE_IDENTIFIER = com.jkfisher.rollcall;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SUPPORTED_PLATFORMS = "iphonesimulator iphoneos";
@@ -516,13 +536,13 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = YES;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 65;
+				CURRENT_PROJECT_VERSION = 66;
 				DEVELOPMENT_TEAM = 5Y9T5WZ4J3;
 				ENABLE_DEBUG_DYLIB = NO;
 				ENABLE_PREVIEWS = NO;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = RollCall/Info.plist;
-				MARKETING_VERSION = 1.1.0;
+				MARKETING_VERSION = 1.2;
 				PRODUCT_BUNDLE_IDENTIFIER = com.jkfisher.rollcall;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SUPPORTED_PLATFORMS = "iphonesimulator iphoneos";

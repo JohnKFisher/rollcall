@@ -462,6 +462,12 @@ final class AppModel: ObservableObject {
     @Published var pendingPackageImport: PendingPackageImport?
     @Published var completedPackageImportTeamID: UUID?
     @Published var supportBundle: SupportBundleExport?
+    @Published private(set) var musicRenderProbeSamples = MusicRenderProbeScenario.allCases.map { MusicRenderProbeSample(scenario: $0) }
+    @Published private(set) var musicRenderProbeLibraryCandidates: [MusicRenderProbeLibraryCandidate] = []
+    @Published private(set) var musicRenderProbeCatalogCandidates: [MusicRenderProbeCatalogCandidate] = []
+    @Published private(set) var isMusicRenderProbeLoadingLibrary = false
+    @Published private(set) var isMusicRenderProbeSearchingCatalog = false
+    @Published var musicRenderProbeSummaryURL: URL?
     @Published var announcerRegenerationStatus: AnnouncerRegenerationStatus?
     @Published private(set) var isAppleMusicPlaylistSyncing = false
     @Published private(set) var appleMusicPlaylistSyncStatus: String?
@@ -486,6 +492,7 @@ final class AppModel: ObservableObject {
 
     let audioAssetService = AudioAssetService()
     let musicCatalogService = MusicCatalogService()
+    let musicRenderProbeService: MusicRenderProbeService
     let packageService = PackageService()
     let announcerRenderer = AnnouncerSpeechRenderer()
     let haptics = GameDayHaptics()
@@ -519,6 +526,7 @@ final class AppModel: ObservableObject {
 
     init() {
         FeatureFlags.assertReleaseSafety()
+        self.musicRenderProbeService = MusicRenderProbeService(audioAssetService: audioAssetService, musicCatalogService: musicCatalogService)
         self.playbackEngine = CuePlaybackEngine(audioAssetService: audioAssetService, musicCatalogService: musicCatalogService)
         self.readinessService = ReadinessService(audioAssetService: audioAssetService)
         let loadResult = Self.loadInitialState()
@@ -1048,10 +1056,182 @@ final class AppModel: ObservableObject {
         appleMusicPlaybackCapability = capability
     }
 
+    var musicRenderProbeAuthorizationStatusText: String {
+        switch MusicAuthorization.currentStatus {
+        case .authorized:
+            return "Authorized"
+        case .denied:
+            return "Denied"
+        case .restricted:
+            return "Restricted"
+        case .notDetermined:
+            return "Not Determined"
+        @unknown default:
+            return "Unknown"
+        }
+    }
+
+    var musicRenderProbePlaybackCapabilityText: String {
+        switch appleMusicPlaybackCapability {
+        case .unknown:
+            return "Unknown"
+        case .previewOnly:
+            return "Preview Only"
+        case .fullSong:
+            return "Full Song"
+        }
+    }
+
+    var musicRenderProbeLocalCandidates: [MusicRenderProbeLocalCandidate] {
+        var seenRelativePaths = Set<String>()
+        var candidates: [MusicRenderProbeLocalCandidate] = []
+
+        for team in state.teams {
+            for player in team.players {
+                guard let cue = player.cue,
+                      case .localAudio(let source) = cue.source,
+                      seenRelativePaths.insert(source.relativePath).inserted else {
+                    continue
+                }
+
+                candidates.append(
+                    MusicRenderProbeLocalCandidate(
+                        id: player.id,
+                        source: source,
+                        teamName: team.name,
+                        playerName: player.displayName
+                    )
+                )
+            }
+        }
+
+        return candidates.sorted {
+            if $0.source.displayName.localizedCaseInsensitiveCompare($1.source.displayName) == .orderedSame {
+                return $0.playerName.localizedCaseInsensitiveCompare($1.playerName) == .orderedAscending
+            }
+            return $0.source.displayName.localizedCaseInsensitiveCompare($1.source.displayName) == .orderedAscending
+        }
+    }
+
+    var musicRenderProbeSummary: MusicRenderProbeRedactedSummary? {
+        guard musicRenderProbeSamples.contains(where: { $0.selection != nil || $0.result != nil }) else {
+            return nil
+        }
+
+        return MusicRenderProbeRedactedSummary.make(
+            samples: musicRenderProbeSamples,
+            authorizationStatus: musicRenderProbeAuthorizationStatusText,
+            playbackCapability: musicRenderProbePlaybackCapabilityText
+        )
+    }
+
     func searchAppleMusic(term: String) async throws -> [MusicSearchResult] {
         await refreshAppleMusicPlaybackCapability()
         let mode: AppleMusicSearchMode = appleMusicPlaybackCapability == .fullSong ? .catalogOnly : .previewFallback
         return try await musicCatalogService.search(term: term, mode: mode)
+    }
+
+    func loadMusicRenderProbeLibraryCandidates() async {
+        isMusicRenderProbeLoadingLibrary = true
+        defer { isMusicRenderProbeLoadingLibrary = false }
+
+        if MusicAuthorization.currentStatus == .notDetermined {
+            _ = await requestAppleMusicAccess()
+        } else {
+            await refreshAppleMusicPlaybackCapability()
+        }
+
+        guard MusicAuthorization.currentStatus == .authorized else {
+            lastError = AppError.musicAuthorizationRequired.localizedDescription
+            return
+        }
+
+        do {
+            musicRenderProbeLibraryCandidates = try musicRenderProbeService.loadLibraryCandidates()
+        } catch {
+            lastError = error.localizedDescription
+        }
+    }
+
+    func searchMusicRenderProbeCatalog(term: String) async {
+        isMusicRenderProbeSearchingCatalog = true
+        defer { isMusicRenderProbeSearchingCatalog = false }
+
+        do {
+            musicRenderProbeCatalogCandidates = try await searchAppleMusic(term: term).map {
+                MusicRenderProbeCatalogCandidate(
+                    songID: $0.songID,
+                    title: $0.title,
+                    artistName: $0.artistName,
+                    duration: $0.duration,
+                    previewURL: $0.previewURL,
+                    isCatalogBacked: $0.isCatalogBacked
+                )
+            }
+        } catch {
+            lastError = error.localizedDescription
+        }
+    }
+
+    func assignMusicRenderProbeLibraryCandidate(_ candidate: MusicRenderProbeLibraryCandidate, to scenario: MusicRenderProbeScenario) {
+        updateMusicRenderProbeSample(for: scenario) { sample in
+            sample.selection = .library(candidate)
+            sample.result = nil
+        }
+    }
+
+    func assignMusicRenderProbeCatalogCandidate(_ candidate: MusicRenderProbeCatalogCandidate, to scenario: MusicRenderProbeScenario) {
+        updateMusicRenderProbeSample(for: scenario) { sample in
+            sample.selection = .catalog(candidate)
+            sample.result = nil
+        }
+    }
+
+    func assignMusicRenderProbeLocalCandidate(_ candidate: MusicRenderProbeLocalCandidate, to scenario: MusicRenderProbeScenario) {
+        updateMusicRenderProbeSample(for: scenario) { sample in
+            sample.selection = .local(candidate)
+            sample.result = nil
+        }
+    }
+
+    func clearMusicRenderProbeSample(for scenario: MusicRenderProbeScenario) {
+        updateMusicRenderProbeSample(for: scenario) { sample in
+            sample.selection = nil
+            sample.result = nil
+        }
+    }
+
+    func runMusicRenderProbe(for scenario: MusicRenderProbeScenario) async {
+        guard let sample = musicRenderProbeSamples.first(where: { $0.scenario == scenario }) else { return }
+        guard sample.selection != nil else {
+            lastError = "Choose a sample before running the probe."
+            return
+        }
+
+        let result = await musicRenderProbeService.runProbe(for: sample)
+        updateMusicRenderProbeSample(for: scenario) { $0.result = result }
+    }
+
+    func runAllAssignedMusicRenderProbes() async {
+        for sample in musicRenderProbeSamples where sample.selection != nil {
+            await runMusicRenderProbe(for: sample.scenario)
+        }
+    }
+
+    func exportMusicRenderProbeSummary() {
+        guard let summary = musicRenderProbeSummary else { return }
+
+        do {
+            let url = FileManager.default.temporaryDirectory
+                .appendingPathComponent("RollCall-MusicRenderProbe-\(UUID().uuidString).json")
+            let encoder = JSONEncoder()
+            encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+            encoder.dateEncodingStrategy = .iso8601
+            try encoder.encode(summary).write(to: url, options: .atomic)
+            musicRenderProbeSummaryURL = url
+        } catch {
+            lastError = error.localizedDescription
+        }
     }
 
     @discardableResult
@@ -2217,6 +2397,17 @@ final class AppModel: ObservableObject {
         } catch {
             lastError = error.localizedDescription
         }
+    }
+
+    private func updateMusicRenderProbeSample(
+        for scenario: MusicRenderProbeScenario,
+        mutate: (inout MusicRenderProbeSample) -> Void
+    ) {
+        guard let index = musicRenderProbeSamples.firstIndex(where: { $0.scenario == scenario }) else { return }
+        var sample = musicRenderProbeSamples[index]
+        mutate(&sample)
+        musicRenderProbeSamples[index] = sample
+        musicRenderProbeSummaryURL = nil
     }
 
     private func preparePendingIncomingPackageIfNeeded() async {

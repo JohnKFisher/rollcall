@@ -2,10 +2,30 @@
 
 Use this file as a concise decision log for project-specific architectural, behavioral, tooling, and scope decisions.
 
+## 2026-06-10
+
+- Approved: Roll Call 1.2 will generate local song clips only when public APIs expose a genuinely readable local source; Apple Music-linked songs remain a normal source-backed playback path, downloaded availability may improve readiness on the current device without implying portability, and no remote policy switch or unsupported capture/extraction behavior will be added.
+  Rationale: the Phase 0 probe successfully narrowed the public-API reality and did not support the earlier assumption that Apple Music songs could generally be localized, so the product must preserve the easy Apple Music path while reporting readiness and portability honestly.
+  Status: approved
+
+- Approved: Roll Call 1.2 persists player songs as private or shared `SongAssignment`s backed by durable `SongClip` creative truth, keeps `Cue` as the internal playback recipe, migrates legacy `Player.cue` values to private assignments while decoding, and writes only the new model on subsequent saves.
+  Rationale: source metadata, selected timing, generated assets, readiness, portability, and retry policy need independent durable state without breaking existing teams, playback, or older `.rollcall` imports.
+  Status: approved
+
 ## 2026-06-07
 
 - Approved: Game Day may show a subtle lineup-progress hint animation only when coaches explicitly advance the batting order from `Next` or `On Deck`, with a default-off Settings toggle and automatic suppression when iOS `Reduce Motion` is enabled.
   Rationale: the live board should help coaches understand how the lineup flows toward `On Deck` and `Now Batting` without turning the screen into a constant animation surface; keeping it opt-in also avoids surprising motion for existing users while still preserving an accessible path for coaches who want the hint.
+  Status: approved
+
+## 2026-06-09
+
+- Approved: `release/1.2` Phase 0 uses a non-Release in-app `Music Render Probe` with manual sample assignment, explicit run actions, temporary render files, and redacted summary export rather than guessing Apple Music/local renderability from docs or scripts alone.
+  Rationale: the 1.2 cue revamp depends on what public APIs actually expose inside Roll Call's real app context on a real device, and the safest way to learn that is a deliberately scoped probe surface that stays out of Release builds and avoids retaining user media.
+  Status: approved
+
+- Approved: until the Phase 0 real-device probe records concrete `Full Source` successes for Apple Music-derived cases, treat Apple Music local-generation policy as provisional and keep `sourceBackedOnly` as the conservative planning default for those cases.
+  Rationale: the revamp needs a clear starting point now, but it would be misleading to treat aggressive Apple Music local generation as approved fact before the probe has actually proven any readable full-source paths through public APIs.
   Status: approved
 
 - Approved: Apple Music Volume Automation must capture the phone's pre-cue volume, leave playback volume untouched until fade-out begins, and restore that exact pre-cue level only after playback has fully stopped; cue handoff may discard the old pending restore only when a new cue is replacing the old one.

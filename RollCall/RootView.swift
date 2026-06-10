@@ -5946,6 +5946,20 @@ private struct DeveloperToolsView: View {
                         .disabled(!flags.showExperimentalFeatures)
                     }
 
+                    if flags.musicRenderProbeAvailable {
+                        Section("Music Probe") {
+                            NavigationLink {
+                                MusicRenderProbeView(appModel: appModel)
+                            } label: {
+                                SettingsRowLabel(
+                                    title: "Music Render Probe",
+                                    detail: "Manually assign device-library, Apple Music, and local control samples, then test which paths can really render through public APIs.",
+                                    systemImage: "waveform.and.magnifyingglass"
+                                )
+                            }
+                        }
+                    }
+
                     Section("Diagnostics") {
                         Button("Reset What's New Prompt") {
                             appModel.resetWhatsNewSeenForTesting()

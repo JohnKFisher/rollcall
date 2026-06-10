@@ -287,7 +287,15 @@ struct Player: Codable, Equatable, Identifiable {
     var uniformNumber: String
     var pronunciationOverride: String
     var photoRelativePath: String?
-    var cue: Cue?
+    var songAssignment: SongAssignment?
+    var cue: Cue? {
+        get {
+            songAssignment?.privateClip?.playbackCue
+        }
+        set {
+            songAssignment = newValue.map { .privateClip(SongClip(cue: $0)) }
+        }
+    }
     var isPresent: Bool
     var customAnnouncerRelativePath: String?
     var generatedBuiltInAnnouncerRelativePath: String?
@@ -299,6 +307,7 @@ struct Player: Codable, Equatable, Identifiable {
         case pronunciationOverride
         case photoRelativePath
         case cue
+        case songAssignment
         case isPresent
         case customAnnouncerRelativePath
         case generatedBuiltInAnnouncerRelativePath
@@ -320,7 +329,7 @@ struct Player: Codable, Equatable, Identifiable {
         self.uniformNumber = uniformNumber
         self.pronunciationOverride = pronunciationOverride
         self.photoRelativePath = photoRelativePath
-        self.cue = cue
+        self.songAssignment = cue.map { .privateClip(SongClip(cue: $0)) }
         self.isPresent = isPresent
         self.customAnnouncerRelativePath = customAnnouncerRelativePath
         self.generatedBuiltInAnnouncerRelativePath = generatedBuiltInAnnouncerRelativePath
@@ -333,7 +342,12 @@ struct Player: Codable, Equatable, Identifiable {
         uniformNumber = try container.decodeIfPresent(String.self, forKey: .uniformNumber) ?? ""
         pronunciationOverride = try container.decodeIfPresent(String.self, forKey: .pronunciationOverride) ?? ""
         photoRelativePath = try container.decodeIfPresent(String.self, forKey: .photoRelativePath)
-        cue = try container.decodeIfPresent(Cue.self, forKey: .cue)
+        if let decodedAssignment = try container.decodeIfPresent(SongAssignment.self, forKey: .songAssignment) {
+            songAssignment = decodedAssignment
+        } else {
+            songAssignment = try container.decodeIfPresent(Cue.self, forKey: .cue)
+                .map { .privateClip(SongClip(cue: $0)) }
+        }
         isPresent = try container.decodeIfPresent(Bool.self, forKey: .isPresent) ?? true
         customAnnouncerRelativePath = try container.decodeIfPresent(String.self, forKey: .customAnnouncerRelativePath)
         generatedBuiltInAnnouncerRelativePath = try container.decodeIfPresent(String.self, forKey: .generatedBuiltInAnnouncerRelativePath)
@@ -341,8 +355,21 @@ struct Player: Codable, Equatable, Identifiable {
         if generatedBuiltInAnnouncerRelativePath == nil,
            let legacyPayload = try? LegacyPlayerDecoder.LegacyPlayerPayload(from: decoder),
            let legacyGenerated = legacyPayload.cue?.announcer?.generatedAssetRelativePath {
-            generatedBuiltInAnnouncerRelativePath = legacyGenerated
+           generatedBuiltInAnnouncerRelativePath = legacyGenerated
         }
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(id, forKey: .id)
+        try container.encode(displayName, forKey: .displayName)
+        try container.encode(uniformNumber, forKey: .uniformNumber)
+        try container.encode(pronunciationOverride, forKey: .pronunciationOverride)
+        try container.encodeIfPresent(photoRelativePath, forKey: .photoRelativePath)
+        try container.encodeIfPresent(songAssignment, forKey: .songAssignment)
+        try container.encode(isPresent, forKey: .isPresent)
+        try container.encodeIfPresent(customAnnouncerRelativePath, forKey: .customAnnouncerRelativePath)
+        try container.encodeIfPresent(generatedBuiltInAnnouncerRelativePath, forKey: .generatedBuiltInAnnouncerRelativePath)
     }
 }
 
@@ -444,6 +471,7 @@ struct Team: Codable, Equatable, Identifiable {
     var createdAt: Date
     var modifiedAt: Date
     var players: [Player]
+    var teamClips: [SongClip]
     var builtInClips: [BuiltInClip]
     var session: TeamSessionState
     var announcerProfile: TeamAnnouncerProfile
@@ -455,6 +483,7 @@ struct Team: Codable, Equatable, Identifiable {
         case createdAt
         case modifiedAt
         case players
+        case teamClips
         case builtInClips
         case session
         case announcerProfile
@@ -467,6 +496,7 @@ struct Team: Codable, Equatable, Identifiable {
         createdAt: Date,
         modifiedAt: Date,
         players: [Player],
+        teamClips: [SongClip] = [],
         builtInClips: [BuiltInClip],
         session: TeamSessionState,
         announcerProfile: TeamAnnouncerProfile,
@@ -477,6 +507,7 @@ struct Team: Codable, Equatable, Identifiable {
         self.createdAt = createdAt
         self.modifiedAt = modifiedAt
         self.players = players
+        self.teamClips = teamClips
         self.builtInClips = builtInClips
         self.session = session
         self.announcerProfile = announcerProfile
@@ -490,6 +521,7 @@ struct Team: Codable, Equatable, Identifiable {
         createdAt = try container.decodeIfPresent(Date.self, forKey: .createdAt) ?? .now
         modifiedAt = try container.decodeIfPresent(Date.self, forKey: .modifiedAt) ?? createdAt
         players = try container.decodeIfPresent([Player].self, forKey: .players) ?? []
+        teamClips = try container.decodeIfPresent([SongClip].self, forKey: .teamClips) ?? []
         builtInClips = try container.decodeIfPresent([BuiltInClip].self, forKey: .builtInClips) ?? BuiltInClip.defaults
         session = try container.decodeIfPresent(TeamSessionState.self, forKey: .session) ?? TeamSessionState(activeSessionDate: nil, battingOrder: alphabeticalPlayerIDs(for: players), nextBatterIndex: 0, gameDayAnnouncerMode: .announcerAndSong, battingOrderIsCustomized: false)
         accentPreset = try container.decodeIfPresent(TeamAccentPreset.self, forKey: .accentPreset) ?? .rollCallOrange
@@ -859,7 +891,7 @@ struct RatingRequestState: Codable, Equatable {
 }
 
 struct AppState: Codable, Equatable {
-    static let currentSchemaVersion = 7
+    static let currentSchemaVersion = 8
 
     var schemaVersion: Int
     var appVersion: String
