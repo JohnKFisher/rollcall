@@ -4,9 +4,10 @@ Use this file as a concise project status snapshot for the current version, what
 
 ## Roll Call
 
-Current version: `1.1.0` (build `65`)
+Current version: `1.1.1` (build `66`)
 
 Status:
+- `1.1.1` build `66` fixes Apple Music playback with Volume Automation off so Roll Call no longer raises the player volume before the song starts; the existing automation-on capture, fade, and restore behavior is unchanged.
 - The `release/1.1` lane now includes a rating request flow that waits for ten successful Game Day sessions, counts real Game Day use even when coaches close the app directly from Game Day, waits for a later safe non-live tab before asking, shows Roll Call's own rating-request sheet, sends an explicit `Rate Roll Call` tap straight to the App Store review page, allows one later automatic retry after another ten successful sessions if the first ask is skipped, and exposes a Settings > About rating entry only after that threshold is earned.
 - The `release/1.1` lane now keeps Apple Music Volume Automation from double-scaling playback against the current phone volume and now recaptures a fresh baseline on each cue, so fades should start from the real live device volume instead of acting like the phone was already set much lower.
 - The `release/1.1` lane now makes Game Day's player grid visually continue the lineup after `On Deck`, wrapping through the present order while still letting coaches tap any player tile directly out of sequence.
