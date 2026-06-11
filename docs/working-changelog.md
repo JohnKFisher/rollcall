@@ -11,10 +11,13 @@ Internal notes for building public-facing changelogs. Keep entries understandabl
 
 ### Changed
 
+- Song selection now opens Apple's familiar Music library picker by default. Apple Music catalog search and file import remain clearly available as separate choices and use the same clip editor afterward. [public candidate] [needs review]
 - Choosing a song or imported file now creates a draft first. The player's existing Game Day cue is not replaced until Save is tapped in the clip editor. [public candidate] [needs review]
 
 ### Fixed
 
+- Fixed a crash when selecting a clip length equal to the song's full available window, including 20-second preview-backed songs.
+- Fixed a crash that could occur when song preparation checked Apple Music library availability after opening Players, Teams, or another setup screen on the simulator. [needs review]
 
 ### Reliability / Data Safety
 

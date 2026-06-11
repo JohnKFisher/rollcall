@@ -268,6 +268,7 @@ struct MusicSearchResult: Identifiable, Hashable {
     var artistName: String
     var duration: TimeInterval?
     var previewURL: URL?
+    var artworkURL: URL? = nil
     var isCatalogBacked: Bool = true
 }
 
@@ -332,6 +333,7 @@ struct MusicCatalogService: Sendable {
             artistName: song.artistName,
             duration: resolvedDuration,
             previewURL: song.previewAssets?.first?.url ?? result.previewURL,
+            artworkURL: song.artwork?.url(width: 120, height: 120) ?? result.artworkURL,
             isCatalogBacked: true
         )
     }
@@ -453,6 +455,7 @@ struct MusicCatalogService: Sendable {
                 artistName: $0.artistName,
                 duration: $0.duration,
                 previewURL: $0.previewAssets?.first?.url,
+                artworkURL: $0.artwork?.url(width: 120, height: 120),
                 isCatalogBacked: true
             )
         }
@@ -482,6 +485,7 @@ struct MusicCatalogService: Sendable {
                 artistName: item.artistName,
                 duration: item.trackTimeMillis.map { TimeInterval($0) / 1000 },
                 previewURL: previewURL,
+                artworkURL: item.artworkURL,
                 isCatalogBacked: false
             )
         }
@@ -525,6 +529,7 @@ private struct ITunesTrack: Decodable {
     let artistName: String
     let previewURL: URL?
     let trackTimeMillis: Int?
+    let artworkURL: URL?
 
     enum CodingKeys: String, CodingKey {
         case trackID = "trackId"
@@ -532,6 +537,7 @@ private struct ITunesTrack: Decodable {
         case artistName
         case previewURL = "previewUrl"
         case trackTimeMillis
+        case artworkURL = "artworkUrl100"
     }
 }
 

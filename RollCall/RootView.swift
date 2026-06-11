@@ -6370,7 +6370,7 @@ private struct PlayerEditorSheet: View {
     @State private var pendingPhotoCrop: PendingPhotoCrop?
     @State private var photoCropFallbackTask: Task<Void, Never>?
     @State private var didCropperRender = false
-    @State private var showSongPicker = false
+    @State private var songPickerMode: SongPickerMode?
     @State private var trimMode: TrimSuggestionMode = .suggestedHook
     @State private var showAdvancedTrim = false
     @State private var liveScrubTask: Task<Void, Never>?
@@ -6437,9 +6437,9 @@ private struct PlayerEditorSheet: View {
                                 }
 
                                 Button {
-                                    showSongPicker = true
+                                    songPickerMode = .musicLibrary
                                 } label: {
-                                    Label("Change Song", systemImage: "music.note.list")
+                                    Label("Choose from Music Library", systemImage: "music.note.list")
                                 }
                                 .rollCallButtonStyle(.secondary)
                             }
@@ -6456,14 +6456,28 @@ private struct PlayerEditorSheet: View {
                                 }
 
                                 Button {
-                                    showSongPicker = true
+                                    songPickerMode = .musicLibrary
                                 } label: {
-                                    Label("Choose Song", systemImage: "music.note")
+                                    Label("Choose from Music Library", systemImage: "music.note")
                                         .frame(maxWidth: .infinity)
                                 }
                                 .rollCallButtonStyle(.primary)
                             }
                         }
+
+                        Button {
+                            songPickerMode = .appleMusic
+                        } label: {
+                            Label("Search Apple Music", systemImage: "magnifyingglass")
+                        }
+                        .rollCallButtonStyle(.secondary)
+
+                        Button {
+                            songPickerMode = .files
+                        } label: {
+                            Label("Import Audio or Video", systemImage: "square.and.arrow.down")
+                        }
+                        .rollCallButtonStyle(.secondary)
 
                         Text("Choose or change the song, shape the clip, then save it before returning here.")
                             .rollCallText(.helperText)
@@ -6635,9 +6649,12 @@ private struct PlayerEditorSheet: View {
             } message: {
                 Text("Closing now will lose unsaved name, number, photo, and trim edits. Song, imported audio, and Announcement Cue changes are already saved.")
             }
-            .sheet(isPresented: $showSongPicker) {
+            .sheet(item: $songPickerMode, onDismiss: {
+                songPickerMode = nil
+            }) { mode in
                 SongPickerFlow(
                     appModel: appModel,
+                    mode: mode,
                     onSave: { cue in
                         appModel.saveSongCue(cue, to: player.id)
                         player.cue = cue

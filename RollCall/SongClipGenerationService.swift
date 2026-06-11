@@ -91,15 +91,8 @@ struct SongClipGenerationService: Sendable {
     }
 
     private func libraryItem(forPlaybackStoreID songID: String) -> MPMediaItem? {
-        let query = MPMediaQuery.songs()
-        query.addFilterPredicate(
-            MPMediaPropertyPredicate(
-                value: songID,
-                forProperty: MPMediaItemPropertyPlaybackStoreID,
-                comparisonType: .equalTo
-            )
-        )
-        return query.items?.first
+        guard !songID.isEmpty else { return nil }
+        return MPMediaQuery.songs().items?.first { $0.playbackStoreID == songID }
     }
 
     private func render(clip: SongClip, from sourceURL: URL) async throws -> GeneratedClipAsset {

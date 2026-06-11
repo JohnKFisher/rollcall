@@ -4,44 +4,12 @@ import SwiftUI
 import UIKit
 import UniformTypeIdentifiers
 
-struct MusicLibrarySong: Identifiable, Equatable {
-    let persistentID: UInt64
-    let storeID: String?
-    let title: String
-    let artistName: String
-    let albumTitle: String
-    let duration: TimeInterval
-    let dateAdded: Date?
+enum SongPickerMode: String, Identifiable {
+    case musicLibrary
+    case appleMusic
+    case files
 
-    var id: UInt64 { persistentID }
-
-    var searchResult: MusicSearchResult? {
-        guard let storeID, !storeID.isEmpty else { return nil }
-        return MusicSearchResult(
-            songID: storeID,
-            title: title,
-            artistName: artistName,
-            duration: duration,
-            previewURL: nil,
-            isCatalogBacked: true
-        )
-    }
-}
-
-struct DeviceMusicLibraryService {
-    func songs() -> [MusicLibrarySong] {
-        (MPMediaQuery.songs().items ?? []).map { item in
-            MusicLibrarySong(
-                persistentID: item.persistentID,
-                storeID: item.playbackStoreID.nilIfEmpty,
-                title: item.title?.nilIfEmpty ?? "Untitled Song",
-                artistName: item.artist?.nilIfEmpty ?? "Unknown Artist",
-                albumTitle: item.albumTitle?.nilIfEmpty ?? "Unknown Album",
-                duration: item.playbackDuration,
-                dateAdded: item.dateAdded
-            )
-        }
-    }
+    var id: String { rawValue }
 }
 
 struct SongPickerFlow: View {
@@ -50,48 +18,40 @@ struct SongPickerFlow: View {
         let cue: Cue
         let isImported: Bool
 
-        static func == (lhs: DraftRoute, rhs: DraftRoute) -> Bool {
-            lhs.id == rhs.id
-        }
-
-        func hash(into hasher: inout Hasher) {
-            hasher.combine(id)
-        }
+        static func == (lhs: DraftRoute, rhs: DraftRoute) -> Bool { lhs.id == rhs.id }
+        func hash(into hasher: inout Hasher) { hasher.combine(id) }
     }
 
     @Environment(\.dismiss) private var dismiss
     @ObservedObject var appModel: AppModel
+    let mode: SongPickerMode
     let onSave: (Cue) -> Void
 
     @State private var selectedDraft: DraftRoute?
     @State private var importPresented = false
     @State private var savedDraftID: UUID?
+    @State private var showPermissionPrimer = false
+    @State private var pickerError: String?
 
     var body: some View {
         NavigationStack {
-            SongPickerView(
-                appModel: appModel,
-                onSelect: { result in
-                    selectedDraft = DraftRoute(
-                        cue: appModel.chooseSuggestedHook(
-                            for: appModel.makeAppleMusicCueDraft(result)
-                        ),
-                        isImported: false
-                    )
-                },
-                onImport: {
-                    importPresented = true
+            sourceView
+                .navigationDestination(item: $selectedDraft) { draft in
+                    SongClipEditorView(appModel: appModel, initialCue: draft.cue) { cue in
+                        savedDraftID = draft.id
+                        onSave(cue)
+                        dismiss()
+                    }
                 }
-            )
-            .navigationDestination(item: $selectedDraft) { draft in
-                SongClipEditorView(
-                    appModel: appModel,
-                    initialCue: draft.cue
-                ) { cue in
-                    savedDraftID = draft.id
-                    onSave(cue)
-                    dismiss()
+        }
+        .task {
+            switch mode {
+            case .musicLibrary, .appleMusic:
+                if appModel.needsAppleMusicAccessPrompt {
+                    showPermissionPrimer = true
                 }
+            case .files:
+                importPresented = true
             }
         }
         .fileImporter(
@@ -99,10 +59,18 @@ struct SongPickerFlow: View {
             allowedContentTypes: [.audio, .movie],
             allowsMultipleSelection: false
         ) { result in
-            guard case .success(let urls) = result, let url = urls.first else { return }
-            Task {
-                guard let cue = await appModel.makeImportedSongCueDraft(from: url) else { return }
-                selectedDraft = DraftRoute(cue: cue, isImported: true)
+            switch result {
+            case .success(let urls):
+                guard let url = urls.first else {
+                    dismiss()
+                    return
+                }
+                Task {
+                    guard let cue = await appModel.makeImportedSongCueDraft(from: url) else { return }
+                    selectedDraft = DraftRoute(cue: cue, isImported: true)
+                }
+            case .failure(let error):
+                pickerError = error.localizedDescription
             }
         }
         .onChange(of: selectedDraft) { oldValue, newValue in
@@ -122,345 +90,289 @@ struct SongPickerFlow: View {
             }
             appModel.discardImportedSongCueDraft(selectedDraft.cue)
         }
-    }
-}
-
-private enum SongLibrarySection: String, CaseIterable, Identifiable {
-    case recentlyAdded = "Recently Added"
-    case artists = "Artists"
-    case albums = "Albums"
-    case songs = "Songs"
-    case search = "Search"
-
-    var id: String { rawValue }
-}
-
-private enum SongSearchScope: String, CaseIterable, Identifiable {
-    case library = "Library"
-    case appleMusic = "Apple Music"
-
-    var id: String { rawValue }
-}
-
-struct SongPickerView: View {
-    @Environment(\.dismiss) private var dismiss
-    @ObservedObject var appModel: AppModel
-    let onSelect: (MusicSearchResult) -> Void
-    let onImport: () -> Void
-
-    @State private var selectedSection: SongLibrarySection = .recentlyAdded
-    @State private var searchScope: SongSearchScope = .library
-    @State private var searchTerm = ""
-    @State private var librarySongs: [MusicLibrarySong] = []
-    @State private var catalogResults: [MusicSearchResult] = []
-    @State private var isCatalogSearching = false
-    @State private var catalogSearchError: String?
-    @State private var showPermissionPrimer = false
-
-    private let libraryService = DeviceMusicLibraryService()
-
-    var body: some View {
-        Group {
-            if selectedSection == .search {
-                pickerList
-                    .searchable(
-                        text: $searchTerm,
-                        prompt: searchScope == .library ? "Search Library" : "Search Apple Music"
-                    )
-            } else {
-                pickerList
-            }
-        }
-        .navigationTitle("Choose Song")
-        .toolbar {
-            ToolbarItem(placement: .topBarLeading) {
-                Button("Close") { dismiss() }
-            }
-        }
-        .task {
-            if appModel.needsAppleMusicAccessPrompt {
-                showPermissionPrimer = true
-            } else {
-                reloadLibrary()
-            }
-        }
-        .task(id: catalogSearchKey) {
-            await searchCatalogIfNeeded()
-        }
-        .onChange(of: selectedSection) { _, section in
-            if section != .search {
-                searchTerm = ""
-            }
-        }
         .alert("Use Music?", isPresented: $showPermissionPrimer) {
-            Button("Not Now", role: .cancel) { }
+            Button("Not Now", role: .cancel) { dismiss() }
             Button("Continue") {
                 Task {
                     let status = await appModel.requestAppleMusicAccess()
-                    if status == .authorized {
-                        reloadLibrary()
+                    if status != .authorized {
+                        pickerError = "Music access is required. You can enable it in Settings or import an audio file instead."
                     }
                 }
             }
         } message: {
             Text("Roll Call uses Music access so you can choose songs from this iPhone's music library. If you use Apple Music, you can also search Apple Music for songs that are not already in your library.")
         }
-    }
-
-    private var pickerList: some View {
-        List {
-            permissionRecoverySection
-
-            Section {
-                LazyVGrid(
-                    columns: [
-                        GridItem(.flexible(), spacing: 8),
-                        GridItem(.flexible(), spacing: 8)
-                    ],
-                    spacing: 8
-                ) {
-                    ForEach(SongLibrarySection.allCases) { section in
-                        Button(section.rawValue) {
-                            selectedSection = section
-                        }
-                        .buttonStyle(.bordered)
-                        .tint(selectedSection == section ? .accentColor : .secondary)
-                        .frame(maxWidth: .infinity)
-                    }
-                }
-                .padding(.vertical, 2)
-            }
-
-            content
-
-            Section("More Options") {
-                Button(action: onImport) {
-                    Label("Import Audio or Video", systemImage: "square.and.arrow.down")
-                }
-                Text("Use a file when Music is not the right source or you want a portable copy.")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-            }
-        }
-        .listStyle(.insetGrouped)
-    }
-
-    @ViewBuilder
-    private var content: some View {
-        switch selectedSection {
-        case .recentlyAdded:
-            songSection(
-                title: "Recently Added",
-                songs: librarySongs
-                    .sorted { ($0.dateAdded ?? .distantPast) > ($1.dateAdded ?? .distantPast) }
-                    .prefix(40)
-                    .map { $0 }
-            )
-        case .artists:
-            groupedSongs(title: "Artists", key: \.artistName)
-        case .albums:
-            groupedSongs(title: "Albums", key: \.albumTitle)
-        case .songs:
-            songSection(
-                title: "Songs",
-                songs: librarySongs.sorted {
-                    $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending
-                }
-            )
-        case .search:
-            searchContent
+        .alert("Song Unavailable", isPresented: Binding(
+            get: { pickerError != nil },
+            set: { if !$0 { pickerError = nil } }
+        )) {
+            Button("OK") { }
+        } message: {
+            Text(pickerError ?? "")
         }
     }
 
     @ViewBuilder
-    private var permissionRecoverySection: some View {
-        if MusicAuthorization.currentStatus == .denied || MusicAuthorization.currentStatus == .restricted {
-            Section {
-                VStack(alignment: .leading, spacing: 8) {
-                    Label("Music Access Is Off", systemImage: "music.note.slash")
-                        .font(.headline)
-                    Text("Enable Music access to browse this iPhone's library. You can still import an audio or video file.")
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
-                    Button("Open Settings") {
-                        guard let url = URL(string: UIApplication.openSettingsURLString) else { return }
-                        UIApplication.shared.open(url)
-                    }
-                }
-            }
-        }
-    }
-
-    @ViewBuilder
-    private var searchContent: some View {
-        Section {
-            Picker("Search", selection: $searchScope) {
-                ForEach(SongSearchScope.allCases) { scope in
-                    Text(scope.rawValue).tag(scope)
-                }
-            }
-            .pickerStyle(.segmented)
-        }
-
-        if searchScope == .library {
-            let matches = librarySearchResults
-            songSection(title: "Library Results", songs: matches)
-            if !searchTerm.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
-               matches.isEmpty {
-                Section {
-                    Button("Search Apple Music for \"\(searchTerm)\"") {
-                        searchScope = .appleMusic
-                    }
-                }
-            }
-        } else {
-            Section("Apple Music Results") {
-                if isCatalogSearching {
-                    HStack(spacing: 10) {
-                        ProgressView()
-                        Text("Searching Apple Music...")
-                            .foregroundStyle(.secondary)
-                    }
-                } else if let catalogSearchError {
-                    Text(catalogSearchError)
-                        .foregroundStyle(.secondary)
-                } else if catalogResults.isEmpty {
-                    Text(searchTerm.isEmpty ? "Enter a song, artist, or album." : "No songs found.")
-                        .foregroundStyle(.secondary)
-                } else {
-                    ForEach(catalogResults) { result in
-                        catalogRow(result)
-                    }
-                }
-            }
-        }
-    }
-
-    private var librarySearchResults: [MusicLibrarySong] {
-        let term = searchTerm.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !term.isEmpty else { return [] }
-        return librarySongs.filter {
-            $0.title.localizedCaseInsensitiveContains(term)
-                || $0.artistName.localizedCaseInsensitiveContains(term)
-                || $0.albumTitle.localizedCaseInsensitiveContains(term)
-        }
-    }
-
-    private var catalogSearchKey: String {
-        "\(searchScope.rawValue)|\(searchTerm)"
-    }
-
-    @ViewBuilder
-    private func songSection(title: String, songs: [MusicLibrarySong]) -> some View {
-        Section(title) {
-            if songs.isEmpty {
-                Text(emptyLibraryMessage)
-                    .foregroundStyle(.secondary)
+    private var sourceView: some View {
+        switch mode {
+        case .musicLibrary:
+            if MusicAuthorization.currentStatus == .authorized {
+                NativeMusicLibraryPicker(
+                    onPick: handleLibrarySelection,
+                    onCancel: { dismiss() }
+                )
+                .ignoresSafeArea()
             } else {
-                ForEach(songs) { song in
-                    libraryRow(song)
-                }
+                MusicPermissionWaitingView()
             }
+        case .appleMusic:
+            if MusicAuthorization.currentStatus == .authorized {
+                AppleMusicCatalogPicker(appModel: appModel, onSelect: openEditor(for:))
+            } else {
+                MusicPermissionWaitingView()
+            }
+        case .files:
+            Color.clear
+                .navigationTitle("Import Audio")
         }
     }
 
-    @ViewBuilder
-    private func groupedSongs(title: String, key: KeyPath<MusicLibrarySong, String>) -> some View {
-        let groups = Dictionary(grouping: librarySongs, by: { $0[keyPath: key] })
-        if groups.isEmpty {
-            Section(title) {
-                Text(emptyLibraryMessage)
-                    .foregroundStyle(.secondary)
+    private func handleLibrarySelection(_ item: MPMediaItem) {
+        let title = item.title?.nonempty ?? "Untitled Song"
+        let artistName = item.artist?.nonempty ?? "Unknown Artist"
+
+        if let storeID = item.playbackStoreID.nonempty {
+            openEditor(
+                for: MusicSearchResult(
+                    songID: storeID,
+                    title: title,
+                    artistName: artistName,
+                    duration: item.playbackDuration,
+                    previewURL: nil,
+                    artworkURL: nil,
+                    isCatalogBacked: true
+                )
+            )
+            return
+        }
+
+        guard let assetURL = item.assetURL else {
+            pickerError = "This library song does not expose a playable file or Apple Music identifier to Roll Call."
+            return
+        }
+
+        Task {
+            guard let cue = await appModel.makeImportedSongCueDraft(from: assetURL) else { return }
+            selectedDraft = DraftRoute(cue: cue, isImported: true)
+        }
+    }
+
+    private func openEditor(for result: MusicSearchResult) {
+        selectedDraft = DraftRoute(
+            cue: appModel.chooseSuggestedHook(for: appModel.makeAppleMusicCueDraft(result)),
+            isImported: false
+        )
+    }
+}
+
+private struct MusicPermissionWaitingView: View {
+    var body: some View {
+        VStack(spacing: 12) {
+            ProgressView()
+            Text("Waiting for Music access...")
+                .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+}
+
+private struct NativeMusicLibraryPicker: UIViewControllerRepresentable {
+    let onPick: (MPMediaItem) -> Void
+    let onCancel: () -> Void
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(onPick: onPick, onCancel: onCancel)
+    }
+
+    func makeUIViewController(context: Context) -> MPMediaPickerController {
+        let picker = MPMediaPickerController(mediaTypes: .music)
+        picker.delegate = context.coordinator
+        picker.allowsPickingMultipleItems = false
+        picker.showsCloudItems = true
+        picker.showsItemsWithProtectedAssets = true
+        picker.prompt = "Choose a song for this walk-up clip."
+        return picker
+    }
+
+    func updateUIViewController(_ uiViewController: MPMediaPickerController, context: Context) {
+    }
+
+    final class Coordinator: NSObject, MPMediaPickerControllerDelegate {
+        let onPick: (MPMediaItem) -> Void
+        let onCancel: () -> Void
+
+        init(onPick: @escaping (MPMediaItem) -> Void, onCancel: @escaping () -> Void) {
+            self.onPick = onPick
+            self.onCancel = onCancel
+        }
+
+        func mediaPicker(
+            _ mediaPicker: MPMediaPickerController,
+            didPickMediaItems mediaItemCollection: MPMediaItemCollection
+        ) {
+            guard let item = mediaItemCollection.items.first else {
+                onCancel()
+                return
             }
-        } else {
-            ForEach(groups.keys.sorted(), id: \.self) { group in
-                Section(group) {
-                    ForEach(groups[group, default: []]) { song in
-                        libraryRow(song)
+            onPick(item)
+        }
+
+        func mediaPickerDidCancel(_ mediaPicker: MPMediaPickerController) {
+            onCancel()
+        }
+    }
+}
+
+private struct AppleMusicCatalogPicker: View {
+    @Environment(\.dismiss) private var dismiss
+    @ObservedObject var appModel: AppModel
+    let onSelect: (MusicSearchResult) -> Void
+
+    @State private var searchTerm = ""
+    @State private var results: [MusicSearchResult] = []
+    @State private var isSearching = false
+    @State private var searchError: String?
+
+    var body: some View {
+        List {
+            if searchTerm.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                Section("Recent Songs") {
+                    if appModel.recentAppleMusicSelections.isEmpty {
+                        ContentUnavailableView(
+                            "Search Apple Music",
+                            systemImage: "music.note",
+                            description: Text("Find a song, artist, or album in the Apple Music catalog.")
+                        )
+                    } else {
+                        ForEach(appModel.recentAppleMusicSelections) { recent in
+                            catalogRow(
+                                MusicSearchResult(
+                                    songID: recent.songID,
+                                    title: recent.title,
+                                    artistName: recent.artistName,
+                                    duration: recent.duration,
+                                    previewURL: recent.previewURL,
+                                    isCatalogBacked: recent.isCatalogBacked ?? true
+                                )
+                            )
+                        }
+                    }
+                }
+            } else {
+                Section {
+                    if isSearching {
+                        HStack(spacing: 12) {
+                            ProgressView()
+                            Text("Searching Apple Music...")
+                                .foregroundStyle(.secondary)
+                        }
+                    } else if let searchError {
+                        ContentUnavailableView(
+                            "Search Unavailable",
+                            systemImage: "exclamationmark.triangle",
+                            description: Text(searchError)
+                        )
+                    } else if results.isEmpty {
+                        ContentUnavailableView.search(text: searchTerm)
+                    } else {
+                        ForEach(results) { result in
+                            catalogRow(result)
+                        }
                     }
                 }
             }
         }
-    }
-
-    private func libraryRow(_ song: MusicLibrarySong) -> some View {
-        Button {
-            guard let result = song.searchResult else { return }
-            onSelect(result)
-        } label: {
-            HStack {
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(song.title)
-                        .foregroundStyle(.primary)
-                    Text(song.artistName)
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
-                }
-                Spacer()
-                if song.searchResult == nil {
-                    Text("Unavailable")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
+        .listStyle(.plain)
+        .navigationTitle("Apple Music")
+        .navigationBarTitleDisplayMode(.inline)
+        .searchable(text: $searchTerm, prompt: "Songs, artists, and albums")
+        .toolbar {
+            ToolbarItem(placement: .topBarLeading) {
+                Button("Cancel") { dismiss() }
             }
         }
-        .disabled(song.searchResult == nil)
+        .task(id: searchTerm) {
+            await search()
+        }
     }
 
     private func catalogRow(_ result: MusicSearchResult) -> some View {
         Button {
             onSelect(result)
         } label: {
-            VStack(alignment: .leading, spacing: 3) {
-                Text(result.title)
-                    .foregroundStyle(.primary)
-                Text(result.artistName)
-                    .font(.footnote)
+            HStack(spacing: 12) {
+                CatalogArtwork(url: result.artworkURL)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(result.title)
+                        .foregroundStyle(.primary)
+                        .lineLimit(1)
+                    Text(result.artistName)
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+                Spacer()
+                Image(systemName: "chevron.right")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.tertiary)
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func search() async {
+        let term = searchTerm.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !term.isEmpty else {
+            results = []
+            searchError = nil
+            isSearching = false
+            return
+        }
+
+        isSearching = true
+        searchError = nil
+        try? await Task.sleep(for: .milliseconds(300))
+        guard !Task.isCancelled else { return }
+
+        do {
+            results = try await appModel.musicCatalogService.search(term: term, mode: .previewFallback)
+        } catch {
+            results = []
+            searchError = error.localizedDescription
+        }
+        isSearching = false
+    }
+}
+
+private struct CatalogArtwork: View {
+    let url: URL?
+
+    var body: some View {
+        AsyncImage(url: url) { image in
+            image
+                .resizable()
+                .scaledToFill()
+        } placeholder: {
+            ZStack {
+                Color.secondary.opacity(0.14)
+                Image(systemName: "music.note")
                     .foregroundStyle(.secondary)
             }
         }
-    }
-
-    private var emptyLibraryMessage: String {
-        switch MusicAuthorization.currentStatus {
-        case .authorized:
-            return "No matching songs were found in this iPhone's music library."
-        case .denied, .restricted:
-            return "Music access is off. Open Settings or import a file."
-        default:
-            return "Allow Music access to browse this iPhone's library."
-        }
-    }
-
-    private func reloadLibrary() {
-        librarySongs = libraryService.songs()
-    }
-
-    private func searchCatalogIfNeeded() async {
-        guard selectedSection == .search, searchScope == .appleMusic else {
-            catalogResults = []
-            catalogSearchError = nil
-            isCatalogSearching = false
-            return
-        }
-        let term = searchTerm.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !term.isEmpty else {
-            catalogResults = []
-            catalogSearchError = nil
-            isCatalogSearching = false
-            return
-        }
-        isCatalogSearching = true
-        catalogSearchError = nil
-        try? await Task.sleep(for: .milliseconds(300))
-        guard !Task.isCancelled else { return }
-        do {
-            catalogResults = try await appModel.musicCatalogService.search(term: term, mode: .previewFallback)
-        } catch {
-            catalogResults = []
-            catalogSearchError = error.localizedDescription
-        }
-        isCatalogSearching = false
+        .frame(width: 48, height: 48)
+        .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
     }
 }
 
@@ -533,11 +445,17 @@ struct SongClipEditorView: View {
                 DisclosureGroup("Advanced", isExpanded: $showAdvanced) {
                     VStack(alignment: .leading, spacing: 10) {
                         Text("Start: \(timeText(cue.startTime))")
-                        Slider(
-                            value: $cue.startTime,
-                            in: 0...max(0, timelineDuration - cue.duration),
-                            step: 0.25
-                        )
+                        if maximumStartTime > 0 {
+                            Slider(
+                                value: $cue.startTime,
+                                in: 0...maximumStartTime,
+                                step: 0.25
+                            )
+                        } else {
+                            Text("This clip uses the full available song window, so its start is fixed.")
+                                .font(.footnote)
+                                .foregroundStyle(.secondary)
+                        }
                         Text("Fade out: \(cue.fadeOutDuration, specifier: "%.1f") seconds")
                         Slider(
                             value: $cue.fadeOutDuration,
@@ -566,6 +484,10 @@ struct SongClipEditorView: View {
         max(cue.duration, appModel.cueTimelineLength(for: cue))
     }
 
+    private var maximumStartTime: TimeInterval {
+        max(0, timelineDuration - cue.duration)
+    }
+
     private var songTitle: String {
         switch cue.source {
         case .appleMusic(let source): return source.title
@@ -581,7 +503,7 @@ struct SongClipEditorView: View {
 
     private func setDuration(_ duration: TimeInterval) {
         cue.duration = min(duration, timelineDuration)
-        cue.startTime = min(cue.startTime, max(0, timelineDuration - cue.duration))
+        cue.startTime = min(cue.startTime, maximumStartTime)
     }
 
     private func timeText(_ value: TimeInterval) -> String {
@@ -641,16 +563,13 @@ struct SongShapeRailView: View {
         .accessibilityValue("Starts at \(Int(startTime.rounded())) seconds and lasts \(Int(duration.rounded())) seconds")
         .accessibilityAdjustableAction { direction in
             let delta: TimeInterval = direction == .increment ? 1 : -1
-            startTime = min(
-                max(0, startTime + delta),
-                max(0, timelineDuration - duration)
-            )
+            startTime = min(max(0, startTime + delta), max(0, timelineDuration - duration))
         }
     }
 }
 
 private extension String {
-    var nilIfEmpty: String? {
+    var nonempty: String? {
         isEmpty ? nil : self
     }
 }

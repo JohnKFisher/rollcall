@@ -4,6 +4,10 @@ Use this file as a concise decision log for project-specific architectural, beha
 
 ## 2026-06-10
 
+- Approved: replace the custom 1.2 Music Library browser with Apple's `MPMediaPickerController` as the primary player song-selection surface. Keep Apple Music catalog search and Files as separate secondary actions that feed the same draft clip editor.
+  Rationale: the system picker provides the familiar Music library hierarchy, search, cloud-item handling, accessibility, and interaction behavior users already understand; catalog search cannot use that controller, so its custom surface should stay visually restrained and follow standard Apple list/search conventions.
+  Status: approved
+
 - Approved: the 1.2 player song flow uses one Music Library-first `Choose Song` picker followed by a draft `Make Your Clip` editor; selecting or importing a source does not change the player until the editor's explicit Save action.
   Rationale: coaches should be able to browse, preview, drag the selected window, and change its length without accidentally replacing a working Game Day cue. Apple Music catalog search remains an explicit Search scope and Files remains an optional fallback.
   Status: approved

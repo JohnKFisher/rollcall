@@ -760,7 +760,8 @@ Editor:
 
 Implemented notes:
 
-- `SongPickerFlow.swift` contains the reusable picker, draft editor, song-shape rail, and device-library adapter.
+- `SongPickerFlow.swift` contains the native Music library picker bridge, native-style Apple Music catalog search, reusable draft editor, and song-shape rail.
+- The original custom Music Library category dashboard was replaced after simulator review. Player Editor now exposes native Music Library selection first, explicit Apple Music catalog search second, and Files third.
 - Music permission remains just-in-time and uses the approved Library-first primer.
 - Library songs need a usable Apple playback/store identifier for the current Apple Music cue/playback model. Rows without one remain visible but unavailable rather than creating an unreliable saved cue.
 - Imported files are copied into an unsaved draft, removed if the draft is cancelled, and assigned only after Save.
