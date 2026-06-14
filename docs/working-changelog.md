@@ -47,6 +47,7 @@ Internal notes for building public-facing changelogs. Keep entries understandabl
 - Roll Call 1.2 now preserves each player's song choice in a richer model that separates the original song, selected timing, local preparation state, device readiness, and export portability. Existing teams and older `.rollcall` files migrate automatically when opened. [needs review]
 
 ### Internal / Maintenance
+- Checked-in app version metadata now reads `1.2` build `69` for post-plan hands-on issue review.
 - Checked-in app version metadata now reads `1.2` build `68` for the completed Phase 5 implementation and automated Phase 6 verification pass.
 - Non-Release Developer Tools can inspect generated-clip storage and request confirmed manual cleanup. Support bundles now use aggregate, redacted cue diagnostics without audio, song metadata, roster names, filenames, or source/model identifiers.
 - Checked-in app version metadata now reads `1.2` build `67` for the Phase 4 Team Clips implementation.

@@ -4,7 +4,7 @@ Use this file as a concise project status snapshot for the current version, what
 
 ## Roll Call
 
-Current version: `1.2` (build `68`)
+Current version: `1.2` (build `69`)
 
 Status:
 - Phase 5 is implemented. Playback prefers a ready generated local clip and otherwise keeps the original source-backed recipe; private player clips and shared Team Clips now use the same bounded preparation queue.
@@ -15,7 +15,7 @@ Status:
 - Cue revamp Phase 4 is implemented. Teams now have a reusable Team Clips library with standalone creation through Music Library, Apple Music, or Files; custom names; exact duplicate reuse; shared player assignments; copy-safe player editing; protected deletion choices; and an advanced tool that promotes existing private player songs into Team Clips.
 - Shared Team Clips now resolve through Game Day playback, readiness, player lists, onboarding summaries, package previews, and Apple Music team-playlist summaries instead of appearing as missing player audio. Team Clip audio references also participate in conservative asset-retention checks.
 - The Phase 3 Music Library-first picker received a high-level physical-device check on 2026-06-14 and appeared to work. Broader device coverage and detailed audible edge-case verification remain part of final Phase 6 release verification.
-- `1.2` build `68` is the checked-in Phase 5 and Phase 6 verification build.
+- `1.2` build `69` is the checked-in post-plan build for hands-on issue review.
 - The Setup Guide audio step now uses the same Music Library, Apple Music search, file import, and draft `Make Your Clip` waveform editor as Player Editor. The old onboarding-only trim controls have been removed, while the crowd-cheer shortcut remains available for getting to Game Day quickly.
 - Volume Automation is now source-backed-only: Apple Music catalog and preview playback retain the existing setting behavior, while local, generated, built-in, and Announcement Cue files receive no runtime volume normalization, fade, or reset.
 - Player song readiness now distinguishes `Ready on Any Device` from `Ready on This Device`; every song status is tappable for a compact explanation, with pointer help where supported.
