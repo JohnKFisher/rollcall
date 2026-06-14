@@ -635,9 +635,6 @@ private final class MediaPlayerCatalogPlaybackController: AppleMusicCatalogPlayb
             hasPendingVolumeRestore = false
         }
         player.stop()
-        if !volumeAutomationEnabled {
-            normalizePlayerVolumeForNextCue(reason: "preplay-no-automation")
-        }
 
         let descriptor = MPMusicPlayerStoreQueueDescriptor(storeIDs: [songID])
         descriptor.startItemID = songID
@@ -693,13 +690,6 @@ private final class MediaPlayerCatalogPlaybackController: AppleMusicCatalogPlayb
         capturedSystemVolumeBaseline = AVAudioSession.sharedInstance().outputVolume
         Self.logger.debug(
             "Captured system volume baseline \(self.formattedVolume(self.capturedSystemVolumeBaseline), privacy: .public) before Apple Music automation"
-        )
-    }
-
-    private func normalizePlayerVolumeForNextCue(reason: String) {
-        setPlayerVolume(1)
-        Self.logger.debug(
-            "Normalized Apple Music player volume to 1.000 for \(reason, privacy: .public)"
         )
     }
 
