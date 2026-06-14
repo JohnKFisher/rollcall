@@ -2,6 +2,12 @@
 
 Use this file as a concise decision log for project-specific architectural, behavioral, tooling, and scope decisions.
 
+## 2026-06-14
+
+- Approved: the Setup Guide audio step uses the same Music Library-first source choices and draft `Make Your Clip` editor as Player Editor, rather than maintaining a separate inline onboarding trimmer.
+  Rationale: one consistent selection and waveform-trimming experience is easier to learn, preserves explicit Save behavior, and prevents the simpler onboarding controls from drifting away from the real editor.
+  Status: approved
+
 ## 2026-06-10
 
 - Approved: Volume Automation applies only to source-backed Apple Music playback. Local, built-in, generated, and Announcement Cue files never receive runtime volume normalization, fading, or restoration, regardless of the setting, because generated local clips already carry their fade envelope.

@@ -7,6 +7,7 @@ Use this file as a concise project status snapshot for the current version, what
 Current version: `1.2` (build `66`)
 
 Status:
+- The Setup Guide audio step now uses the same Music Library, Apple Music search, file import, and draft `Make Your Clip` waveform editor as Player Editor. The old onboarding-only trim controls have been removed, while the crowd-cheer shortcut remains available for getting to Game Day quickly.
 - Volume Automation is now source-backed-only: Apple Music catalog and preview playback retain the existing setting behavior, while local, generated, built-in, and Announcement Cue files receive no runtime volume normalization, fade, or reset.
 - Player song readiness now distinguishes `Ready on Any Device` from `Ready on This Device`; every song status is tappable for a compact explanation, with pointer help where supported.
 - Player Editor discard confirmation now tracks only deferred name, number, photo, and clip-timing edits, preventing background song metadata or preparation updates from making an unchanged editor appear unsaved.

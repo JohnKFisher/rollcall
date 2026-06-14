@@ -1766,18 +1766,16 @@ private struct OnboardingRootView: View {
     @State private var selectedAccent: TeamAccentPreset = .rollCallOrange
     @State private var playerName = ""
     @State private var playerNumber = ""
-    @State private var showAppleMusicPicker = false
-    @State private var showAppleMusicAccessPrimer = false
-    @State private var showLocalAudioImporter = false
+    @State private var songPickerMode: SongPickerMode?
+    @State private var showSongFileImporter = false
+    @State private var pendingImportedSongURL: URL?
+    @State private var songImportError: String?
     @State private var showLineupEditor = false
     @State private var showCloseConfirmation = false
-    @State private var trimMode: TrimSuggestionMode = .suggestedHook
     @State private var isAddingAdditionalPlayer = false
     @State private var visibleStepOverride: OnboardingStep?
     @State private var activeAudioPlayerID: UUID?
     @State private var showFinalHandoffOverride = false
-
-    private let lengthOptions: [Double] = [6, 8, 10, 12, 15]
 
     private var activeTeam: Team? {
         appModel.onboardingTeam
@@ -1872,46 +1870,43 @@ private struct OnboardingRootView: View {
             } message: {
                 Text("Are you sure? If you haven’t used Roll Call before, we strongly recommend going through the onboarding process once so Game Day is ready when you need it.\n\nI promise, it's fast.")
             }
-            .alert("Use Apple Music?", isPresented: $showAppleMusicAccessPrimer) {
-                Button("Not Now", role: .cancel) { }
-                Button("Continue") {
-                    Task {
-                        await appModel.requestAppleMusicAccess()
-                        await MainActor.run {
-                            showAppleMusicPicker = true
-                        }
-                    }
+            .fileImporter(
+                isPresented: $showSongFileImporter,
+                allowedContentTypes: [.audio, .movie],
+                allowsMultipleSelection: false
+            ) { result in
+                switch result {
+                case .success(let urls):
+                    guard let url = urls.first else { return }
+                    pendingImportedSongURL = url
+                    songPickerMode = .files
+                case .failure(let error):
+                    guard !MusicCatalogService.isCancellation(error) else { return }
+                    songImportError = error.localizedDescription
                 }
+            }
+            .alert("Import Unavailable", isPresented: Binding(
+                get: { songImportError != nil },
+                set: { if !$0 { songImportError = nil } }
+            )) {
+                Button("OK") { }
             } message: {
-                Text("Roll Call uses Apple Music access when you choose songs, play full tracks your subscription allows, or update team playlists. Song playback depends on your subscription and what Apple Music makes available on this device.")
+                Text(songImportError ?? "")
             }
-            .sheet(isPresented: $showAppleMusicPicker) {
-                AppleMusicPickerSheet(appModel: appModel) { result in
-                    guard let player = primaryPlayer else { return }
-                    Task {
-                        let didAssign = await appModel.assignAppleMusic(result, to: player)
-                        if didAssign {
-                            await MainActor.run {
-                                trimMode = .suggestedHook
-                                applySuggestedHook(to: player.id)
-                                showAppleMusicPicker = false
-                                visibleStepOverride = .audio
-                            }
-                        }
+            .sheet(item: $songPickerMode, onDismiss: {
+                songPickerMode = nil
+                pendingImportedSongURL = nil
+            }) { mode in
+                SongPickerFlow(
+                    appModel: appModel,
+                    mode: mode,
+                    importedURL: mode == .files ? pendingImportedSongURL : nil,
+                    onSave: { cue in
+                        guard let player = primaryPlayer else { return }
+                        appModel.saveSongCue(cue, to: player.id)
+                        visibleStepOverride = .audio
                     }
-                }
-            }
-            .fileImporter(isPresented: $showLocalAudioImporter, allowedContentTypes: [.audio, .movie], allowsMultipleSelection: false) { result in
-                if case .success(let urls) = result,
-                   let url = urls.first,
-                   let player = primaryPlayer {
-                    Task {
-                        await appModel.importMedia(from: url, for: player)
-                        await MainActor.run {
-                            visibleStepOverride = .audio
-                        }
-                    }
-                }
+                )
             }
             .sheet(isPresented: $showLineupEditor, onDismiss: {
                 appModel.markOnboardingLineupSeen()
@@ -2156,23 +2151,22 @@ private struct OnboardingRootView: View {
         OnboardingCard {
             VStack(alignment: .leading, spacing: RollCallSpacingTier.standard.value) {
                 StatusChip(text: player.displayName, role: player.cue == nil ? .warning : .ready, systemImage: "music.note", emphasis: .subdued)
-                Text(player.cue == nil ? "Choose the walkup audio." : "Trim \(player.displayName)'s walkup clip.")
+                Text(player.cue == nil ? "Choose the walkup audio." : "\(player.displayName)'s clip is ready.")
                     .rollCallText(.screenTitle)
                 if player.cue == nil {
-                    Text("Pick \(player.displayName)'s song or use a local audio file.")
+                    Text("Choose from this iPhone's Music Library, search Apple Music, or import an audio or video file.")
                         .rollCallText(.body)
-                    Text("Don't worry, you can dial in the perfect start point later; right now, just get one clip close enough to try in Game Day.")
+                    Text("After you pick a song, Make Your Clip lets you drag the waveform, choose the length, preview it, and save.")
                         .rollCallText(.body)
                 } else {
-                    Text("Nice. Pick a simple start and length so you can hear this player in Game Day. Advanced dial-in options are still available later from the player setup.")
+                    onboardingCueSummary(player.cue)
+                    Text("To change it, choose another source and shape the replacement in Make Your Clip before saving.")
                         .rollCallText(.body)
                 }
                 Text("You can also just select crowd cheering sound effects too, and pick the song later, but where's the fun in that?")
                     .rollCallText(.body)
 
-                if let cue = player.cue {
-                    simpleOnboardingTrimSelector(cue, for: player)
-
+                if player.cue != nil {
                     Button {
                         visibleStepOverride = .lineup
                     } label: {
@@ -2180,37 +2174,31 @@ private struct OnboardingRootView: View {
                             .frame(maxWidth: .infinity)
                     }
                     .rollCallButtonStyle(.primary)
-                } else {
-                    Button {
-                        presentAppleMusicPicker()
-                    } label: {
-                        Label("Add Song", systemImage: "music.note")
-                            .frame(maxWidth: .infinity)
-                    }
-                    .rollCallButtonStyle(.primary)
                 }
 
                 Button {
-                    if player.cue == nil {
-                        showLocalAudioImporter = true
-                    } else {
-                        presentAppleMusicPicker()
-                    }
+                    songPickerMode = .musicLibrary
                 } label: {
-                    Label(player.cue == nil ? "Use Local Audio" : "Change Song", systemImage: player.cue == nil ? "square.and.arrow.down" : "music.note.list")
+                    Label("Choose from Music Library", systemImage: "music.note.list")
+                        .frame(maxWidth: .infinity)
+                }
+                .rollCallButtonStyle(player.cue == nil ? .primary : .secondary)
+
+                Button {
+                    songPickerMode = .appleMusic
+                } label: {
+                    Label("Search Apple Music", systemImage: "magnifyingglass")
                         .frame(maxWidth: .infinity)
                 }
                 .rollCallButtonStyle(.secondary)
 
-                if player.cue != nil {
-                    Button {
-                        showLocalAudioImporter = true
-                    } label: {
-                        Label("Use Local Audio Instead", systemImage: "square.and.arrow.down")
-                            .frame(maxWidth: .infinity)
-                    }
-                    .rollCallButtonStyle(.quiet)
+                Button {
+                    showSongFileImporter = true
+                } label: {
+                    Label("Import Audio or Video", systemImage: "square.and.arrow.down")
+                        .frame(maxWidth: .infinity)
                 }
+                .rollCallButtonStyle(.secondary)
 
                 if player.cue == nil {
                     Button {
@@ -2226,108 +2214,30 @@ private struct OnboardingRootView: View {
         }
     }
 
-    private func presentAppleMusicPicker() {
-        if appModel.needsAppleMusicAccessPrompt {
-            showAppleMusicAccessPrimer = true
-        } else {
-            showAppleMusicPicker = true
-        }
-    }
-
-    private func simpleOnboardingTrimSelector(_ cue: Cue, for player: Player) -> some View {
-        VStack(alignment: .leading, spacing: RollCallSpacingTier.standard.value) {
-            if case .appleMusic = cue.source {
-                VStack(alignment: .leading, spacing: RollCallSpacingTier.tight.value) {
-                    Text("Starting point")
+    @ViewBuilder
+    private func onboardingCueSummary(_ cue: Cue?) -> some View {
+        if let cue {
+            VStack(alignment: .leading, spacing: 4) {
+                switch cue.source {
+                case .appleMusic(let source):
+                    Text(source.title)
                         .rollCallText(.cardTitle)
-                    HStack(spacing: 8) {
-                        ForEach(TrimSuggestionMode.allCases) { mode in
-                            Button(mode.title) {
-                                trimMode = mode
-                                updateOnboardingCue(trimmedCue(for: cue, mode: mode), for: player)
-                            }
-                            .buttonStyle(PlayerEditorChipButtonStyle(isSelected: trimMode == mode))
-                        }
-                    }
-                }
-            }
-
-            VStack(alignment: .leading, spacing: RollCallSpacingTier.tight.value) {
-                HStack {
-                    Text("Start")
+                    Text(source.artistName)
+                        .rollCallText(.helperText)
+                case .localAudio(let source):
+                    Text(source.displayName.songTitleWithoutArtistPrefix)
                         .rollCallText(.cardTitle)
-                    Spacer()
-                    Text(formattedCueTime(cue.startTime))
-                        .font(.subheadline.monospacedDigit().weight(.semibold))
-                        .foregroundStyle(.secondary)
-                }
-                StartScrubControl(
-                    progress: appModel.cueTimelineLength(for: cue) <= 0 ? 0 : cue.startTime / appModel.cueTimelineLength(for: cue),
-                    displayRange: appModel.cueTimelineLength(for: cue),
-                    currentValueText: formattedCueTime(cue.startTime),
-                    onSeek: { progress in
-                        updateOnboardingCue(trimmedCue(for: cue, startProgress: progress), for: player)
-                    },
-                    onLiveScrub: { _ in }
-                )
-            }
-
-            VStack(alignment: .leading, spacing: RollCallSpacingTier.tight.value) {
-                HStack {
-                    Text("Length")
+                case .builtInClip(let source):
+                    Text(source.displayName)
                         .rollCallText(.cardTitle)
-                    Spacer()
-                    Text(formattedCueTime(cue.duration))
-                        .font(.subheadline.monospacedDigit().weight(.semibold))
-                        .foregroundStyle(.secondary)
                 }
-                FlowChipRow(options: lengthOptions, selected: cue.duration) { option in
-                    updateOnboardingCue(trimmedCue(for: cue, duration: option), for: player)
-                    appModel.rememberPreferredLength(option)
-                }
+                Text("\(formattedCueTime(cue.duration)) clip starting at \(formattedCueTime(cue.startTime))")
+                    .rollCallText(.helperText)
             }
-
-            Button {
-                Task { await appModel.previewCue(cue) }
-            } label: {
-                Label("Preview Clip", systemImage: "play.fill")
-                    .frame(maxWidth: .infinity)
-            }
-            .rollCallButtonStyle(.secondary)
+            .padding(12)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
         }
-    }
-
-    private func trimmedCue(for cue: Cue, mode: TrimSuggestionMode) -> Cue {
-        switch mode {
-        case .suggestedHook:
-            return appModel.chooseSuggestedHook(for: cue)
-        case .startAtBeginning:
-            return appModel.chooseStartAtBeginning(for: cue)
-        }
-    }
-
-    private func trimmedCue(for cue: Cue, startProgress: Double) -> Cue {
-        var updated = cue
-        let timelineLength = appModel.cueTimelineLength(for: cue)
-        let maxStart = max(0, timelineLength - cue.duration)
-        updated.startTime = min(max(0, startProgress * timelineLength), maxStart)
-        return updated
-    }
-
-    private func trimmedCue(for cue: Cue, duration: Double) -> Cue {
-        var updated = cue
-        let timelineLength = appModel.cueTimelineLength(for: cue)
-        let durationLimit = appModel.cueDurationLimit(for: cue)
-        updated.duration = min(duration, durationLimit)
-        updated.duration = min(updated.duration, timelineLength - cue.startTime)
-        updated.duration = max(0.5, updated.duration)
-        return updated
-    }
-
-    private func updateOnboardingCue(_ cue: Cue, for player: Player) {
-        var updatedPlayer = player
-        updatedPlayer.cue = cue
-        appModel.updatePlayer(updatedPlayer)
     }
 
     private var lineupContent: some View {
@@ -2527,12 +2437,6 @@ private struct OnboardingRootView: View {
         visibleStepOverride = target
     }
 
-    private func applySuggestedHook(to playerID: UUID) {
-        guard var player = activeTeam?.players.first(where: { $0.id == playerID }),
-              let cue = player.cue else { return }
-        player.cue = appModel.chooseSuggestedHook(for: cue)
-        appModel.updatePlayer(player)
-    }
 }
 
 private enum OnboardingStep: Int, CaseIterable {

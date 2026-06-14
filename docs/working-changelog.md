@@ -13,6 +13,7 @@ Internal notes for building public-facing changelogs. Keep entries understandabl
 
 ### Changed
 
+- Onboarding now uses the same Music Library-first song choices and waveform clip editor as Player setup, so selecting, trimming, previewing, and saving a first walk-up song works consistently throughout Roll Call. [public candidate] [needs review]
 - Volume Automation now applies only to source-backed Apple Music. Local, generated, built-in, and Announcement Cue files play at their encoded volume without additional runtime fading or volume resets.
 - Song readiness now says `Ready on Any Device` for portable Roll Call-owned clips and `Ready on This Device` for device-dependent playback. Tapping the status explains what it means for playback, Apple Music, and team exports.
 - Apple Music catalog search now keeps its search field visibly anchored at the top of the screen beneath a large title, more closely matching the familiar Music Library picker layout.
