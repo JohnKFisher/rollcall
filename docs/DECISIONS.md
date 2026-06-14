@@ -4,6 +4,14 @@ Use this file as a concise decision log for project-specific architectural, beha
 
 ## 2026-06-10
 
+- Approved: Volume Automation applies only to source-backed Apple Music playback. Local, built-in, generated, and Announcement Cue files never receive runtime volume normalization, fading, or restoration, regardless of the setting, because generated local clips already carry their fade envelope.
+  Rationale: applying playback-time volume changes to local files can duplicate baked fades and alter user-authored audio; the setting remains useful only for source-backed playback where Roll Call cannot bake the fade into a portable file.
+  Status: approved
+
+- Approved: player song readiness uses `Ready on Any Device` for a Roll Call-owned portable local clip and `Ready on This Device` for source-backed playback that currently works here but may not travel; tapping the status explains its playback and portability implications.
+  Rationale: the earlier `Ready` and `Ready Here` labels required users to infer the device boundary, while explicit device language keeps Apple Music reliability and export portability honest without turning the main Player Editor into documentation.
+  Status: approved
+
 - Approved: replace the custom 1.2 Music Library browser with Apple's `MPMediaPickerController` as the primary player song-selection surface. Keep Apple Music catalog search and Files as separate secondary actions that feed the same draft clip editor.
   Rationale: the system picker provides the familiar Music library hierarchy, search, cloud-item handling, accessibility, and interaction behavior users already understand; catalog search cannot use that controller, so its custom surface should stay visually restrained and follow standard Apple list/search conventions.
   Status: approved

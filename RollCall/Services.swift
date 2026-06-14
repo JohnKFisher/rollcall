@@ -296,12 +296,13 @@ struct MusicCatalogService: Sendable {
 
         if mode == .catalogOnly {
             do {
-                let catalogResults = try await catalogSearch(term: trimmed)
-                guard !catalogResults.isEmpty else { throw AppError.musicSearchUnavailable }
-                return catalogResults
+                return try await catalogSearch(term: trimmed)
             } catch let error as AppError {
                 throw error
             } catch {
+                if Self.isCancellation(error) {
+                    throw error
+                }
                 throw AppError.appleMusicFullSongCatalogUnavailable
             }
         }
@@ -312,13 +313,24 @@ struct MusicCatalogService: Sendable {
                 return musicKitResults
             }
         } catch {
+            if Self.isCancellation(error) {
+                throw error
+            }
             // Fall back to preview-only search when catalog access fails, including
             // local development builds that cannot fetch a MusicKit developer token.
         }
 
         let previewResults = try await searchWithITunesPreview(term: trimmed)
-        guard !previewResults.isEmpty else { throw AppError.musicSearchUnavailable }
         return previewResults
+    }
+
+    static func isCancellation(_ error: Error) -> Bool {
+        if error is CancellationError {
+            return true
+        }
+        let nsError = error as NSError
+        return (nsError.domain == NSURLErrorDomain && nsError.code == NSURLErrorCancelled)
+            || (nsError.domain == NSCocoaErrorDomain && nsError.code == NSUserCancelledError)
     }
 
     func catalogBackedResult(for result: MusicSearchResult) async throws -> MusicSearchResult {
@@ -769,6 +781,7 @@ private final class MusicKitTransitionCatalogPlaybackController: AppleMusicCatal
 @MainActor
 final class CuePlaybackEngine: NSObject, ObservableObject {
     @Published private(set) var activeCueID: UUID?
+    @Published private(set) var activeCueProgress: Double?
 
     private let audioAssetService: AudioAssetService
     private let musicCatalogService: MusicCatalogService
@@ -782,13 +795,14 @@ final class CuePlaybackEngine: NSObject, ObservableObject {
     private var announcerPlayer: AVAudioPlayer?
     private var remotePlayer: AVPlayer?
     private var stopTask: Task<Void, Never>?
+    private var progressTask: Task<Void, Never>?
     private var prewarmedCueID: UUID?
     private var prewarmedLocalPlayer: AVAudioPlayer?
     private var previewPlayer: AVAudioPlayer?
     private var playbackSessionID = UUID()
     private var lastStartDate: Date?
     private var lastStartedCueID: UUID?
-    private var volumeAutomationEnabledForCurrentCue = false
+    private var sourceBackedVolumeAutomationEnabledForCurrentCue = false
     private var appleMusicTransitionCrossfadeExperimentEnabled = false
 
     init(
@@ -828,7 +842,9 @@ final class CuePlaybackEngine: NSObject, ObservableObject {
         }
         let sessionID = beginPlayback(
             activeCueID: cue.id,
-            fadeOutVolumeAutomationEnabled: fadeOutVolumeAutomationEnabled
+            sourceBackedVolumeAutomationEnabled: cue.source.runtimeVolumeAutomationEnabled(
+                whenSettingEnabled: fadeOutVolumeAutomationEnabled
+            )
         )
         lastStartDate = Date()
         lastStartedCueID = cue.id
@@ -862,7 +878,7 @@ final class CuePlaybackEngine: NSObject, ObservableObject {
         }
         let sessionID = beginPlayback(
             activeCueID: activeCueID,
-            fadeOutVolumeAutomationEnabled: fadeOutVolumeAutomationEnabled
+            sourceBackedVolumeAutomationEnabled: false
         )
         lastStartDate = Date()
         lastStartedCueID = activeCueID
@@ -872,9 +888,6 @@ final class CuePlaybackEngine: NSObject, ObservableObject {
             let player = try AVAudioPlayer(contentsOf: url)
             announcerPlayer = player
             player.prepareToPlay()
-            if fadeOutVolumeAutomationEnabled {
-                player.volume = 1
-            }
             guard player.play() else {
                 announcerPlayer = nil
                 stopIfCurrent(sessionID: sessionID)
@@ -969,18 +982,14 @@ final class CuePlaybackEngine: NSObject, ObservableObject {
         playbackSessionID = UUID()
         stopTask?.cancel()
         stopTask = nil
+        progressTask?.cancel()
+        progressTask = nil
         announcerPlayer?.stop()
-        if volumeAutomationEnabledForCurrentCue {
-            announcerPlayer?.volume = 1
-        }
         announcerPlayer = nil
         audioPlayer?.stop()
-        if volumeAutomationEnabledForCurrentCue {
-            audioPlayer?.volume = 1
-        }
         audioPlayer = nil
         remotePlayer?.pause()
-        if volumeAutomationEnabledForCurrentCue {
+        if sourceBackedVolumeAutomationEnabledForCurrentCue {
             remotePlayer?.volume = 1
         }
         remotePlayer = nil
@@ -988,10 +997,11 @@ final class CuePlaybackEngine: NSObject, ObservableObject {
         previewPlayer?.stop()
         previewPlayer = nil
         activeCueID = nil
-        volumeAutomationEnabledForCurrentCue = false
+        activeCueProgress = nil
+        sourceBackedVolumeAutomationEnabledForCurrentCue = false
     }
 
-    private func beginPlayback(activeCueID: UUID, fadeOutVolumeAutomationEnabled: Bool) -> UUID {
+    private func beginPlayback(activeCueID: UUID, sourceBackedVolumeAutomationEnabled: Bool) -> UUID {
         // When replacing one cue with another, keep the outgoing cue from briefly
         // restoring its old Apple Music volume before the new cue captures its own anchor.
         stop(restoresCatalogVolume: false)
@@ -999,7 +1009,7 @@ final class CuePlaybackEngine: NSObject, ObservableObject {
         let sessionID = UUID()
         playbackSessionID = sessionID
         self.activeCueID = activeCueID
-        volumeAutomationEnabledForCurrentCue = fadeOutVolumeAutomationEnabled
+        sourceBackedVolumeAutomationEnabledForCurrentCue = sourceBackedVolumeAutomationEnabled
         return sessionID
     }
 
@@ -1047,9 +1057,6 @@ final class CuePlaybackEngine: NSObject, ObservableObject {
             }
             announcerPlayer = player
             player.prepareToPlay()
-            if fadeOutVolumeAutomationEnabled {
-                player.volume = 1
-            }
             guard player.play() else {
                 announcerPlayer = nil
                 try await startPrimaryCue(
@@ -1151,6 +1158,7 @@ final class CuePlaybackEngine: NSObject, ObservableObject {
                         player?.volume = 1
                     }
                     player?.play()
+                    self?.startProgressTracking(duration: clipDuration, sessionID: sessionID)
                 }
             }
             scheduleRemoteStop(
@@ -1165,9 +1173,6 @@ final class CuePlaybackEngine: NSObject, ObservableObject {
                 url: url,
                 start: cue.startTime,
                 duration: duration,
-                fadeOut: cue.fadeOutDuration,
-                fadeOutVolumeAutomationEnabled: fadeOutVolumeAutomationEnabled,
-                setsInitialVolumeToMax: setsInitialVolumeToMax,
                 reusePrewarm: prewarmedCueID == cue.id,
                 sessionID: sessionID
             )
@@ -1177,9 +1182,6 @@ final class CuePlaybackEngine: NSObject, ObservableObject {
                 url: url,
                 start: cue.startTime,
                 duration: duration,
-                fadeOut: cue.fadeOutDuration,
-                fadeOutVolumeAutomationEnabled: fadeOutVolumeAutomationEnabled,
-                setsInitialVolumeToMax: setsInitialVolumeToMax,
                 reusePrewarm: prewarmedCueID == cue.id,
                 sessionID: sessionID
             )
@@ -1213,6 +1215,7 @@ final class CuePlaybackEngine: NSObject, ObservableObject {
             transitionCrossfadeEnabled: fadeOutVolumeAutomationEnabled && catalogPlaybackController.usesSystemTransitionCrossfade
         )
         guard playbackSessionID == sessionID else { return }
+        startProgressTracking(duration: duration, sessionID: sessionID)
         scheduleCatalogStop(
             duration: duration,
             fadeOut: fadeOut,
@@ -1225,9 +1228,6 @@ final class CuePlaybackEngine: NSObject, ObservableObject {
         url: URL,
         start: TimeInterval,
         duration: TimeInterval,
-        fadeOut: TimeInterval,
-        fadeOutVolumeAutomationEnabled: Bool,
-        setsInitialVolumeToMax: Bool,
         reusePrewarm: Bool,
         sessionID: UUID
     ) throws {
@@ -1237,37 +1237,21 @@ final class CuePlaybackEngine: NSObject, ObservableObject {
             try AVAudioPlayer(contentsOf: url)
         }
         audioPlayer = player
-        if fadeOutVolumeAutomationEnabled, setsInitialVolumeToMax {
-            player.volume = 1
-        }
         player.currentTime = start
         player.play()
+        startProgressTracking(duration: duration, sessionID: sessionID)
         scheduleLocalStop(
             duration: duration,
-            fadeOut: fadeOut,
-            fadeOutVolumeAutomationEnabled: fadeOutVolumeAutomationEnabled,
             sessionID: sessionID
         )
     }
 
-    private func scheduleLocalStop(duration: TimeInterval, fadeOut: TimeInterval, fadeOutVolumeAutomationEnabled: Bool, sessionID: UUID) {
+    private func scheduleLocalStop(duration: TimeInterval, sessionID: UUID) {
         let stopDelay = playbackStopDelayIncludingTailGuard(for: duration)
-        let fadeDuration = effectiveFadeDuration(
-            playbackDuration: stopDelay,
-            fadeOut: fadeOut,
-            fadeOutVolumeAutomationEnabled: fadeOutVolumeAutomationEnabled
-        )
-        let sustainDuration = max(0, stopDelay - fadeDuration)
         stopTask = Task { [weak self] in
-            if sustainDuration > 0 {
-                try? await Task.sleep(for: .seconds(sustainDuration))
-            }
+            try? await Task.sleep(for: .seconds(stopDelay))
             guard let self, !Task.isCancelled, self.playbackSessionID == sessionID else { return }
-            if fadeDuration > 0 {
-                await self.fadeLocal(duration: fadeDuration, sessionID: sessionID)
-            } else {
-                self.stopIfCurrent(sessionID: sessionID)
-            }
+            self.stopIfCurrent(sessionID: sessionID)
         }
     }
 
@@ -1323,6 +1307,29 @@ final class CuePlaybackEngine: NSObject, ObservableObject {
         return min(appleMusicClipDurationLimit, max(0, duration) + primaryCueTailGuard)
     }
 
+    private func startProgressTracking(duration: TimeInterval, sessionID: UUID) {
+        progressTask?.cancel()
+        let boundedDuration = max(0.01, duration)
+        activeCueProgress = 0
+        progressTask = Task { [weak self] in
+            let clock = ContinuousClock()
+            let start = clock.now
+            while let self,
+                  !Task.isCancelled,
+                  self.playbackSessionID == sessionID {
+                let elapsed = start.duration(to: clock.now)
+                let components = elapsed.components
+                let seconds = Double(components.seconds)
+                    + Double(components.attoseconds) / 1_000_000_000_000_000_000
+                self.activeCueProgress = min(1, seconds / boundedDuration)
+                if seconds >= boundedDuration {
+                    return
+                }
+                try? await Task.sleep(for: .milliseconds(50))
+            }
+        }
+    }
+
     private func waitForAnnouncerPlaybackToFinish(_ player: AVAudioPlayer) async {
         let maxWait = max(0, player.duration) + announcerCompletionGrace
         let startDate = Date()
@@ -1341,16 +1348,6 @@ final class CuePlaybackEngine: NSObject, ObservableObject {
         let boundedPlayback = max(0, playbackDuration)
         let boundedFade = max(0, fadeOut)
         return min(boundedPlayback, boundedFade)
-    }
-
-    private func fadeLocal(duration: TimeInterval, sessionID: UUID) async {
-        guard let player = audioPlayer else { return }
-        for step in stride(from: 8, through: 1, by: -1) {
-            guard playbackSessionID == sessionID, !Task.isCancelled else { return }
-            player.volume = Float(step) / 8
-            try? await Task.sleep(for: .seconds(duration / 8))
-        }
-        stopIfCurrent(sessionID: sessionID)
     }
 
     private func fadeRemote(duration: TimeInterval, sessionID: UUID) async {
@@ -1373,7 +1370,10 @@ final class CuePlaybackEngine: NSObject, ObservableObject {
         catalogPlaybackController.setVolume(0)
         catalogPlaybackController.stop(restoresVolume: false)
         activeCueID = nil
-        volumeAutomationEnabledForCurrentCue = false
+        activeCueProgress = nil
+        progressTask?.cancel()
+        progressTask = nil
+        sourceBackedVolumeAutomationEnabledForCurrentCue = false
         try? await Task.sleep(for: .seconds(0.25))
         guard playbackSessionID == sessionID, !Task.isCancelled else { return }
         catalogPlaybackController.restoreVolume()
@@ -1392,7 +1392,15 @@ private extension CuePlaybackEngine {
     }
 }
 
-private extension CueSource {
+extension CueSource {
+    func runtimeVolumeAutomationEnabled(whenSettingEnabled settingEnabled: Bool) -> Bool {
+        guard settingEnabled else { return false }
+        if case .appleMusic = self {
+            return true
+        }
+        return false
+    }
+
     var maximumPlaybackDuration: TimeInterval? {
         switch self {
         case .appleMusic:

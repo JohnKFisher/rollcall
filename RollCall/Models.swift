@@ -373,6 +373,34 @@ struct Player: Codable, Equatable, Identifiable {
     }
 }
 
+struct PlayerEditorDraftState: Equatable {
+    struct CueTiming: Equatable {
+        var id: UUID
+        var startTime: TimeInterval
+        var duration: TimeInterval
+        var fadeOutDuration: TimeInterval
+    }
+
+    var displayName: String
+    var uniformNumber: String
+    var photoRelativePath: String?
+    var cueTiming: CueTiming?
+
+    init(player: Player) {
+        displayName = player.displayName
+        uniformNumber = player.uniformNumber
+        photoRelativePath = player.photoRelativePath
+        cueTiming = player.cue.map {
+            CueTiming(
+                id: $0.id,
+                startTime: $0.startTime,
+                duration: $0.duration,
+                fadeOutDuration: $0.fadeOutDuration
+            )
+        }
+    }
+}
+
 struct BuiltInClip: Codable, Equatable, Identifiable {
     var id: UUID
     var title: String

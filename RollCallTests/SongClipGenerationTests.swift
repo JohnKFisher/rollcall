@@ -47,6 +47,85 @@ final class SongClipGenerationTests: XCTestCase {
         XCTAssertFalse(SongClipPolicy.current.autoDownloadEligibleSongsEnabled)
     }
 
+    func testAppleMusicSearchRecognizesCancellationErrors() {
+        XCTAssertTrue(MusicCatalogService.isCancellation(CancellationError()))
+        XCTAssertTrue(
+            MusicCatalogService.isCancellation(
+                URLError(.cancelled)
+            )
+        )
+        XCTAssertFalse(
+            MusicCatalogService.isCancellation(
+                URLError(.notConnectedToInternet)
+            )
+        )
+    }
+
+    func testPlayerEditorDraftStateIgnoresBackgroundSongPreparationChanges() {
+        let player = RollCallTestFixtures.player(
+            id: RollCallTestFixtures.alexID,
+            name: "Alex Morgan",
+            number: "7",
+            cue: RollCallTestFixtures.localCue()
+        )
+        var refreshedPlayer = player
+        guard case .privateClip(var clip) = refreshedPlayer.songAssignment else {
+            return XCTFail("Expected a private song clip.")
+        }
+        clip.readinessInputs.playback = .localClipReady
+        clip.generatedAsset.status = .pending
+        clip.retryMetadata.attemptCount = 1
+        refreshedPlayer.songAssignment = .privateClip(clip)
+
+        XCTAssertNotEqual(player, refreshedPlayer)
+        XCTAssertEqual(
+            PlayerEditorDraftState(player: player),
+            PlayerEditorDraftState(player: refreshedPlayer)
+        )
+    }
+
+    func testPlayerEditorDraftStateDetectsDeferredIdentityPhotoAndTimingChanges() {
+        let player = RollCallTestFixtures.player(
+            id: RollCallTestFixtures.alexID,
+            name: "Alex Morgan",
+            number: "7",
+            cue: RollCallTestFixtures.localCue()
+        )
+
+        var renamed = player
+        renamed.displayName = "Alex M."
+        XCTAssertNotEqual(PlayerEditorDraftState(player: player), PlayerEditorDraftState(player: renamed))
+
+        var renumbered = player
+        renumbered.uniformNumber = "17"
+        XCTAssertNotEqual(PlayerEditorDraftState(player: player), PlayerEditorDraftState(player: renumbered))
+
+        var rephotographed = player
+        rephotographed.photoRelativePath = "new-photo.jpg"
+        XCTAssertNotEqual(PlayerEditorDraftState(player: player), PlayerEditorDraftState(player: rephotographed))
+
+        var retrimmed = player
+        retrimmed.cue?.startTime += 0.25
+        XCTAssertNotEqual(PlayerEditorDraftState(player: player), PlayerEditorDraftState(player: retrimmed))
+    }
+
+    func testRuntimeVolumeAutomationAppliesOnlyToSourceBackedAppleMusic() {
+        let localSource = RollCallTestFixtures.localCue().source
+        let builtInSource = CueSource.builtInClip(
+            BuiltInClipSource(id: "test", displayName: "Test")
+        )
+        let appleMusicSource = RollCallTestFixtures.appleMusicCue(
+            songID: "123",
+            title: "Song",
+            artistName: "Artist"
+        ).source
+
+        XCTAssertFalse(localSource.runtimeVolumeAutomationEnabled(whenSettingEnabled: true))
+        XCTAssertFalse(builtInSource.runtimeVolumeAutomationEnabled(whenSettingEnabled: true))
+        XCTAssertTrue(appleMusicSource.runtimeVolumeAutomationEnabled(whenSettingEnabled: true))
+        XCTAssertFalse(appleMusicSource.runtimeVolumeAutomationEnabled(whenSettingEnabled: false))
+    }
+
     func testMissingLocalSourceFailsPermanentlyWithoutCreatingAsset() async {
         let service = SongClipGenerationService()
         let clip = SongClip(cue: RollCallTestFixtures.localCue(relativePath: "missing.caf"))
@@ -90,6 +169,133 @@ final class SongClipGenerationTests: XCTestCase {
         let generatedRelativePath = try XCTUnwrap(asset.relativePath)
         let generatedURL = try AppPaths.assetURL(relativePath: generatedRelativePath)
         XCTAssertTrue(FileManager.default.fileExists(atPath: generatedURL.path))
+    }
+
+    func testWaveformSamplerReflectsReadableAudioAmplitude() async throws {
+        let sourceURL = try AppPaths.assetURL(relativePath: "waveform-source.caf")
+        try writeSteppedAudio(to: sourceURL, duration: 1)
+
+        let samples = try await SongWaveformService().samples(from: sourceURL, sampleCount: 20)
+
+        XCTAssertEqual(samples.count, 20)
+        XCTAssertLessThan(samples.prefix(8).max() ?? 1, 0.2)
+        XCTAssertGreaterThan(samples.suffix(8).min() ?? 0, 0.9)
+    }
+
+    func testWaveformSamplerRejectsUnreadableAudio() async throws {
+        let sourceURL = try AppPaths.assetURL(relativePath: "waveform-unreadable.m4a")
+        try Data("not-audio".utf8).write(to: sourceURL)
+
+        do {
+            _ = try await SongWaveformService().samples(from: sourceURL, sampleCount: 20)
+            XCTFail("Expected unreadable audio to fail waveform sampling.")
+        } catch {
+            XCTAssertFalse(error.localizedDescription.isEmpty)
+        }
+    }
+
+    func testChangingClipLengthKeepsWaveformStartPositionFixed() {
+        let shortClip = SongShapeRailGeometry(
+            width: 320,
+            startTime: 60,
+            duration: 8,
+            timelineDuration: 180
+        )
+        let longClip = SongShapeRailGeometry(
+            width: 320,
+            startTime: 60,
+            duration: 20,
+            timelineDuration: 180
+        )
+
+        XCTAssertEqual(shortClip.offset, longClip.offset, accuracy: 0.001)
+        XCTAssertEqual(shortClip.offset, 320 * 60 / 180, accuracy: 0.001)
+        XCTAssertLessThan(shortClip.selectedWidth, longClip.selectedWidth)
+    }
+
+    func testWaveformDragMapsVisualPositionToTimelineStart() {
+        let geometry = SongShapeRailGeometry(
+            width: 320,
+            startTime: 0,
+            duration: 10,
+            timelineDuration: 160
+        )
+
+        XCTAssertEqual(
+            geometry.startTime(centeredAt: 170),
+            80,
+            accuracy: 0.001
+        )
+    }
+
+    func testPrecisionStartAdjustmentClampsToAvailableTimeline() {
+        let earlier = SongClipTimingAdjustment.adjustingStart(
+            startTime: 0.1,
+            duration: 10,
+            fadeOutDuration: 2,
+            delta: -0.25,
+            timelineDuration: 180
+        )
+        let later = SongClipTimingAdjustment.adjustingStart(
+            startTime: 169.75,
+            duration: 10,
+            fadeOutDuration: 2,
+            delta: 1,
+            timelineDuration: 180
+        )
+
+        XCTAssertEqual(earlier.startTime, 0)
+        XCTAssertEqual(later.startTime, 170)
+    }
+
+    func testPrecisionLengthAdjustmentKeepsStartUnlessEndRequiresClamp() {
+        let normal = SongClipTimingAdjustment.adjustingDuration(
+            startTime: 60,
+            duration: 8,
+            fadeOutDuration: 2,
+            delta: 0.25,
+            timelineDuration: 180
+        )
+        let clamped = SongClipTimingAdjustment.adjustingDuration(
+            startTime: 171,
+            duration: 8,
+            fadeOutDuration: 2,
+            delta: 2,
+            timelineDuration: 180
+        )
+
+        XCTAssertEqual(normal.startTime, 60)
+        XCTAssertEqual(normal.duration, 8.25)
+        XCTAssertEqual(clamped.startTime, 170)
+        XCTAssertEqual(clamped.duration, 10)
+    }
+
+    func testPrecisionLengthAndFadeRespectBounds() {
+        let minimumLength = SongClipTimingAdjustment.adjustingDuration(
+            startTime: 0,
+            duration: 1,
+            fadeOutDuration: 1,
+            delta: -1,
+            timelineDuration: 180
+        )
+        let maximumLength = SongClipTimingAdjustment.adjustingDuration(
+            startTime: 0,
+            duration: 20,
+            fadeOutDuration: 2,
+            delta: 1,
+            timelineDuration: 180
+        )
+        let maximumFade = SongClipTimingAdjustment.adjustingFade(
+            startTime: 0,
+            duration: 3,
+            fadeOutDuration: 2.75,
+            delta: 1,
+            timelineDuration: 180
+        )
+
+        XCTAssertEqual(minimumLength.duration, 1)
+        XCTAssertEqual(maximumLength.duration, 20)
+        XCTAssertEqual(maximumFade.fadeOutDuration, 3)
     }
 
     func testQueueDeduplicatesPlayerRequestsAndHonorsPause() async {
@@ -194,6 +400,23 @@ final class SongClipGenerationTests: XCTestCase {
             AVAudioPCMBuffer(pcmFormat: format, frameCapacity: frameCount)
         )
         buffer.frameLength = frameCount
+        let file = try AVAudioFile(forWriting: url, settings: format.settings)
+        try file.write(from: buffer)
+    }
+
+    private func writeSteppedAudio(to url: URL, duration: TimeInterval) throws {
+        let format = try XCTUnwrap(
+            AVAudioFormat(standardFormatWithSampleRate: 44_100, channels: 1)
+        )
+        let frameCount = AVAudioFrameCount(duration * format.sampleRate)
+        let buffer = try XCTUnwrap(
+            AVAudioPCMBuffer(pcmFormat: format, frameCapacity: frameCount)
+        )
+        buffer.frameLength = frameCount
+        let samples = try XCTUnwrap(buffer.floatChannelData?[0])
+        for frame in 0..<Int(frameCount) {
+            samples[frame] = frame < Int(frameCount) / 2 ? 0.05 : 0.8
+        }
         let file = try AVAudioFile(forWriting: url, settings: format.settings)
         try file.write(from: buffer)
     }

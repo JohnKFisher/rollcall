@@ -6358,6 +6358,14 @@ private struct PlayerEditorSheet: View {
         let image: UIImage
     }
 
+    private struct SongReadinessExplanation: Identifiable {
+        let id: String
+        let title: String
+        let detail: String
+        let role: StatusChipRole
+        let systemImage: String
+    }
+
     private enum Field: Hashable {
         case displayName
         case uniformNumber
@@ -6371,10 +6379,14 @@ private struct PlayerEditorSheet: View {
     @State private var photoCropFallbackTask: Task<Void, Never>?
     @State private var didCropperRender = false
     @State private var songPickerMode: SongPickerMode?
+    @State private var showSongFileImporter = false
+    @State private var pendingImportedSongURL: URL?
+    @State private var songImportError: String?
     @State private var trimMode: TrimSuggestionMode = .suggestedHook
     @State private var showAdvancedTrim = false
     @State private var liveScrubTask: Task<Void, Never>?
     @State private var pendingClearAction: PendingClearAction?
+    @State private var songReadinessExplanation: SongReadinessExplanation?
     @State private var showDiscardChangesConfirmation = false
     @State private var isStartTrimEditingEnabled = false
     @FocusState private var focusedField: Field?
@@ -6473,7 +6485,7 @@ private struct PlayerEditorSheet: View {
                         .rollCallButtonStyle(.secondary)
 
                         Button {
-                            songPickerMode = .files
+                            showSongFileImporter = true
                         } label: {
                             Label("Import Audio or Video", systemImage: "square.and.arrow.down")
                         }
@@ -6649,12 +6661,37 @@ private struct PlayerEditorSheet: View {
             } message: {
                 Text("Closing now will lose unsaved name, number, photo, and trim edits. Song, imported audio, and Announcement Cue changes are already saved.")
             }
+            .fileImporter(
+                isPresented: $showSongFileImporter,
+                allowedContentTypes: [.audio, .movie],
+                allowsMultipleSelection: false
+            ) { result in
+                switch result {
+                case .success(let urls):
+                    guard let url = urls.first else { return }
+                    pendingImportedSongURL = url
+                    songPickerMode = .files
+                case .failure(let error):
+                    guard !MusicCatalogService.isCancellation(error) else { return }
+                    songImportError = error.localizedDescription
+                }
+            }
+            .alert("Import Unavailable", isPresented: Binding(
+                get: { songImportError != nil },
+                set: { if !$0 { songImportError = nil } }
+            )) {
+                Button("OK") { }
+            } message: {
+                Text(songImportError ?? "")
+            }
             .sheet(item: $songPickerMode, onDismiss: {
                 songPickerMode = nil
+                pendingImportedSongURL = nil
             }) { mode in
                 SongPickerFlow(
                     appModel: appModel,
                     mode: mode,
+                    importedURL: mode == .files ? pendingImportedSongURL : nil,
                     onSave: { cue in
                         appModel.saveSongCue(cue, to: player.id)
                         player.cue = cue
@@ -6795,26 +6832,89 @@ private struct PlayerEditorSheet: View {
     private var savedSongReadinessChip: some View {
         if let savedPlayer = appModel.selectedTeam?.players.first(where: { $0.id == player.id }),
            case .privateClip(let clip)? = savedPlayer.songAssignment {
-            switch clip.generatedAsset.status {
-            case .pending:
+            let explanation = songReadinessExplanation(for: clip)
+            Button {
+                songReadinessExplanation = explanation
+            } label: {
                 StatusChip(
-                    text: "Preparing",
-                    role: .neutral,
-                    systemImage: "clock",
+                    text: explanation.title,
+                    role: explanation.role,
+                    systemImage: explanation.systemImage,
                     emphasis: .subdued
                 )
-            default:
-                switch clip.readinessInputs.playback {
-                case .localClipReady:
-                    StatusChip(text: "Ready", role: .ready, systemImage: "checkmark.circle", emphasis: .subdued)
-                case .sourceBackedReady, .sourceBackedDownloaded:
-                    StatusChip(text: "Ready Here", role: .ready, systemImage: "iphone", emphasis: .subdued)
-                case .needsAppleMusic:
-                    StatusChip(text: "Needs Apple Music", role: .warning, systemImage: "music.note", emphasis: .subdued)
-                case .needsRepair:
-                    StatusChip(text: "Needs Repair", role: .destructive, systemImage: "wrench.and.screwdriver", emphasis: .subdued)
-                }
             }
+            .buttonStyle(.plain)
+            .help(explanation.detail)
+            .accessibilityHint("Shows what this song readiness status means.")
+            .popover(item: $songReadinessExplanation) { explanation in
+                VStack(alignment: .leading, spacing: 10) {
+                    Label(explanation.title, systemImage: explanation.systemImage)
+                        .font(.headline)
+                        .foregroundStyle(explanation.role == .destructive ? Color.rollCall(.destructive) : .primary)
+                    Text(explanation.detail)
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .padding()
+                .frame(idealWidth: 300, alignment: .leading)
+                .presentationCompactAdaptation(.popover)
+            }
+        }
+    }
+
+    private func songReadinessExplanation(for clip: SongClip) -> SongReadinessExplanation {
+        if clip.generatedAsset.status == .pending {
+            return SongReadinessExplanation(
+                id: "preparing",
+                title: "Preparing",
+                detail: "Roll Call is checking this song and preparing the most reliable playback option it can. You can keep using the app while this finishes.",
+                role: .neutral,
+                systemImage: "clock"
+            )
+        }
+
+        switch clip.readinessInputs.playback {
+        case .localClipReady:
+            return SongReadinessExplanation(
+                id: "ready-any-device",
+                title: "Ready on Any Device",
+                detail: "Roll Call has its own local copy of this clip. It does not depend on Apple Music and can travel with the team when you export and import it on another device.",
+                role: .ready,
+                systemImage: "checkmark.circle"
+            )
+        case .sourceBackedReady:
+            return SongReadinessExplanation(
+                id: "ready-this-device",
+                title: "Ready on This Device",
+                detail: "This song can play on this iPhone from its original source, but Roll Call does not have a portable local copy. It may depend on Apple Music, connectivity, and the song remaining available here.",
+                role: .ready,
+                systemImage: "iphone"
+            )
+        case .sourceBackedDownloaded:
+            return SongReadinessExplanation(
+                id: "ready-this-device-downloaded",
+                title: "Ready on This Device",
+                detail: "This song is currently available on this iPhone, including its downloaded Music Library copy, but Roll Call does not own a portable clip to include with the team on another device.",
+                role: .ready,
+                systemImage: "iphone"
+            )
+        case .needsAppleMusic:
+            return SongReadinessExplanation(
+                id: "needs-apple-music",
+                title: "Needs Apple Music",
+                detail: "The song link is saved, but Roll Call cannot use it right now. Allow Music access and make sure the required Apple Music subscription and song availability are present on this device.",
+                role: .warning,
+                systemImage: "music.note"
+            )
+        case .needsRepair:
+            return SongReadinessExplanation(
+                id: "needs-repair",
+                title: "Needs Repair",
+                detail: "Roll Call cannot currently read or play this song source. Choose the song again or import a replacement before relying on it in Game Day.",
+                role: .destructive,
+                systemImage: "wrench.and.screwdriver"
+            )
         }
     }
 
@@ -6897,7 +6997,8 @@ private struct PlayerEditorSheet: View {
     }
 
     private var hasUnsavedChanges: Bool {
-        savedPlayer != player
+        guard let savedPlayer else { return false }
+        return PlayerEditorDraftState(player: savedPlayer) != PlayerEditorDraftState(player: player)
     }
 
     private func closeEditor() {

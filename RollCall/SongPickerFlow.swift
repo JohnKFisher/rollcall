@@ -25,10 +25,10 @@ struct SongPickerFlow: View {
     @Environment(\.dismiss) private var dismiss
     @ObservedObject var appModel: AppModel
     let mode: SongPickerMode
+    let importedURL: URL?
     let onSave: (Cue) -> Void
 
     @State private var selectedDraft: DraftRoute?
-    @State private var importPresented = false
     @State private var savedDraftID: UUID?
     @State private var showPermissionPrimer = false
     @State private var pickerError: String?
@@ -51,26 +51,13 @@ struct SongPickerFlow: View {
                     showPermissionPrimer = true
                 }
             case .files:
-                importPresented = true
-            }
-        }
-        .fileImporter(
-            isPresented: $importPresented,
-            allowedContentTypes: [.audio, .movie],
-            allowsMultipleSelection: false
-        ) { result in
-            switch result {
-            case .success(let urls):
-                guard let url = urls.first else {
+                guard let importedURL,
+                      let cue = await appModel.makeImportedSongCueDraft(from: importedURL),
+                      !Task.isCancelled else {
                     dismiss()
                     return
                 }
-                Task {
-                    guard let cue = await appModel.makeImportedSongCueDraft(from: url) else { return }
-                    selectedDraft = DraftRoute(cue: cue, isImported: true)
-                }
-            case .failure(let error):
-                pickerError = error.localizedDescription
+                openEditor(for: cue, isImported: true)
             }
         }
         .onChange(of: selectedDraft) { oldValue, newValue in
@@ -133,8 +120,9 @@ struct SongPickerFlow: View {
                 MusicPermissionWaitingView()
             }
         case .files:
-            Color.clear
-                .navigationTitle("Import Audio")
+            ProgressView("Preparing audio...")
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .navigationTitle("Make Your Clip")
         }
     }
 
@@ -164,15 +152,22 @@ struct SongPickerFlow: View {
 
         Task {
             guard let cue = await appModel.makeImportedSongCueDraft(from: assetURL) else { return }
-            selectedDraft = DraftRoute(cue: cue, isImported: true)
+            openEditor(for: cue, isImported: true)
         }
     }
 
     private func openEditor(for result: MusicSearchResult) {
-        selectedDraft = DraftRoute(
-            cue: appModel.chooseSuggestedHook(for: appModel.makeAppleMusicCueDraft(result)),
-            isImported: false
-        )
+        let cue = appModel.chooseSuggestedHook(for: appModel.makeAppleMusicCueDraft(result))
+        openEditor(for: cue, isImported: false)
+    }
+
+    private func openEditor(for cue: Cue, isImported: Bool) {
+        if let url = SongWaveformSourceResolver.url(for: cue) {
+            Task {
+                await SongWaveformRepository.shared.prefetch(from: url, sampleCount: 64)
+            }
+        }
+        selectedDraft = DraftRoute(cue: cue, isImported: isImported)
     }
 }
 
@@ -295,8 +290,13 @@ private struct AppleMusicCatalogPicker: View {
         }
         .listStyle(.plain)
         .navigationTitle("Apple Music")
-        .navigationBarTitleDisplayMode(.inline)
-        .searchable(text: $searchTerm, prompt: "Songs, artists, and albums")
+        .navigationBarTitleDisplayMode(.large)
+        .searchable(
+            text: $searchTerm,
+            placement: .navigationBarDrawer(displayMode: .always),
+            prompt: "Search Apple Music"
+        )
+        .scrollDismissesKeyboard(.immediately)
         .toolbar {
             ToolbarItem(placement: .topBarLeading) {
                 Button("Cancel") { dismiss() }
@@ -347,12 +347,29 @@ private struct AppleMusicCatalogPicker: View {
         guard !Task.isCancelled else { return }
 
         do {
-            results = try await appModel.musicCatalogService.search(term: term, mode: .previewFallback)
+            let newResults = try await appModel.musicCatalogService.search(
+                term: term,
+                mode: .previewFallback
+            )
+            guard !Task.isCancelled, currentSearchTerm == term else { return }
+            results = newResults
+            searchError = nil
         } catch {
+            guard !MusicCatalogService.isCancellation(error),
+                  !Task.isCancelled,
+                  currentSearchTerm == term else {
+                return
+            }
             results = []
             searchError = error.localizedDescription
         }
-        isSearching = false
+        if currentSearchTerm == term {
+            isSearching = false
+        }
+    }
+
+    private var currentSearchTerm: String {
+        searchTerm.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 }
 
@@ -377,16 +394,25 @@ private struct CatalogArtwork: View {
 }
 
 struct SongClipEditorView: View {
+    private enum WaveformState: Equatable {
+        case loading
+        case ready([Float])
+        case unavailable
+    }
+
     @ObservedObject var appModel: AppModel
+    @ObservedObject private var playbackEngine: CuePlaybackEngine
     let onSave: (Cue) -> Void
 
     @State private var cue: Cue
     @State private var showAdvanced = false
+    @State private var waveformState: WaveformState = .loading
 
     private let lengthOptions: [TimeInterval] = [8, 10, 12, 15, 20]
 
     init(appModel: AppModel, initialCue: Cue, onSave: @escaping (Cue) -> Void) {
         self.appModel = appModel
+        self.playbackEngine = appModel.playbackEngine
         self.onSave = onSave
         _cue = State(initialValue: initialCue)
     }
@@ -408,9 +434,19 @@ struct SongClipEditorView: View {
                 SongShapeRailView(
                     startTime: $cue.startTime,
                     duration: cue.duration,
-                    timelineDuration: timelineDuration
+                    timelineDuration: timelineDuration,
+                    waveformSamples: waveformSamples,
+                    isLoadingWaveform: waveformState == .loading,
+                    previewProgress: previewProgress,
+                    onMove: stopPreviewIfNeeded
                 )
                 .frame(height: 54)
+
+                if waveformState == .unavailable {
+                    Label("Waveform unavailable for this song", systemImage: "waveform.slash")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
 
                 HStack {
                     Text(timeText(cue.startTime))
@@ -443,32 +479,45 @@ struct SongClipEditorView: View {
 
             Section {
                 DisclosureGroup("Advanced", isExpanded: $showAdvanced) {
-                    VStack(alignment: .leading, spacing: 10) {
-                        Text("Start: \(timeText(cue.startTime))")
-                        if maximumStartTime > 0 {
-                            Slider(
-                                value: $cue.startTime,
-                                in: 0...maximumStartTime,
-                                step: 0.25
-                            )
-                        } else {
-                            Text("This clip uses the full available song window, so its start is fixed.")
-                                .font(.footnote)
-                                .foregroundStyle(.secondary)
-                        }
-                        Text("Fade out: \(cue.fadeOutDuration, specifier: "%.1f") seconds")
-                        Slider(
-                            value: $cue.fadeOutDuration,
-                            in: 0...min(4, cue.duration),
-                            step: 0.25
+                    VStack(alignment: .leading, spacing: 18) {
+                        PrecisionTimeControl(
+                            title: "Start",
+                            valueText: preciseTimeText(cue.startTime),
+                            canDecrease: cue.startTime > 0,
+                            canIncrease: cue.startTime < maximumStartTime,
+                            onAdjust: adjustStart
+                        )
+
+                        PrecisionTimeControl(
+                            title: "Length",
+                            valueText: secondsText(cue.duration),
+                            canDecrease: cue.duration > minimumClipDuration,
+                            canIncrease: cue.duration < maximumClipDuration,
+                            onAdjust: adjustLength
+                        )
+
+                        PrecisionTimeControl(
+                            title: "Fade Out",
+                            valueText: secondsText(cue.fadeOutDuration),
+                            canDecrease: cue.fadeOutDuration > 0,
+                            canIncrease: cue.fadeOutDuration < maximumFadeDuration,
+                            onAdjust: adjustFade
                         )
                     }
-                    .padding(.top, 8)
+                    .padding(.vertical, 8)
                 }
             }
         }
         .navigationTitle("Make Your Clip")
         .navigationBarTitleDisplayMode(.inline)
+        .task(id: waveformSourceKey) {
+            await loadWaveform()
+        }
+        .onDisappear {
+            if playbackEngine.activeCueID == cue.id {
+                appModel.stopPlayback()
+            }
+        }
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 Button("Save") {
@@ -484,8 +533,41 @@ struct SongClipEditorView: View {
         max(cue.duration, appModel.cueTimelineLength(for: cue))
     }
 
+    private var waveformSamples: [Float]? {
+        guard case .ready(let samples) = waveformState else { return nil }
+        return samples
+    }
+
+    private var waveformSourceKey: String {
+        switch cue.source {
+        case .appleMusic(let source):
+            return "appleMusic|\(source.songID)"
+        case .localAudio(let source):
+            return "localAudio|\(source.id.uuidString)|\(source.relativePath)"
+        case .builtInClip(let source):
+            return "builtIn|\(source.id)"
+        }
+    }
+
     private var maximumStartTime: TimeInterval {
         max(0, timelineDuration - cue.duration)
+    }
+
+    private var minimumClipDuration: TimeInterval {
+        min(1, timelineDuration)
+    }
+
+    private var maximumClipDuration: TimeInterval {
+        min(20, timelineDuration)
+    }
+
+    private var maximumFadeDuration: TimeInterval {
+        min(4, cue.duration)
+    }
+
+    private var previewProgress: Double? {
+        guard playbackEngine.activeCueID == cue.id else { return nil }
+        return playbackEngine.activeCueProgress
     }
 
     private var songTitle: String {
@@ -502,13 +584,133 @@ struct SongClipEditorView: View {
     }
 
     private func setDuration(_ duration: TimeInterval) {
-        cue.duration = min(duration, timelineDuration)
-        cue.startTime = min(cue.startTime, maximumStartTime)
+        adjustLength(by: duration - cue.duration)
+    }
+
+    private func adjustStart(by delta: TimeInterval) {
+        applyTiming(
+            SongClipTimingAdjustment.adjustingStart(
+                startTime: cue.startTime,
+                duration: cue.duration,
+                fadeOutDuration: cue.fadeOutDuration,
+                delta: delta,
+                timelineDuration: timelineDuration
+            )
+        )
+    }
+
+    private func adjustLength(by delta: TimeInterval) {
+        applyTiming(
+            SongClipTimingAdjustment.adjustingDuration(
+                startTime: cue.startTime,
+                duration: cue.duration,
+                fadeOutDuration: cue.fadeOutDuration,
+                delta: delta,
+                timelineDuration: timelineDuration
+            )
+        )
+    }
+
+    private func adjustFade(by delta: TimeInterval) {
+        applyTiming(
+            SongClipTimingAdjustment.adjustingFade(
+                startTime: cue.startTime,
+                duration: cue.duration,
+                fadeOutDuration: cue.fadeOutDuration,
+                delta: delta,
+                timelineDuration: timelineDuration
+            )
+        )
+    }
+
+    private func applyTiming(_ timing: SongClipTimingAdjustment) {
+        stopPreviewIfNeeded()
+        cue.startTime = timing.startTime
+        cue.duration = timing.duration
+        cue.fadeOutDuration = timing.fadeOutDuration
+    }
+
+    private func stopPreviewIfNeeded() {
+        guard playbackEngine.activeCueID == cue.id else { return }
+        appModel.stopPlayback()
+    }
+
+    private func loadWaveform() async {
+        waveformState = .loading
+        guard let url = SongWaveformSourceResolver.url(for: cue) else {
+            waveformState = .unavailable
+            return
+        }
+
+        do {
+            let samples = try await SongWaveformRepository.shared.samples(
+                from: url,
+                sampleCount: 64
+            )
+            guard !Task.isCancelled else { return }
+            waveformState = .ready(samples)
+        } catch {
+            guard !Task.isCancelled else { return }
+            waveformState = .unavailable
+        }
     }
 
     private func timeText(_ value: TimeInterval) -> String {
         let seconds = max(0, Int(value.rounded()))
         return "\(seconds / 60):\(String(format: "%02d", seconds % 60))"
+    }
+
+    private func preciseTimeText(_ value: TimeInterval) -> String {
+        let bounded = max(0, value)
+        let minutes = Int(bounded) / 60
+        let seconds = bounded - Double(minutes * 60)
+        return "\(minutes):\(String(format: "%05.2f", seconds))"
+    }
+
+    private func secondsText(_ value: TimeInterval) -> String {
+        String(format: "%.2fs", value)
+    }
+}
+
+private struct PrecisionTimeControl: View {
+    let title: String
+    let valueText: String
+    let canDecrease: Bool
+    let canIncrease: Bool
+    let onAdjust: (TimeInterval) -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Text(title)
+                    .font(.subheadline.weight(.semibold))
+                Spacer()
+                Text(valueText)
+                    .font(.body.monospacedDigit())
+            }
+
+            HStack(spacing: 8) {
+                adjustmentButton("-1", delta: -1, isEnabled: canDecrease)
+                adjustmentButton("-0.25", delta: -0.25, isEnabled: canDecrease)
+                adjustmentButton("+0.25", delta: 0.25, isEnabled: canIncrease)
+                adjustmentButton("+1", delta: 1, isEnabled: canIncrease)
+            }
+        }
+    }
+
+    private func adjustmentButton(
+        _ label: String,
+        delta: TimeInterval,
+        isEnabled: Bool
+    ) -> some View {
+        Button(label) {
+            onAdjust(delta)
+        }
+        .buttonStyle(.bordered)
+        .controlSize(.small)
+        .frame(maxWidth: .infinity)
+        .disabled(!isEnabled)
+        .accessibilityLabel("\(title) \(delta < 0 ? "minus" : "plus") \(abs(delta)) seconds")
     }
 }
 
@@ -516,28 +718,52 @@ struct SongShapeRailView: View {
     @Binding var startTime: TimeInterval
     let duration: TimeInterval
     let timelineDuration: TimeInterval
+    let waveformSamples: [Float]?
+    let isLoadingWaveform: Bool
+    let previewProgress: Double?
+    let onMove: () -> Void
 
     var body: some View {
         GeometryReader { proxy in
             let width = max(1, proxy.size.width)
-            let selectedWidth = max(24, width * duration / max(duration, timelineDuration))
-            let maxOffset = max(0, width - selectedWidth)
-            let offset = maxOffset == 0
-                ? 0
-                : maxOffset * startTime / max(0.01, timelineDuration - duration)
+            let geometry = SongShapeRailGeometry(
+                width: width,
+                startTime: startTime,
+                duration: duration,
+                timelineDuration: timelineDuration
+            )
 
             ZStack(alignment: .leading) {
                 Capsule()
                     .fill(Color.secondary.opacity(0.16))
 
-                HStack(spacing: 3) {
-                    ForEach(0..<24, id: \.self) { index in
-                        Capsule()
-                            .fill(Color.secondary.opacity(0.35))
-                            .frame(height: CGFloat(12 + (index * 11) % 28))
+                if let waveformSamples {
+                    HStack(spacing: 1.5) {
+                        ForEach(Array(waveformSamples.enumerated()), id: \.offset) { _, sample in
+                            Capsule()
+                                .fill(Color.secondary.opacity(0.48))
+                                .frame(maxWidth: .infinity)
+                                .frame(height: max(2, CGFloat(sample) * 38))
+                        }
                     }
+                    .padding(.horizontal, 8)
+                } else {
+                    HStack(spacing: 5) {
+                        ForEach(0..<21, id: \.self) { index in
+                            if index.isMultiple(of: 3) {
+                                Circle()
+                                    .fill(Color.secondary.opacity(0.42))
+                                    .frame(width: 4, height: 4)
+                            } else {
+                                Capsule()
+                                    .fill(Color.secondary.opacity(0.3))
+                                    .frame(maxWidth: .infinity)
+                                    .frame(height: index.isMultiple(of: 2) ? 8 : 4)
+                            }
+                        }
+                    }
+                    .padding(.horizontal, 8)
                 }
-                .padding(.horizontal, 8)
 
                 RoundedRectangle(cornerRadius: 9)
                     .fill(Color.accentColor.opacity(0.26))
@@ -545,26 +771,134 @@ struct SongShapeRailView: View {
                         RoundedRectangle(cornerRadius: 9)
                             .stroke(Color.accentColor, lineWidth: 2)
                     }
-                    .frame(width: selectedWidth)
-                    .offset(x: offset)
-                    .gesture(
-                        DragGesture(minimumDistance: 0)
-                            .onChanged { value in
-                                let centeredOffset = value.location.x - selectedWidth / 2
-                                let clampedOffset = min(max(0, centeredOffset), maxOffset)
-                                let availableTime = max(0, timelineDuration - duration)
-                                startTime = maxOffset == 0 ? 0 : availableTime * clampedOffset / maxOffset
-                            }
-                    )
+                    .frame(width: geometry.selectedWidth)
+                    .offset(x: geometry.offset)
+
+                if let previewProgress {
+                    let progress = min(max(0, previewProgress), 1)
+                    let playheadOffset = geometry.offset + geometry.selectedWidth * progress
+                    Capsule()
+                        .fill(Color.primary)
+                        .frame(width: 3, height: 46)
+                        .shadow(color: Color.black.opacity(0.28), radius: 1, y: 1)
+                        .offset(x: min(width - 3, max(0, playheadOffset - 1.5)))
+                        .allowsHitTesting(false)
+                }
+
+                if isLoadingWaveform {
+                    ProgressView()
+                        .controlSize(.small)
+                        .frame(maxWidth: .infinity)
+                }
             }
+            .contentShape(Rectangle())
+            .gesture(
+                DragGesture(minimumDistance: 0)
+                    .onChanged { value in
+                        onMove()
+                        startTime = geometry.startTime(
+                            centeredAt: value.location.x
+                        )
+                    }
+            )
         }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("Selected song window")
         .accessibilityValue("Starts at \(Int(startTime.rounded())) seconds and lasts \(Int(duration.rounded())) seconds")
         .accessibilityAdjustableAction { direction in
             let delta: TimeInterval = direction == .increment ? 1 : -1
+            onMove()
             startTime = min(max(0, startTime + delta), max(0, timelineDuration - duration))
         }
+    }
+}
+
+struct SongShapeRailGeometry {
+    let width: CGFloat
+    let startTime: TimeInterval
+    let duration: TimeInterval
+    let timelineDuration: TimeInterval
+
+    private var boundedTimelineDuration: TimeInterval {
+        max(0.01, timelineDuration)
+    }
+
+    var selectedWidth: CGFloat {
+        max(2, width * duration / boundedTimelineDuration)
+    }
+
+    var offset: CGFloat {
+        width * startTime / boundedTimelineDuration
+    }
+
+    func startTime(centeredAt location: CGFloat) -> TimeInterval {
+        let proposedOffset = location - selectedWidth / 2
+        let maximumStart = max(0, timelineDuration - duration)
+        let proposedStart = boundedTimelineDuration * proposedOffset / width
+        return min(max(0, proposedStart), maximumStart)
+    }
+}
+
+struct SongClipTimingAdjustment: Equatable {
+    let startTime: TimeInterval
+    let duration: TimeInterval
+    let fadeOutDuration: TimeInterval
+
+    static func adjustingStart(
+        startTime: TimeInterval,
+        duration: TimeInterval,
+        fadeOutDuration: TimeInterval,
+        delta: TimeInterval,
+        timelineDuration: TimeInterval
+    ) -> Self {
+        let boundedDuration = boundedDuration(duration, timelineDuration: timelineDuration)
+        return Self(
+            startTime: min(
+                max(0, startTime + delta),
+                max(0, timelineDuration - boundedDuration)
+            ),
+            duration: boundedDuration,
+            fadeOutDuration: min(max(0, fadeOutDuration), min(4, boundedDuration))
+        )
+    }
+
+    static func adjustingDuration(
+        startTime: TimeInterval,
+        duration: TimeInterval,
+        fadeOutDuration: TimeInterval,
+        delta: TimeInterval,
+        timelineDuration: TimeInterval
+    ) -> Self {
+        let newDuration = boundedDuration(duration + delta, timelineDuration: timelineDuration)
+        return Self(
+            startTime: min(max(0, startTime), max(0, timelineDuration - newDuration)),
+            duration: newDuration,
+            fadeOutDuration: min(max(0, fadeOutDuration), min(4, newDuration))
+        )
+    }
+
+    static func adjustingFade(
+        startTime: TimeInterval,
+        duration: TimeInterval,
+        fadeOutDuration: TimeInterval,
+        delta: TimeInterval,
+        timelineDuration: TimeInterval
+    ) -> Self {
+        let boundedDuration = boundedDuration(duration, timelineDuration: timelineDuration)
+        return Self(
+            startTime: min(max(0, startTime), max(0, timelineDuration - boundedDuration)),
+            duration: boundedDuration,
+            fadeOutDuration: min(max(0, fadeOutDuration + delta), min(4, boundedDuration))
+        )
+    }
+
+    private static func boundedDuration(
+        _ duration: TimeInterval,
+        timelineDuration: TimeInterval
+    ) -> TimeInterval {
+        let maximum = min(20, max(0, timelineDuration))
+        let minimum = min(1, maximum)
+        return min(max(minimum, duration), maximum)
     }
 }
 
