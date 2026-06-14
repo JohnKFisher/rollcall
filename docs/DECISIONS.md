@@ -4,6 +4,26 @@ Use this file as a concise decision log for project-specific architectural, beha
 
 ## 2026-06-14
 
+- Approved: Phase 5 playback always prefers a valid generated Roll Call clip and otherwise preserves the original source-backed recipe. Team Clips and private player clips use the same bounded preparation queue, with shared Team Clips prepared once for every assigned player.
+  Rationale: playback should gain portability when public APIs make it possible without weakening the normal Apple Music path or duplicating work for shared clips.
+  Status: approved
+
+- Approved: 1.2 team-package export previews portable, device-dependent, preparing, and repair-needed clips before creating the package. Import preserves identifiable assignments, copies valid generated and local assets, audits what is actually ready on the receiving device, and routes unresolved player or Team Clip items toward repair.
+  Rationale: team ownership requires honest portability and recovery; a missing file or unavailable Apple Music account should not erase carefully configured song choices or reject an otherwise useful team.
+  Status: approved
+
+- Approved: generated-clip cleanup is automatic but fail-closed. It may remove only regular files in Roll Call's generated-clips directory that are unreferenced by active teams, Team Clips, private assignments, Recently Deleted records, or readable backup snapshots; active preparation, unreadable backups, or unexpected filesystem items block deletion.
+  Rationale: reclaiming storage must never outrank preserving user setup, recovery paths, or uncertain files.
+  Status: approved
+
+- Approved: support bundles contain aggregate cue-generation, readiness, portability, retry, policy, storage, cleanup, and boolean playback-state diagnostics only. They exclude audio, song metadata, team/player names, filenames, and source or model identifiers.
+  Rationale: diagnostics should be useful without exporting user content or unnecessarily identifying roster and music data.
+  Status: approved
+
+- Approved: Phase 4 Team Clips are team-scoped reusable `SongClip`s; players may explicitly reference a shared clip, while editing from Player Editor requires a private copy so one player's changes cannot silently alter teammates. Deleting a shared clip must offer to preserve assigned players as private copies, and exact creative duplicates are reused.
+  Rationale: reusable songs should reduce repeated setup without making player-specific edits or deletion surprising, destructive, or difficult to recover from.
+  Status: approved
+
 - Approved: the Setup Guide audio step uses the same Music Library-first source choices and draft `Make Your Clip` editor as Player Editor, rather than maintaining a separate inline onboarding trimmer.
   Rationale: one consistent selection and waveform-trimming experience is easier to learn, preserves explicit Save behavior, and prevents the simpler onboarding controls from drifting away from the real editor.
   Status: approved

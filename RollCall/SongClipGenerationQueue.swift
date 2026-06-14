@@ -13,7 +13,7 @@ actor SongClipGenerationQueue {
     func enqueue(_ request: SongClipPreparationRequest) {
         pending.removeAll {
             $0.teamID == request.teamID
-                && $0.playerID == request.playerID
+                && $0.target == request.target
                 && $0.clipID == request.clipID
         }
         pending.append(request)
@@ -41,7 +41,11 @@ actor SongClipGenerationQueue {
     }
 
     func cancel(teamID: UUID, playerID: UUID) {
-        pending.removeAll { $0.teamID == teamID && $0.playerID == playerID }
+        pending.removeAll { $0.teamID == teamID && $0.target == .player(playerID) }
+    }
+
+    func cancel(teamID: UUID, teamClipID: UUID) {
+        pending.removeAll { $0.teamID == teamID && $0.target == .teamClip(teamClipID) }
     }
 
     func setPaused(_ paused: Bool, reason: PauseReason) {

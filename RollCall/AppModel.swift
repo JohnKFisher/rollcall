@@ -166,7 +166,7 @@ struct TeamAppleMusicPlaylistSummary: Equatable, Identifiable {
         var duplicates: [TeamAppleMusicPlaylistSongRow] = []
 
         for player in team.players {
-            guard let cue = player.cue else {
+            guard let cue = team.cue(for: player) else {
                 skipped.append(TeamAppleMusicPlaylistSkippedCue(
                     playerID: player.id,
                     playerName: player.displayName,
@@ -229,6 +229,17 @@ struct AppleMusicPlaylistRecovery: Equatable, Identifiable {
     var summary: TeamAppleMusicPlaylistSummary
     var unresolvedSongs: [TeamAppleMusicPlaylistSongRow]
     var availableSongIDs: [String]
+}
+
+enum TeamClipSaveResult: Equatable {
+    case saved(UUID)
+    case exactDuplicate(UUID)
+}
+
+struct TeamClipPromotionResult: Equatable {
+    var addedCount: Int
+    var reusedCount: Int
+    var assignedPlayerCount: Int
 }
 
 enum GameDayLineupProgressHintSource: Equatable {
@@ -458,9 +469,11 @@ final class AppModel: ObservableObject {
     @Published var lastError: String?
     @Published var bannerMessage: AppBannerMessage?
     @Published var exportURL: URL?
+    @Published var pendingPackageExport: PendingPackageExport?
     @Published var pendingRosterImport: PendingRosterImport?
     @Published var pendingPackageImport: PendingPackageImport?
     @Published var completedPackageImportTeamID: UUID?
+    @Published var completedPackageImportAudit: PackageImportAudit?
     @Published var supportBundle: SupportBundleExport?
     @Published private(set) var musicRenderProbeSamples = MusicRenderProbeScenario.allCases.map { MusicRenderProbeSample(scenario: $0) }
     @Published private(set) var musicRenderProbeLibraryCandidates: [MusicRenderProbeLibraryCandidate] = []
@@ -477,6 +490,7 @@ final class AppModel: ObservableObject {
     @Published var pendingRecoveryNavigationToken: UUID?
     @Published private(set) var gameDayLineupProgressHintEvent: GameDayLineupProgressHintEvent?
     @Published private(set) var pendingSongClipPreparationCount = 0
+    @Published private(set) var generatedClipCleanupReport: GeneratedClipCleanupReport?
     private var hasFinishedLaunching = false
     private let persistenceWriter = StatePersistenceWriter()
     private var persistSequence = 0
@@ -583,6 +597,7 @@ final class AppModel: ObservableObject {
             await refreshAppleMusicPlaybackCapability()
             refreshReadiness()
             scheduleStartupGameDayWarmup()
+            await runAutomaticGeneratedClipCleanup()
             scheduleAllSongClipPreparation(trigger: .appLaunch)
             persist()
             await preparePendingIncomingPackageIfNeeded()
@@ -819,6 +834,189 @@ final class AppModel: ObservableObject {
                 )
             }
         }
+    }
+
+    func resolvedSongClip(for player: Player) -> SongClip? {
+        selectedTeam?.songClip(for: player)
+    }
+
+    func resolvedCue(for player: Player) -> Cue? {
+        selectedTeam?.cue(for: player)
+    }
+
+    func saveTeamClip(cue: Cue, named name: String) -> TeamClipSaveResult? {
+        guard let teamIndex else { return nil }
+        var clip = SongClip(cue: cue)
+        let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        clip.displayName = trimmedName.isEmpty ? cue.label : trimmedName
+
+        if let duplicate = state.teams[teamIndex].teamClips.first(where: {
+            $0.isExactCreativeDuplicate(of: clip)
+        }) {
+            return .exactDuplicate(duplicate.id)
+        }
+
+        state.teams[teamIndex].teamClips.append(clip)
+        state.teams[teamIndex].modifiedAt = .now
+        persist()
+        scheduleTeamClipPreparation(
+            teamID: state.teams[teamIndex].id,
+            teamClipID: clip.id,
+            trigger: .assignmentSaved
+        )
+        return .saved(clip.id)
+    }
+
+    func updateTeamClip(_ clipID: UUID, with cue: Cue, named name: String) {
+        guard let teamIndex,
+              let clipIndex = state.teams[teamIndex].teamClips.firstIndex(where: { $0.id == clipID }) else {
+            return
+        }
+        let previous = state.teams[teamIndex].teamClips[clipIndex]
+        let previousPaths = storedAssetRelativePaths(for: previous)
+        var updated = SongClip(cue: cue)
+        updated.id = clipID
+        let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        updated.displayName = trimmedName.isEmpty ? cue.label : trimmedName
+        updated.sourceLineageClipID = previous.sourceLineageClipID
+        if previous.generationKey == updated.generationKey {
+            updated.generatedAsset = previous.generatedAsset
+            updated.readinessInputs = previous.readinessInputs
+            updated.portabilityInputs = previous.portabilityInputs
+            updated.retryMetadata = previous.retryMetadata
+        }
+        state.teams[teamIndex].teamClips[clipIndex] = updated
+        state.teams[teamIndex].modifiedAt = .now
+        prewarmNextBatterCue()
+        scheduleReadinessRefresh()
+        persist()
+        scheduleTeamClipPreparation(
+            teamID: state.teams[teamIndex].id,
+            teamClipID: clipID,
+            trigger: .assignmentSaved
+        )
+        let updatedPaths = Set(storedAssetRelativePaths(for: updated))
+        previousPaths
+            .filter { !updatedPaths.contains($0) }
+            .forEach(removeAssetIfUnreferenced(relativePath:))
+    }
+
+    func assignTeamClip(_ clipID: UUID, to playerID: UUID) {
+        guard let teamIndex,
+              state.teams[teamIndex].teamClips.contains(where: { $0.id == clipID }),
+              let playerIndex = state.teams[teamIndex].players.firstIndex(where: { $0.id == playerID }) else {
+            return
+        }
+        state.teams[teamIndex].players[playerIndex].songAssignment = .sharedTeamClip(clipID)
+        state.teams[teamIndex].modifiedAt = .now
+        prewarmNextBatterCue()
+        scheduleReadinessRefresh()
+        persist()
+    }
+
+    func makePrivateSongCopy(for playerID: UUID) {
+        guard let teamIndex,
+              let playerIndex = state.teams[teamIndex].players.firstIndex(where: { $0.id == playerID }),
+              case .sharedTeamClip(let clipID)? = state.teams[teamIndex].players[playerIndex].songAssignment,
+              let clip = state.teams[teamIndex].teamClips.first(where: { $0.id == clipID }) else {
+            return
+        }
+        state.teams[teamIndex].players[playerIndex].songAssignment = .privateClip(clip.privateCopy())
+        state.teams[teamIndex].modifiedAt = .now
+        persist()
+        scheduleSongClipPreparation(
+            teamID: state.teams[teamIndex].id,
+            playerID: playerID,
+            trigger: .assignmentSaved
+        )
+    }
+
+    func deleteTeamClip(_ clipID: UUID, keepPlayerCopies: Bool) {
+        guard let teamIndex,
+              let clipIndex = state.teams[teamIndex].teamClips.firstIndex(where: { $0.id == clipID }) else {
+            return
+        }
+        let clip = state.teams[teamIndex].teamClips[clipIndex]
+        let clipPaths = storedAssetRelativePaths(for: clip)
+        for playerIndex in state.teams[teamIndex].players.indices {
+            guard case .sharedTeamClip(let assignedID)? = state.teams[teamIndex].players[playerIndex].songAssignment,
+                  assignedID == clipID else {
+                continue
+            }
+            if keepPlayerCopies {
+                state.teams[teamIndex].players[playerIndex].songAssignment = .privateClip(clip.privateCopy())
+            } else {
+                state.teams[teamIndex].players[playerIndex].songAssignment = nil
+            }
+        }
+        for itemIndex in state.recentlyDeleted.indices {
+            guard case .player(var deletedPlayer) = state.recentlyDeleted[itemIndex].payload,
+                  deletedPlayer.originalTeamID == state.teams[teamIndex].id,
+                  case .sharedTeamClip(let assignedID)? = deletedPlayer.player.songAssignment,
+                  assignedID == clipID else {
+                continue
+            }
+            deletedPlayer.player.songAssignment = keepPlayerCopies
+                ? .privateClip(clip.privateCopy())
+                : nil
+            state.recentlyDeleted[itemIndex].payload = .player(deletedPlayer)
+        }
+        state.teams[teamIndex].teamClips.remove(at: clipIndex)
+        state.teams[teamIndex].modifiedAt = .now
+        Task {
+            await songClipGenerationQueue.cancel(
+                teamID: state.teams[teamIndex].id,
+                teamClipID: clipID
+            )
+            await refreshPendingSongClipPreparationCount()
+        }
+        prewarmNextBatterCue()
+        scheduleReadinessRefresh()
+        persist()
+        clipPaths.forEach(removeAssetIfUnreferenced(relativePath:))
+    }
+
+    func savePlayerSongsToTeamClips() -> TeamClipPromotionResult {
+        guard let teamIndex else {
+            return TeamClipPromotionResult(addedCount: 0, reusedCount: 0, assignedPlayerCount: 0)
+        }
+        var addedCount = 0
+        var reusedCount = 0
+        var assignedPlayerCount = 0
+        var replacedPrivatePaths: [String] = []
+
+        for playerIndex in state.teams[teamIndex].players.indices {
+            guard case .privateClip(let privateClip)? = state.teams[teamIndex].players[playerIndex].songAssignment else {
+                continue
+            }
+            let sharedID: UUID
+            if let duplicate = state.teams[teamIndex].teamClips.first(where: {
+                $0.isExactCreativeDuplicate(of: privateClip)
+            }) {
+                sharedID = duplicate.id
+                reusedCount += 1
+                replacedPrivatePaths.append(contentsOf: storedAssetRelativePaths(for: privateClip))
+            } else {
+                state.teams[teamIndex].teamClips.append(privateClip)
+                sharedID = privateClip.id
+                addedCount += 1
+            }
+            state.teams[teamIndex].players[playerIndex].songAssignment = .sharedTeamClip(sharedID)
+            assignedPlayerCount += 1
+        }
+
+        if assignedPlayerCount > 0 {
+            state.teams[teamIndex].modifiedAt = .now
+            prewarmNextBatterCue()
+            scheduleReadinessRefresh()
+            persist()
+            replacedPrivatePaths.forEach(removeAssetIfUnreferenced(relativePath:))
+        }
+        return TeamClipPromotionResult(
+            addedCount: addedCount,
+            reusedCount: reusedCount,
+            assignedPlayerCount: assignedPlayerCount
+        )
     }
 
     func removePlayer(_ player: Player) {
@@ -1434,6 +1632,16 @@ final class AppModel: ObservableObject {
         )
     }
 
+    func tryPreparingTeamClipNow(_ teamClipID: UUID) {
+        guard let teamID = selectedTeam?.id else { return }
+        scheduleTeamClipPreparation(
+            teamID: teamID,
+            teamClipID: teamClipID,
+            trigger: .explicitTryNow,
+            isExplicit: true
+        )
+    }
+
     func markCurrentWhatsNewSeen() {
         state.lastSeenWhatsNewReleaseID = AppMetadata.whatsNewReleaseID
         persist()
@@ -1627,9 +1835,26 @@ final class AppModel: ObservableObject {
         }
     }
 
-    func exportSelectedTeam() async {
+    func prepareSelectedTeamExport() {
+        guard let team = selectedTeam else { return }
+        pendingPackageExport = PendingPackageExport(
+            teamID: team.id,
+            teamName: team.name,
+            summary: packageService.transferSummary(for: team)
+        )
+    }
+
+    func cancelPendingPackageExport() {
+        pendingPackageExport = nil
+    }
+
+    func confirmPendingPackageExport() async {
+        guard let pendingPackageExport,
+              let team = state.teams.first(where: { $0.id == pendingPackageExport.teamID }) else {
+            return
+        }
+        self.pendingPackageExport = nil
         await busy {
-            guard let team = self.selectedTeam else { return }
             self.exportURL = try self.packageService.export(team: team, state: self.state)
         }
     }
@@ -1648,10 +1873,11 @@ final class AppModel: ObservableObject {
             defer {
                 if scoped { url.stopAccessingSecurityScopedResource() }
             }
-            let manifest = try packageService.preview(packageURL: url)
+            let preview = try packageService.previewDetails(packageURL: url)
             pendingPackageImport = PendingPackageImport(
                 url: url,
-                manifest: manifest,
+                manifest: preview.manifest,
+                transferSummary: preview.summary,
                 opensOnboardingHandoff: opensOnboardingHandoff
             )
         } catch {
@@ -1682,10 +1908,15 @@ final class AppModel: ObservableObject {
             }
             _ = try self.packageService.preview(packageURL: url)
             try await self.createBackupBeforeRiskyOperation(reason: "Automatic backup before package import")
-            let manifest = try self.packageService.import(packageURL: url, audioAssetService: self.audioAssetService)
-            var imported = manifest.team
+            let importResult = try self.packageService.importWithAudit(
+                packageURL: url,
+                audioAssetService: self.audioAssetService,
+                musicAuthorizationStatus: MusicAuthorization.currentStatus
+            )
+            var imported = importResult.manifest.team
             imported.id = UUID()
             imported.name += " Imported"
+            let originalImportedTeamID = importResult.manifest.team.id
             self.state.teams.append(imported)
             self.state.selectedTeamID = imported.id
             self.normalizeLineup(for: self.state.teams.count - 1)
@@ -1693,13 +1924,27 @@ final class AppModel: ObservableObject {
                 self.state.onboarding = .completed()
             }
             self.completedPackageImportTeamID = imported.id
+            self.completedPackageImportAudit = importResult.audit.retargeted(
+                from: originalImportedTeamID,
+                to: imported.id,
+                teamName: imported.name
+            )
             self.persist()
-            for player in imported.players where player.songAssignment?.privateClip != nil {
-                self.scheduleSongClipPreparation(
+            for teamClip in imported.teamClips {
+                self.scheduleTeamClipPreparation(
                     teamID: imported.id,
-                    playerID: player.id,
+                    teamClipID: teamClip.id,
                     trigger: .importRepair
                 )
+            }
+            for player in imported.players {
+                if player.songAssignment?.privateClip != nil {
+                    self.scheduleSongClipPreparation(
+                        teamID: imported.id,
+                        playerID: player.id,
+                        trigger: .importRepair
+                    )
+                }
             }
         }
     }
@@ -1923,13 +2168,90 @@ final class AppModel: ObservableObject {
 
     func exportSupportBundle() async {
         await busy {
+            await self.refreshGeneratedClipCleanupReport()
             let url = try self.packageService.exportSupportBundle(
                 state: self.state,
                 selectedTeam: self.selectedTeam,
-                diagnostics: self.playbackEngine.supportDiagnostics()
+                diagnostics: self.playbackEngine.supportDiagnostics(),
+                generatedClipCleanup: self.generatedClipCleanupReport
             )
             self.supportBundle = SupportBundleExport(url: url)
         }
+    }
+
+    func refreshGeneratedClipCleanupReport() async {
+        let activeCount = await songClipGenerationQueue.pendingCount()
+        generatedClipCleanupReport = await runGeneratedClipCleanup(
+            activePreparationCount: activeCount,
+            shouldRemoveOrphans: false
+        )
+    }
+
+    func cleanGeneratedClipsNow() async {
+        let activeCount = await songClipGenerationQueue.pendingCount()
+        generatedClipCleanupReport = await runGeneratedClipCleanup(
+            activePreparationCount: activeCount,
+            shouldRemoveOrphans: true
+        )
+    }
+
+    private func runAutomaticGeneratedClipCleanup() async {
+        let activeCount = await songClipGenerationQueue.pendingCount()
+        generatedClipCleanupReport = await runGeneratedClipCleanup(
+            activePreparationCount: activeCount,
+            shouldRemoveOrphans: true
+        )
+    }
+
+    private func runGeneratedClipCleanup(
+        activePreparationCount: Int,
+        shouldRemoveOrphans: Bool
+    ) async -> GeneratedClipCleanupReport {
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+
+        guard let stateData = try? encoder.encode(state) else {
+            return blockedGeneratedClipCleanupReport()
+        }
+
+        return await Task.detached(priority: .utility) {
+            let decoder = JSONDecoder()
+            decoder.dateDecodingStrategy = .iso8601
+
+            guard let decodedState = try? decoder.decode(AppState.self, from: stateData) else {
+                return Self.blockedGeneratedClipCleanupReport()
+            }
+
+            let service = GeneratedClipCleanupService()
+            if shouldRemoveOrphans {
+                return service.clean(
+                    state: decodedState,
+                    activePreparationCount: activePreparationCount
+                )
+            }
+            return service.audit(
+                state: decodedState,
+                activePreparationCount: activePreparationCount
+            )
+        }.value
+    }
+
+    nonisolated private static func blockedGeneratedClipCleanupReport() -> GeneratedClipCleanupReport {
+        GeneratedClipCleanupReport(
+            discoveredFileCount: 0,
+            discoveredByteCount: 0,
+            referencedFileCount: 0,
+            orphanedFileCount: 0,
+            orphanedByteCount: 0,
+            removedFileCount: 0,
+            removedByteCount: 0,
+            retainedUncertainFileCount: 0,
+            blockedReason: "Cleanup was skipped because the current app state could not be inspected safely."
+        )
+    }
+
+    private func blockedGeneratedClipCleanupReport() -> GeneratedClipCleanupReport {
+        Self.blockedGeneratedClipCleanupReport()
     }
 
     var selectedTeamPresentPlayers: [Player] {
@@ -1941,7 +2263,7 @@ final class AppModel: ObservableObject {
     }
 
     private func playableCueForPlayerPlayback(_ player: Player) -> Cue? {
-        if let cue = player.cue, cueIsPlayable(cue) {
+        if let cue = resolvedCue(for: player), cueIsPlayable(cue) {
             return cue
         }
         return fallbackCue(for: player, cueID: playbackID(for: player))
@@ -1997,7 +2319,7 @@ final class AppModel: ObservableObject {
     }
 
     private func playbackID(for player: Player) -> UUID {
-        player.cue?.id ?? player.id
+        resolvedCue(for: player)?.id ?? player.id
     }
 
     private var teamIndex: Int? {
@@ -2080,6 +2402,11 @@ final class AppModel: ObservableObject {
         }) {
             return true
         }
+        if state.teams.contains(where: { team in
+            team.teamClips.contains { storedAssetRelativePaths(for: $0).contains(relativePath) }
+        }) {
+            return true
+        }
         return state.recentlyDeleted.contains { item in
             storedAssetRelativePaths(for: item).contains(relativePath)
         }
@@ -2107,6 +2434,18 @@ final class AppModel: ObservableObject {
 
     private func storedAssetRelativePaths(for team: Team) -> [String] {
         team.players.flatMap(storedAssetRelativePaths(for:))
+            + team.teamClips.flatMap(storedAssetRelativePaths(for:))
+    }
+
+    private func storedAssetRelativePaths(for clip: SongClip) -> [String] {
+        var paths: [String] = []
+        if case .localAudio(let source) = clip.originalSource.cueSource {
+            paths.append(source.relativePath)
+        }
+        if let generatedPath = clip.generatedAsset.relativePath {
+            paths.append(generatedPath)
+        }
+        return paths
     }
 
     private func storedAssetRelativePaths(for item: RecentlyDeletedItem) -> [String] {
@@ -2444,6 +2783,13 @@ final class AppModel: ObservableObject {
 
     private func scheduleAllSongClipPreparation(trigger: SongClipPreparationTrigger) {
         for team in state.teams {
+            for teamClip in team.teamClips {
+                scheduleTeamClipPreparation(
+                    teamID: team.id,
+                    teamClipID: teamClip.id,
+                    trigger: trigger
+                )
+            }
             for player in team.players where player.songAssignment?.privateClip != nil {
                 scheduleSongClipPreparation(teamID: team.id, playerID: player.id, trigger: trigger)
             }
@@ -2456,9 +2802,35 @@ final class AppModel: ObservableObject {
         trigger: SongClipPreparationTrigger,
         isExplicit: Bool = false
     ) {
-        guard let teamIndex = state.teams.firstIndex(where: { $0.id == teamID }),
-              let playerIndex = state.teams[teamIndex].players.firstIndex(where: { $0.id == playerID }),
-              case .privateClip(var clip)? = state.teams[teamIndex].players[playerIndex].songAssignment else {
+        scheduleSongClipPreparation(
+            teamID: teamID,
+            target: .player(playerID),
+            trigger: trigger,
+            isExplicit: isExplicit
+        )
+    }
+
+    private func scheduleTeamClipPreparation(
+        teamID: UUID,
+        teamClipID: UUID,
+        trigger: SongClipPreparationTrigger,
+        isExplicit: Bool = false
+    ) {
+        scheduleSongClipPreparation(
+            teamID: teamID,
+            target: .teamClip(teamClipID),
+            trigger: trigger,
+            isExplicit: isExplicit
+        )
+    }
+
+    private func scheduleSongClipPreparation(
+        teamID: UUID,
+        target: SongClipPreparationRequest.Target,
+        trigger: SongClipPreparationTrigger,
+        isExplicit: Bool
+    ) {
+        guard var clip = songClip(teamID: teamID, target: target) else {
             return
         }
 
@@ -2477,14 +2849,14 @@ final class AppModel: ObservableObject {
         if clip.generatedAsset.status != .ready {
             clip.generatedAsset.status = .pending
             clip.generatedAsset.generationKey = generationKey
-            state.teams[teamIndex].players[playerIndex].songAssignment = .privateClip(clip)
+            updateSongClip(clip, teamID: teamID, target: target)
             persist()
         }
 
         let request = SongClipPreparationRequest(
             id: UUID(),
             teamID: teamID,
-            playerID: playerID,
+            target: target,
             clipID: clip.id,
             generationKey: generationKey,
             trigger: trigger,
@@ -2504,11 +2876,7 @@ final class AppModel: ObservableObject {
             defer { self.songClipPreparationTask = nil }
 
             while !Task.isCancelled, let request = await self.songClipGenerationQueue.next() {
-                guard let clip = self.privateSongClip(
-                    teamID: request.teamID,
-                    playerID: request.playerID,
-                    matching: request
-                ) else {
+                guard let clip = self.songClip(matching: request) else {
                     await self.songClipGenerationQueue.complete(request)
                     continue
                 }
@@ -2525,28 +2893,57 @@ final class AppModel: ObservableObject {
         await songClipPreparationTask?.value
     }
 
-    private func privateSongClip(
+    private func songClip(
         teamID: UUID,
-        playerID: UUID,
-        matching request: SongClipPreparationRequest
+        target: SongClipPreparationRequest.Target
     ) -> SongClip? {
-        guard let team = state.teams.first(where: { $0.id == teamID }),
-              let player = team.players.first(where: { $0.id == playerID }),
-              case .privateClip(let clip)? = player.songAssignment,
+        guard let team = state.teams.first(where: { $0.id == teamID }) else { return nil }
+        switch target {
+        case .player(let playerID):
+            guard let player = team.players.first(where: { $0.id == playerID }),
+                  case .privateClip(let clip)? = player.songAssignment else {
+                return nil
+            }
+            return clip
+        case .teamClip(let teamClipID):
+            return team.teamClips.first(where: { $0.id == teamClipID })
+        }
+    }
+
+    private func songClip(matching request: SongClipPreparationRequest) -> SongClip? {
+        guard let clip = songClip(teamID: request.teamID, target: request.target),
               request.matches(clip) else {
             return nil
         }
         return clip
     }
 
+    private func updateSongClip(
+        _ clip: SongClip,
+        teamID: UUID,
+        target: SongClipPreparationRequest.Target
+    ) {
+        guard let teamIndex = state.teams.firstIndex(where: { $0.id == teamID }) else { return }
+        switch target {
+        case .player(let playerID):
+            guard let playerIndex = state.teams[teamIndex].players.firstIndex(where: { $0.id == playerID }) else {
+                return
+            }
+            state.teams[teamIndex].players[playerIndex].songAssignment = .privateClip(clip)
+        case .teamClip(let teamClipID):
+            guard let clipIndex = state.teams[teamIndex].teamClips.firstIndex(where: { $0.id == teamClipID }) else {
+                return
+            }
+            state.teams[teamIndex].teamClips[clipIndex] = clip
+        }
+    }
+
     private func applySongClipPreparationOutcome(
         _ outcome: SongClipPreparationOutcome,
         request: SongClipPreparationRequest
     ) {
-        guard let teamIndex = state.teams.firstIndex(where: { $0.id == request.teamID }),
-              let playerIndex = state.teams[teamIndex].players.firstIndex(where: { $0.id == request.playerID }),
-              case .privateClip(var clip)? = state.teams[teamIndex].players[playerIndex].songAssignment,
-              request.matches(clip) else {
+        guard var clip = songClip(matching: request),
+              let teamIndex = state.teams.firstIndex(where: { $0.id == request.teamID }) else {
             if case .generated(let asset) = outcome {
                 audioAssetService.removeAsset(relativePath: asset.relativePath)
             }
@@ -2619,7 +3016,7 @@ final class AppModel: ObservableObject {
             recordPreparationFailure(on: &clip, code: code, retryable: retryable, request: request)
         }
 
-        state.teams[teamIndex].players[playerIndex].songAssignment = .privateClip(clip)
+        updateSongClip(clip, teamID: request.teamID, target: request.target)
         state.teams[teamIndex].modifiedAt = .now
         persist()
         scheduleReadinessRefresh()
@@ -2647,14 +3044,15 @@ final class AppModel: ObservableObject {
         let retryAt = Date().addingTimeInterval(delay)
         clip.retryMetadata.nextRetryAt = retryAt
         let teamID = request.teamID
-        let playerID = request.playerID
+        let target = request.target
         Task { @MainActor [weak self] in
             try? await Task.sleep(for: .seconds(delay))
             guard let self, !Task.isCancelled else { return }
             self.scheduleSongClipPreparation(
                 teamID: teamID,
-                playerID: playerID,
-                trigger: .retry
+                target: target,
+                trigger: .retry,
+                isExplicit: false
             )
         }
     }
@@ -2792,10 +3190,11 @@ final class AppModel: ObservableObject {
                 defer {
                     if scoped { nextURL.stopAccessingSecurityScopedResource() }
                 }
-                let manifest = try packageService.preview(packageURL: nextURL)
+                let preview = try packageService.previewDetails(packageURL: nextURL)
                 pendingPackageImport = PendingPackageImport(
                     url: nextURL,
-                    manifest: manifest,
+                    manifest: preview.manifest,
+                    transferSummary: preview.summary,
                     opensOnboardingHandoff: !state.onboarding.isComplete
                 )
             } catch {

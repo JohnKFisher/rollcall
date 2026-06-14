@@ -107,7 +107,7 @@ final class PackageServiceTests: XCTestCase {
         }
     }
 
-    func testImportRejectsMissingRequiredLocalAudioAsset() throws {
+    func testImportPreservesMissingLocalAudioAsRepairableAssignment() throws {
         let player = RollCallTestFixtures.player(
             id: RollCallTestFixtures.alexID,
             name: "Alex Ramirez",
@@ -129,9 +129,18 @@ final class PackageServiceTests: XCTestCase {
             withIntermediateDirectories: true
         )
 
-        XCTAssertThrowsError(try service.import(packageURL: packageURL, audioAssetService: AudioAssetService())) { error in
-            XCTAssertAppError(error, is: .invalidImport)
+        let result = try service.importWithAudit(
+            packageURL: packageURL,
+            audioAssetService: AudioAssetService(),
+            musicAuthorizationStatus: .denied
+        )
+
+        guard let clip = result.manifest.team.players.first?.songAssignment?.privateClip else {
+            return XCTFail("Expected the missing local assignment to be preserved.")
         }
+        XCTAssertEqual(clip.readinessInputs.playback, .needsRepair)
+        XCTAssertEqual(clip.portabilityInputs.portability, .metadataOnly)
+        XCTAssertEqual(result.audit.items.first?.state, .needsRepair)
     }
 
     func testImportRejectsUnsafePackageAssetPath() throws {
@@ -159,6 +168,95 @@ final class PackageServiceTests: XCTestCase {
         XCTAssertThrowsError(try service.import(packageURL: packageURL, audioAssetService: AudioAssetService())) { error in
             XCTAssertAppError(error, is: .invalidImport)
         }
+    }
+
+    func testGeneratedTeamClipRoundTripsAsPortablePackageAsset() throws {
+        let generatedPath = "GeneratedClips/team-warmup.m4a"
+        try Data("portable-generated-audio".utf8)
+            .write(to: AppPaths.assetURL(relativePath: generatedPath))
+        var clip = SongClip(
+            cue: RollCallTestFixtures.appleMusicCue(
+                songID: "catalog.team.warmup",
+                title: "Team Warmup",
+                artistName: "Test Artist"
+            )
+        )
+        clip.generatedAsset = GeneratedClipAsset(
+            relativePath: generatedPath,
+            status: .ready,
+            renderedSelection: clip.requestedSelection,
+            generationKey: clip.generationKey,
+            generatedAt: RollCallTestFixtures.now
+        )
+        clip.readinessInputs = SongClipReadinessInputs(
+            playback: .localClipReady,
+            sourceAvailableOnDevice: true,
+            downloadedOnDevice: true
+        )
+        clip.portabilityInputs = SongClipPortabilityInputs(
+            portability: .portableLocalClip,
+            generatedAssetCanBeExported: true
+        )
+        var player = RollCallTestFixtures.player(
+            id: RollCallTestFixtures.alexID,
+            name: "Alex Ramirez",
+            number: "12"
+        )
+        player.songAssignment = .sharedTeamClip(clip.id)
+        var team = RollCallTestFixtures.team(players: [player], battingOrder: [player.id])
+        team.teamClips = [clip]
+
+        let packageURL = try service.export(
+            team: team,
+            state: RollCallTestFixtures.appState(team: team)
+        )
+        let preview = try service.previewDetails(packageURL: packageURL)
+        let result = try service.importWithAudit(
+            packageURL: packageURL,
+            audioAssetService: AudioAssetService(),
+            musicAuthorizationStatus: .denied
+        )
+
+        XCTAssertEqual(preview.summary.localClipIncludedCount, 1)
+        let importedClip = try XCTUnwrap(result.manifest.team.teamClips.first)
+        let importedPath = try XCTUnwrap(importedClip.generatedAsset.relativePath)
+        XCTAssertTrue(importedPath.hasPrefix("GeneratedClips/"))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: try AppPaths.assetURL(relativePath: importedPath).path))
+        XCTAssertEqual(result.audit.items.first?.state, .localClipIncluded)
+        guard case .localAudio? = result.manifest.team.cue(for: result.manifest.team.players[0])?.source else {
+            return XCTFail("Expected imported shared Team Clip to use its included generated asset.")
+        }
+    }
+
+    func testAppleMusicAssignmentSurvivesImportAndReportsAccessNeed() throws {
+        let player = RollCallTestFixtures.player(
+            id: RollCallTestFixtures.alexID,
+            name: "Alex Ramirez",
+            number: "12",
+            cue: RollCallTestFixtures.appleMusicCue(
+                songID: "catalog.keep.me",
+                title: "Keep Me",
+                artistName: "Test Artist"
+            )
+        )
+        let team = RollCallTestFixtures.team(players: [player], battingOrder: [player.id])
+        let packageURL = try service.export(
+            team: team,
+            state: RollCallTestFixtures.appState(team: team)
+        )
+
+        let result = try service.importWithAudit(
+            packageURL: packageURL,
+            audioAssetService: AudioAssetService(),
+            musicAuthorizationStatus: .denied
+        )
+
+        guard case .appleMusic(let source)? = result.manifest.team.players.first?
+            .songAssignment?.privateClip?.originalSource else {
+            return XCTFail("Expected Apple Music metadata to survive import.")
+        }
+        XCTAssertEqual(source.songID, "catalog.keep.me")
+        XCTAssertEqual(result.audit.items.first?.state, .needsAppleMusic)
     }
 
     private func writePackageDirectory(name: String, manifest: TeamPackageManifest) throws -> URL {

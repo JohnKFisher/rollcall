@@ -582,7 +582,7 @@ Repair actions may include:
 
 - replace song
 - relink to Apple Music on this device
-- try download for reliability
+- recheck Apple Music access and source availability
 - regenerate local clip if a readable asset later appears
 
 Receiving device rules:
@@ -730,7 +730,7 @@ Tests:
 
 ### Phase 3: Picker And Editor
 
-Status: implemented on 2026-06-10; simulator build, launch, navigation smoke check, and the existing 59-test executed suite pass. Real-device Music library/catalog and audible preview verification remain open.
+Status: implemented on 2026-06-10; simulator build, launch, navigation smoke check, and the existing 59-test executed suite pass. A high-level physical-device check passed on 2026-06-14; broader real-device edge-case verification remains in Phase 6.
 
 Create reusable flow:
 
@@ -770,6 +770,8 @@ Implemented notes:
 
 ### Phase 4: Team Clips
 
+Status: implemented on 2026-06-14 in build 67; simulator build/run, Team Clips UI smoke check, 23 focused tests, and the full 73-test executed serial suite pass.
+
 Add:
 
 - Team Clips list/section
@@ -781,7 +783,20 @@ Add:
 - protected deletion choices
 - advanced `Save Player Songs to Team Clips` tool
 
+Implemented notes:
+
+- Team Clips live on the Teams tab and can be created independently through Music Library, Apple Music search, or Files using the Phase 3 draft editor.
+- Clips support custom names, exact creative duplicate reuse, and explicit shared player assignment.
+- Player Editor offers Team Clips as a source. Shared clips display as shared and require `Make Player Copy to Edit` before player-specific editing.
+- Editing from Team Clips updates the shared clip intentionally.
+- Deleting an assigned Team Clip offers to keep private player copies or remove the clip from those players.
+- The advanced promotion tool converts private player songs into shared Team Clips and reuses exact matches.
+- Shared assignments resolve through playback, readiness, package previews, roster surfaces, and Apple Music playlist summaries.
+- Team Clip asset references participate in conservative cleanup protection.
+
 ### Phase 5: Readiness, Playback, Export, Import, Repair
+
+Status: implemented on 2026-06-14 in build 68. Generated local clips are preferred when valid, shared Team Clips now enter the same bounded preparation queue as private player clips, readiness distinguishes portable/device-dependent/repair states, export previews package truth, generated assets round-trip, import audits receiving-device outcomes, and missing-but-identifiable assignments are preserved for repair.
 
 Playback:
 
@@ -817,6 +832,8 @@ Repair:
 - first-class flow, not an afterthought
 
 ### Phase 6: Cleanup And Verification
+
+Status: implementation and automated verification completed on 2026-06-14 in build 68. Conservative cleanup, non-Release inspection/manual cleanup, redacted support diagnostics, package portability/import audit/repair coverage, Debug launch, public Release build, and the full 88-test executed serial suite pass. The remaining release gate is physical/manual verification: the simulator automation bridge cannot tap its visible Settings row, and real Music Library, Apple Music, AirDrop/cross-device portability, and audible repair behavior require physical devices.
 
 Add:
 
@@ -869,11 +886,11 @@ Priority test areas:
 
 ## Open Work At Handoff
 
-The old "begin Phase 0" instruction is no longer correct.
+The implementation phases are complete. Do not restart Phase 0 through Phase 6.
 
 Next action:
 
-Begin Phase 1 with the post-Phase-0 policy already accepted.
+Run the final physical-device/manual 1.2 verification checklist, fix only concrete failures, and then prepare release notes and the App Store submission build.
 
 Before coding:
 
@@ -883,9 +900,9 @@ Before coding:
 
 Implementation sequencing recommendation:
 
-1. Lock `docs/DECISIONS.md` to the narrowed post-Phase-0 policy.
-2. Define model/readiness/portability states.
-3. Build the generation/reliability engine around readable-local-first truth.
-4. Add import/export/readiness honesty before polishing advanced conveniences.
+1. Verify Music Library and Apple Music playback states on-device.
+2. Export a mixed portable/source-linked team and import it on another device.
+3. Exercise Player and Team Clip repair plus conservative manual cleanup with disposable data.
+4. Re-run the full suite after any device-driven fix, then update release notes.
 
 Do not re-open the old broad aggressive Apple Music generation assumption unless new public-API evidence clearly proves more than Phase 0 found.

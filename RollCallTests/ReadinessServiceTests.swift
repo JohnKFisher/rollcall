@@ -79,4 +79,65 @@ final class ReadinessServiceTests: XCTestCase {
 
         XCTAssertEqual(snapshot.checks.first { $0.id == "lineup" }?.state, .issue)
     }
+
+    @MainActor
+    func testSnapshotExplainsPreservedAppleMusicAssignmentThatNeedsAccess() {
+        var player = RollCallTestFixtures.player(
+            id: RollCallTestFixtures.alexID,
+            name: "Alex Ramirez",
+            number: "12",
+            cue: RollCallTestFixtures.appleMusicCue(
+                songID: "catalog.needs.access",
+                title: "Needs Access",
+                artistName: "Test Artist"
+            )
+        )
+        guard case .privateClip(var clip)? = player.songAssignment else {
+            return XCTFail("Expected private song clip.")
+        }
+        clip.readinessInputs.playback = .needsAppleMusic
+        clip.readinessInputs.sourceAvailableOnDevice = false
+        player.songAssignment = .privateClip(clip)
+        let team = RollCallTestFixtures.team(players: [player])
+
+        let snapshot = ReadinessService(audioAssetService: AudioAssetService()).snapshot(for: team)
+        let check = snapshot.checks.first { $0.id == "player-\(player.id)-audio-issue" }
+
+        XCTAssertEqual(check?.state, .issue)
+        XCTAssertTrue(check?.detail.contains("song choice is preserved") == true)
+    }
+
+    @MainActor
+    func testSnapshotTreatsIncludedGeneratedSharedClipAsPortableReady() throws {
+        let generatedPath = "GeneratedClips/shared-ready.m4a"
+        try Data("generated".utf8).write(to: AppPaths.assetURL(relativePath: generatedPath))
+        var clip = SongClip(
+            cue: RollCallTestFixtures.appleMusicCue(
+                songID: "catalog.shared.ready",
+                title: "Shared Ready",
+                artistName: "Test Artist"
+            )
+        )
+        clip.generatedAsset = GeneratedClipAsset(
+            relativePath: generatedPath,
+            status: .ready,
+            renderedSelection: clip.requestedSelection,
+            generationKey: clip.generationKey,
+            generatedAt: RollCallTestFixtures.now
+        )
+        var player = RollCallTestFixtures.player(
+            id: RollCallTestFixtures.alexID,
+            name: "Alex Ramirez",
+            number: "12"
+        )
+        player.songAssignment = .sharedTeamClip(clip.id)
+        var team = RollCallTestFixtures.team(players: [player])
+        team.teamClips = [clip]
+
+        let snapshot = ReadinessService(audioAssetService: AudioAssetService()).snapshot(for: team)
+        let check = snapshot.checks.first { $0.id == "player-\(player.id)-ready" }
+
+        XCTAssertEqual(check?.state, .ready)
+        XCTAssertTrue(check?.detail.contains("portable Roll Call clip") == true)
+    }
 }

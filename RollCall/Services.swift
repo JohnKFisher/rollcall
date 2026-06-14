@@ -573,15 +573,39 @@ private struct SupportBundlePayload: Codable {
         var builtInClipCount: Int
     }
 
+    struct SongClipDiagnostics: Codable {
+        var totalClipCount: Int
+        var sourceTypeCounts: [String: Int]
+        var generationStatusCounts: [String: Int]
+        var readinessCounts: [String: Int]
+        var portabilityCounts: [String: Int]
+        var totalRetryCount: Int
+        var failureCodeCounts: [String: Int]
+        var generatedAssetDiskUsageBytes: Int64
+        var localGenerationEnabled: Bool
+        var appleMusicHandlingPolicy: String
+        var autoDownloadEligibleSongsEnabled: Bool
+        var generationPolicyVersions: [Int]
+    }
+
+    struct PlaybackSummary: Codable {
+        var hasActiveCue: Bool
+        var hasPrewarmedCue: Bool
+        var hasLastStartedCue: Bool
+        var debounceWindowSeconds: Double
+    }
+
     var generatedAt: Date
     var appVersion: String
     var schemaVersion: Int
     var selectedTeamIndex: Int?
     var settings: AppSettings
     var experimental: ExperimentalSettings
-    var readiness: ReadinessStatus?
-    var playback: PlaybackSupportDiagnostics
+    var readinessStateCounts: [String: Int]
+    var playback: PlaybackSummary
     var teams: [TeamSummary]
+    var songClips: SongClipDiagnostics
+    var generatedClipCleanup: GeneratedClipCleanupReport?
 }
 
 @MainActor
@@ -1443,12 +1467,12 @@ final class ReadinessService {
         let route = session.currentRoute.outputs.first?.portName ?? "Unknown"
         let volume = session.outputVolume
         let presentPlayers = team?.presentPlayersInBattingOrder ?? []
-        let appleMusicCount = presentPlayers.compactMap(\.cue).filter { cue in
+        let appleMusicCount = presentPlayers.compactMap { team?.cue(for: $0) }.filter { cue in
             if case .appleMusic = cue.source { return true }
             return false
         }.count
         let musicAuthStatus = MusicAuthorization.currentStatus
-        let playerChecks = presentPlayers.compactMap { readinessCheck(for: $0) }
+        let playerChecks = presentPlayers.compactMap { readinessCheck(for: $0, team: team) }
         let customChecks = customAnnouncerChecks(for: team)
         let optionalChecks = optionalUpgradeChecks(for: team)
         return ReadinessStatus(
@@ -1463,34 +1487,96 @@ final class ReadinessService {
         )
     }
 
-    private func readinessCheck(for player: Player) -> ReadinessCheck? {
-        guard let cue = player.cue else {
+    private func readinessCheck(for player: Player, team: Team?) -> ReadinessCheck? {
+        guard let team else { return nil }
+        guard player.songAssignment != nil else {
             return ReadinessCheck(id: "player-\(player.id)-needs-audio", title: player.displayName, detail: "Add a song or local audio. Game Day can still use Small Cheer fallback.", state: .needsAudio)
         }
+        guard let clip = team.songClip(for: player) else {
+            return ReadinessCheck(
+                id: "player-\(player.id)-audio-issue",
+                title: player.displayName,
+                detail: "This player references a Team Clip that is no longer available. Choose a replacement.",
+                state: .issue
+            )
+        }
 
-        switch cue.source {
-        case .appleMusic:
+        if clip.generatedAsset.status == .ready,
+           let generatedPath = clip.generatedAsset.relativePath,
+           audioAssetService.assetExists(relativePath: generatedPath) {
+            return playerReadinessCheck(
+                for: player,
+                detail: "A portable Roll Call clip is ready for Game Day."
+            )
+        }
+
+        switch clip.readinessInputs.playback {
+        case .needsAppleMusic:
+            return ReadinessCheck(
+                id: "player-\(player.id)-audio-issue",
+                title: player.displayName,
+                detail: "The song choice is preserved, but Apple Music access is needed on this device.",
+                state: .issue
+            )
+        case .needsRepair:
+            return ReadinessCheck(
+                id: "player-\(player.id)-audio-issue",
+                title: player.displayName,
+                detail: "The song choice is preserved, but its playable audio needs to be replaced or relinked.",
+                state: .issue
+            )
+        case .localClipReady, .sourceBackedReady, .sourceBackedDownloaded:
             break
+        }
+
+        switch clip.originalSource {
+        case .appleMusic:
+            return playerReadinessCheck(
+                for: player,
+                detail: clip.readinessInputs.downloadedOnDevice
+                    ? "Apple Music playback is available on this device, but it is not portable in a team package."
+                    : "Apple Music playback is available here and may require access again on another device."
+            )
         case .localAudio(let source):
             if !audioAssetService.assetExists(relativePath: source.relativePath) {
                 return ReadinessCheck(id: "player-\(player.id)-audio-issue", title: player.displayName, detail: "The selected local cue file is missing from app storage.", state: .issue)
             }
+            return playerReadinessCheck(
+                for: player,
+                detail: "Local audio is ready and can travel with an exported team."
+            )
         case .builtInClip(let source):
             if !audioAssetService.assetExists(relativePath: builtInClipRelativePath(for: source)) {
                 return ReadinessCheck(id: "player-\(player.id)-audio-issue", title: player.displayName, detail: "The selected built-in clip asset is missing.", state: .issue)
             }
+            return playerReadinessCheck(
+                for: player,
+                detail: "A built-in Roll Call clip is ready for Game Day."
+            )
         }
+    }
 
+    private func playerReadinessCheck(for player: Player, detail: String) -> ReadinessCheck {
         if let customAnnouncerRelativePath = player.customAnnouncerRelativePath,
            !audioAssetService.assetExists(relativePath: customAnnouncerRelativePath) {
             return ReadinessCheck(id: "player-\(player.id)-custom-announcer-issue", title: player.displayName, detail: "The Announcement Cue file is missing from app storage.", state: .issue)
         }
 
         if hasStoredCustomAnnouncer(for: player) {
-            return ReadinessCheck(id: "player-\(player.id)-enhanced", title: player.displayName, detail: "Playable audio plus an Announcement Cue.", state: .enhanced)
+            return ReadinessCheck(
+                id: "player-\(player.id)-enhanced",
+                title: player.displayName,
+                detail: "\(detail) An Announcement Cue is also ready.",
+                state: .enhanced
+            )
         }
 
-        return ReadinessCheck(id: "player-\(player.id)-ready", title: player.displayName, detail: "Playable audio is ready for Game Day.", state: .ready)
+        return ReadinessCheck(
+            id: "player-\(player.id)-ready",
+            title: player.displayName,
+            detail: detail,
+            state: .ready
+        )
     }
 
     private func customAnnouncerChecks(for team: Team?) -> [ReadinessCheck] {
@@ -1498,8 +1584,8 @@ final class ReadinessService {
         let presentPlayers = team.presentPlayersInBattingOrder
         guard !presentPlayers.isEmpty else { return [] }
         let readyPlayers = presentPlayers.filter { player in
-            guard player.cue != nil else { return false }
-            return readinessCheck(for: player)?.state != .issue
+            guard team.cue(for: player) != nil else { return false }
+            return readinessCheck(for: player, team: team)?.state != .issue
         }
         guard !readyPlayers.isEmpty else { return [] }
 
@@ -1565,6 +1651,27 @@ final class ReadinessService {
 }
 
 struct PackageService: Sendable {
+    struct PreviewResult {
+        var manifest: TeamPackageManifest
+        var summary: PackageTransferSummary
+    }
+
+    struct ImportResult {
+        var manifest: TeamPackageManifest
+        var audit: PackageImportAudit
+    }
+
+    func transferSummary(for team: Team) -> PackageTransferSummary {
+        let states = uniqueSongClips(in: team).map(transferState(for:))
+        return PackageTransferSummary(
+            localClipIncludedCount: states.filter { $0 == .localClipIncluded }.count,
+            sourceReferenceOnlyCount: states.filter { $0 == .sourceReferenceOnly }.count,
+            needsAppleMusicCount: states.filter { $0 == .needsAppleMusic }.count,
+            stillPreparingCount: states.filter { $0 == .stillPreparing }.count,
+            needsRepairCount: states.filter { $0 == .needsRepair }.count
+        )
+    }
+
     func export(team: Team, state: AppState) throws -> URL {
         let packageName = safePackageName(for: team.name)
         let exportURL = FileManager.default.temporaryDirectory.appendingPathComponent("\(packageName).rollcall", isDirectory: false)
@@ -1578,7 +1685,13 @@ struct PackageService: Sendable {
         try FileManager.default.createDirectory(at: stagingDirectory, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: stagingDirectory) }
 
-        let manifest = TeamPackageManifest(schemaVersion: state.schemaVersion, appVersion: state.appVersion, exportedAt: .now, deviceLabel: state.deviceIdentity.label, team: sanitized(team))
+        let manifest = TeamPackageManifest(
+            schemaVersion: state.schemaVersion,
+            appVersion: state.appVersion,
+            exportedAt: .now,
+            deviceLabel: state.deviceIdentity.label,
+            team: sanitized(team)
+        )
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
         encoder.dateEncodingStrategy = .iso8601
@@ -1593,6 +1706,18 @@ struct PackageService: Sendable {
     }
 
     func `import`(packageURL: URL, audioAssetService: AudioAssetService) throws -> TeamPackageManifest {
+        try importWithAudit(
+            packageURL: packageURL,
+            audioAssetService: audioAssetService,
+            musicAuthorizationStatus: MusicAuthorization.currentStatus
+        ).manifest
+    }
+
+    func importWithAudit(
+        packageURL: URL,
+        audioAssetService: AudioAssetService,
+        musicAuthorizationStatus: MusicAuthorization.Status
+    ) throws -> ImportResult {
         let extractedDirectory = try extractedDirectoryIfNeeded(for: packageURL)
         defer {
             if let extractedDirectory {
@@ -1611,10 +1736,18 @@ struct PackageService: Sendable {
             let packageAssetsURL = packageRootURL.appendingPathComponent("Assets", isDirectory: true)
             manifest.team = try importAssets(for: manifest.team, from: packageAssetsURL, audioAssetService: audioAssetService)
         }
-        return manifest
+        let audit = importAudit(
+            for: manifest.team,
+            musicAuthorizationStatus: musicAuthorizationStatus
+        )
+        return ImportResult(manifest: manifest, audit: audit)
     }
 
     func preview(packageURL: URL) throws -> TeamPackageManifest {
+        try previewDetails(packageURL: packageURL).manifest
+    }
+
+    func previewDetails(packageURL: URL) throws -> PreviewResult {
         let extractedDirectory = try extractedDirectoryIfNeeded(for: packageURL)
         defer {
             if let extractedDirectory {
@@ -1628,7 +1761,20 @@ struct PackageService: Sendable {
         decoder.dateDecodingStrategy = .iso8601
         let manifest = try decoder.decode(TeamPackageManifest.self, from: Data(contentsOf: manifestURL))
         guard manifest.schemaVersion <= AppState.currentSchemaVersion else { throw AppError.unsupportedImportVersion }
-        return manifest
+        let packageAssetsURL = packageRootURL.appendingPathComponent("Assets", isDirectory: true)
+        let states = try uniqueSongClips(in: manifest.team).map {
+            try previewTransferState(for: $0, packageAssetsDirectory: packageAssetsURL)
+        }
+        return PreviewResult(
+            manifest: manifest,
+            summary: PackageTransferSummary(
+                localClipIncludedCount: states.filter { $0 == .localClipIncluded }.count,
+                sourceReferenceOnlyCount: states.filter { $0 == .sourceReferenceOnly }.count,
+                needsAppleMusicCount: states.filter { $0 == .needsAppleMusic }.count,
+                stillPreparingCount: states.filter { $0 == .stillPreparing }.count,
+                needsRepairCount: states.filter { $0 == .needsRepair }.count
+            )
+        )
     }
 
     func parseRosterCSV(from url: URL) async throws -> [ParsedRosterRow] {
@@ -1675,7 +1821,8 @@ struct PackageService: Sendable {
     func exportSupportBundle(
         state: AppState,
         selectedTeam: Team?,
-        diagnostics: PlaybackSupportDiagnostics
+        diagnostics: PlaybackSupportDiagnostics,
+        generatedClipCleanup: GeneratedClipCleanupReport?
     ) throws -> URL {
         let teamSummaries = state.teams.enumerated().map { index, team in
             SupportBundlePayload.TeamSummary(
@@ -1695,9 +1842,19 @@ struct PackageService: Sendable {
             selectedTeamIndex: selectedTeamIndex,
             settings: state.settings,
             experimental: state.experimental,
-            readiness: state.lastReadiness,
-            playback: diagnostics,
-            teams: teamSummaries
+            readinessStateCounts: Dictionary(
+                grouping: state.lastReadiness?.checks ?? [],
+                by: { $0.state.rawValue }
+            ).mapValues(\.count),
+            playback: SupportBundlePayload.PlaybackSummary(
+                hasActiveCue: diagnostics.activeCueID != nil,
+                hasPrewarmedCue: diagnostics.prewarmedCueID != nil,
+                hasLastStartedCue: diagnostics.lastStartedCueID != nil,
+                debounceWindowSeconds: diagnostics.debounceWindowSeconds
+            ),
+            teams: teamSummaries,
+            songClips: songClipDiagnostics(for: state, cleanup: generatedClipCleanup),
+            generatedClipCleanup: generatedClipCleanup
         )
 
         let url = FileManager.default.temporaryDirectory.appendingPathComponent("RollCall-Support-\(UUID().uuidString).json")
@@ -1708,17 +1865,110 @@ struct PackageService: Sendable {
         return url
     }
 
+    private func songClipDiagnostics(
+        for state: AppState,
+        cleanup: GeneratedClipCleanupReport?
+    ) -> SupportBundlePayload.SongClipDiagnostics {
+        let clips = state.teams.flatMap { team in
+            team.teamClips + team.players.compactMap(\.songAssignment?.privateClip)
+        }
+        var sourceCounts: [String: Int] = [:]
+        var generationCounts: [String: Int] = [:]
+        var readinessCounts: [String: Int] = [:]
+        var portabilityCounts: [String: Int] = [:]
+        var failureCounts: [String: Int] = [:]
+        var retryCount = 0
+
+        for clip in clips {
+            let sourceType: String
+            switch clip.originalSource {
+            case .appleMusic:
+                sourceType = "appleMusic"
+            case .localAudio:
+                sourceType = "localAudio"
+            case .builtInClip:
+                sourceType = "builtInClip"
+            }
+            sourceCounts[sourceType, default: 0] += 1
+            generationCounts[clip.generatedAsset.status.rawValue, default: 0] += 1
+            readinessCounts[clip.readinessInputs.playback.rawValue, default: 0] += 1
+            portabilityCounts[clip.portabilityInputs.portability.rawValue, default: 0] += 1
+            retryCount += clip.retryMetadata.attemptCount
+            if let failureCode = clip.retryMetadata.lastFailureCode {
+                failureCounts[failureCode, default: 0] += 1
+            }
+        }
+
+        return SupportBundlePayload.SongClipDiagnostics(
+            totalClipCount: clips.count,
+            sourceTypeCounts: sourceCounts,
+            generationStatusCounts: generationCounts,
+            readinessCounts: readinessCounts,
+            portabilityCounts: portabilityCounts,
+            totalRetryCount: retryCount,
+            failureCodeCounts: failureCounts,
+            generatedAssetDiskUsageBytes: cleanup?.discoveredByteCount
+                ?? generatedReferencedDiskUsage(in: state),
+            localGenerationEnabled: SongClipPolicy.current.localClipGenerationEnabled,
+            appleMusicHandlingPolicy: SongClipPolicy.current.appleMusicHandlingPolicy.rawValue,
+            autoDownloadEligibleSongsEnabled: SongClipPolicy.current.autoDownloadEligibleSongsEnabled,
+            generationPolicyVersions: Array(Set(clips.map(\.policy.generationPolicyVersion))).sorted()
+        )
+    }
+
+    private func generatedReferencedDiskUsage(in state: AppState) -> Int64 {
+        let paths = Set(
+            state.teams.flatMap { team in
+                let clips = team.teamClips + team.players.compactMap(\.songAssignment?.privateClip)
+                return clips.compactMap(\.generatedAsset.relativePath)
+            }
+        )
+        return paths.reduce(0) { total, path in
+            guard let url = try? AppPaths.assetURL(relativePath: path),
+                  let size = try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize else {
+                return total
+            }
+            return total + Int64(size)
+        }
+    }
+
     private func sanitized(_ team: Team) -> Team {
         var team = team
+        team.teamClips = team.teamClips.map(sanitized)
         team.players = team.players.map { player in
             var player = player
-            if case .localAudio(var local)? = player.cue?.source {
-                local.hiddenOriginNote = nil
-                player.cue?.source = .localAudio(local)
+            if case .privateClip(let clip)? = player.songAssignment {
+                player.songAssignment = .privateClip(sanitized(clip))
             }
             return player
         }
         return team
+    }
+
+    private func sanitized(_ clip: SongClip) -> SongClip {
+        var clip = clip
+        if case .localAudio(var local) = clip.originalSource {
+            local.hiddenOriginNote = nil
+            clip.originalSource = .localAudio(local)
+        }
+        guard clip.generatedAsset.status == .ready,
+              clip.portabilityInputs.generatedAssetCanBeExported,
+              let relativePath = clip.generatedAsset.relativePath,
+              assetExists(relativePath: relativePath) else {
+            if clip.generatedAsset.status == .ready {
+                clip.generatedAsset = GeneratedClipAsset(
+                    relativePath: nil,
+                    status: .failedPermanent,
+                    renderedSelection: nil,
+                    generationKey: clip.generatedAsset.generationKey,
+                    generatedAt: nil
+                )
+                clip.readinessInputs.playback = fallbackReadiness(for: clip.originalSource)
+                clip.portabilityInputs = fallbackPortability(for: clip.originalSource)
+            }
+            return clip
+        }
+        return clip
     }
 
     private func safePackageName(for teamName: String) -> String {
@@ -1759,6 +2009,9 @@ struct PackageService: Sendable {
 
     private func copyAssets(for team: Team, into assetsDirectory: URL) throws {
         try copyPlayerAssets(for: team.players, into: assetsDirectory)
+        for clip in uniqueSongClips(in: team) {
+            try copyClipAssets(for: clip, into: assetsDirectory)
+        }
     }
 
     private func copyPlayerAssets(for players: [Player], into assetsDirectory: URL) throws {
@@ -1766,11 +2019,20 @@ struct PackageService: Sendable {
             if let photoRelativePath = player.photoRelativePath {
                 try copyAssetIfPresent(relativePath: photoRelativePath, into: assetsDirectory)
             }
-            if let cue = player.cue,
-               case .localAudio(let source) = cue.source {
-                try copyAssetIfPresent(relativePath: source.relativePath, into: assetsDirectory)
-            }
             try copyAssetIfPresent(relativePath: player.customAnnouncerRelativePath, into: assetsDirectory)
+        }
+    }
+
+    private func copyClipAssets(for clip: SongClip, into assetsDirectory: URL) throws {
+        if case .localAudio(let source) = clip.originalSource {
+            try copyAssetIfPresent(relativePath: source.relativePath, into: assetsDirectory)
+        }
+        if clip.generatedAsset.status == .ready,
+           clip.portabilityInputs.generatedAssetCanBeExported {
+            try copyAssetIfPresent(
+                relativePath: clip.generatedAsset.relativePath,
+                into: assetsDirectory
+            )
         }
     }
 
@@ -1778,7 +2040,8 @@ struct PackageService: Sendable {
         guard let relativePath else { return }
         let sourceURL = try AppPaths.assetURL(relativePath: relativePath)
         guard FileManager.default.fileExists(atPath: sourceURL.path) else { return }
-        let destinationURL = packageAssetsDirectory.appendingPathComponent(relativePath)
+        let packagePath = try validatedPackageAssetRelativePath(relativePath)
+        let destinationURL = packageAssetsDirectory.appendingPathComponent(packagePath)
         try FileManager.default.createDirectory(at: destinationURL.deletingLastPathComponent(), withIntermediateDirectories: true)
         if FileManager.default.fileExists(atPath: destinationURL.path) {
             try FileManager.default.removeItem(at: destinationURL)
@@ -1788,14 +2051,26 @@ struct PackageService: Sendable {
 
     private func importAssets(for team: Team, from packageAssetsDirectory: URL, audioAssetService: AudioAssetService) throws -> Team {
         var importedTeam = team
+        importedTeam.teamClips = try importedTeam.teamClips.map {
+            try importSongClip(
+                $0,
+                from: packageAssetsDirectory,
+                audioAssetService: audioAssetService
+            )
+        }
         importedTeam.players = try importedTeam.players.map { player in
             var player = player
             if let photoRelativePath = player.photoRelativePath {
                 player.photoRelativePath = try importPhotoIfPresent(relativePath: photoRelativePath, from: packageAssetsDirectory)
             }
-            if case .localAudio(let source)? = player.cue?.source {
-                let importedSource = try importLocalAudio(source, from: packageAssetsDirectory, audioAssetService: audioAssetService)
-                player.cue?.source = .localAudio(importedSource)
+            if case .privateClip(let clip)? = player.songAssignment {
+                player.songAssignment = .privateClip(
+                    try importSongClip(
+                        clip,
+                        from: packageAssetsDirectory,
+                        audioAssetService: audioAssetService
+                    )
+                )
             }
             player.customAnnouncerRelativePath = try importGeneratedAudioIfPresent(relativePath: player.customAnnouncerRelativePath, from: packageAssetsDirectory, audioAssetService: audioAssetService)
             return player
@@ -1803,8 +2078,103 @@ struct PackageService: Sendable {
         return importedTeam
     }
 
-    private func importLocalAudio(_ source: LocalAudioSource, from packageAssetsDirectory: URL, audioAssetService: AudioAssetService) throws -> LocalAudioSource {
-        guard let sourceURL = try packageAssetURLIfPresent(relativePath: source.relativePath, from: packageAssetsDirectory) else { throw AppError.invalidImport }
+    private func importSongClip(
+        _ original: SongClip,
+        from packageAssetsDirectory: URL,
+        audioAssetService: AudioAssetService
+    ) throws -> SongClip {
+        var clip = original
+        var originalLocalSourceWasRestored = true
+
+        if case .localAudio(let source) = clip.originalSource {
+            if let imported = try importLocalAudioIfPresent(
+                source,
+                from: packageAssetsDirectory,
+                audioAssetService: audioAssetService
+            ) {
+                clip.originalSource = .localAudio(imported)
+            } else {
+                originalLocalSourceWasRestored = false
+                var missing = source
+                let ext = URL(fileURLWithPath: source.relativePath).pathExtension
+                let suffix = ext.isEmpty ? "m4a" : ext
+                missing.relativePath = "MissingImportedAssets/\(UUID().uuidString).\(suffix)"
+                missing.hiddenOriginNote = nil
+                clip.originalSource = .localAudio(missing)
+            }
+        }
+
+        if clip.generatedAsset.status == .ready,
+           clip.portabilityInputs.generatedAssetCanBeExported,
+           let relativePath = clip.generatedAsset.relativePath,
+           let importedGeneratedPath = try importGeneratedClipIfPresent(
+                relativePath: relativePath,
+                from: packageAssetsDirectory
+           ) {
+            clip.generatedAsset.relativePath = importedGeneratedPath
+            clip.readinessInputs = SongClipReadinessInputs(
+                playback: .localClipReady,
+                sourceAvailableOnDevice: true,
+                downloadedOnDevice: true
+            )
+            clip.portabilityInputs = SongClipPortabilityInputs(
+                portability: .portableLocalClip,
+                generatedAssetCanBeExported: true
+            )
+            return clip
+        }
+
+        clip.generatedAsset.relativePath = nil
+        if clip.generatedAsset.status == .ready {
+            clip.generatedAsset.status = .failedPermanent
+        }
+
+        switch clip.originalSource {
+        case .localAudio:
+            clip.readinessInputs = SongClipReadinessInputs(
+                playback: originalLocalSourceWasRestored ? .sourceBackedReady : .needsRepair,
+                sourceAvailableOnDevice: originalLocalSourceWasRestored,
+                downloadedOnDevice: originalLocalSourceWasRestored
+            )
+            clip.portabilityInputs = SongClipPortabilityInputs(
+                portability: originalLocalSourceWasRestored ? .portableLocalClip : .metadataOnly,
+                generatedAssetCanBeExported: false
+            )
+        case .builtInClip:
+            clip.readinessInputs = SongClipReadinessInputs(
+                playback: .sourceBackedReady,
+                sourceAvailableOnDevice: true,
+                downloadedOnDevice: true
+            )
+            clip.portabilityInputs = SongClipPortabilityInputs(
+                portability: .portableLocalClip,
+                generatedAssetCanBeExported: false
+            )
+        case .appleMusic:
+            clip.readinessInputs = SongClipReadinessInputs(
+                playback: .needsAppleMusic,
+                sourceAvailableOnDevice: false,
+                downloadedOnDevice: false
+            )
+            clip.portabilityInputs = SongClipPortabilityInputs(
+                portability: .sourceReferenceOnly,
+                generatedAssetCanBeExported: false
+            )
+        }
+        return clip
+    }
+
+    private func importLocalAudioIfPresent(
+        _ source: LocalAudioSource,
+        from packageAssetsDirectory: URL,
+        audioAssetService: AudioAssetService
+    ) throws -> LocalAudioSource? {
+        guard let sourceURL = try packageAssetURLIfPresent(
+            relativePath: source.relativePath,
+            from: packageAssetsDirectory
+        ) else {
+            return nil
+        }
         var imported = try audioAssetService.storeCopiedAsset(
             from: sourceURL,
             suggestedExtension: sourceURL.pathExtension,
@@ -1814,6 +2184,24 @@ struct PackageService: Sendable {
         imported.importedAt = source.importedAt
         imported.hiddenOriginNote = source.hiddenOriginNote
         return imported
+    }
+
+    private func importGeneratedClipIfPresent(
+        relativePath: String,
+        from packageAssetsDirectory: URL
+    ) throws -> String? {
+        guard let sourceURL = try packageAssetURLIfPresent(
+            relativePath: relativePath,
+            from: packageAssetsDirectory
+        ) else {
+            return nil
+        }
+        let ext = sourceURL.pathExtension.isEmpty ? "m4a" : sourceURL.pathExtension
+        let fileName = "\(UUID().uuidString).\(ext)"
+        let destinationURL = try AppPaths.generatedClipsDirectory()
+            .appendingPathComponent(fileName, isDirectory: false)
+        try FileManager.default.copyItem(at: sourceURL, to: destinationURL)
+        return "GeneratedClips/\(fileName)"
     }
 
     private func importGeneratedAudioIfPresent(relativePath: String?, from packageAssetsDirectory: URL, audioAssetService: AudioAssetService) throws -> String? {
@@ -1840,8 +2228,8 @@ struct PackageService: Sendable {
     }
 
     private func packageAssetURLIfPresent(relativePath: String, from packageAssetsDirectory: URL) throws -> URL? {
-        let fileName = try validatedPackageAssetFileName(relativePath)
-        let assetURL = packageAssetsDirectory.appendingPathComponent(fileName, isDirectory: false)
+        let validatedPath = try validatedPackageAssetRelativePath(relativePath)
+        let assetURL = packageAssetsDirectory.appendingPathComponent(validatedPath, isDirectory: false)
         let packageAssetsPath = packageAssetsDirectory.standardizedFileURL.path
         let assetPath = assetURL.standardizedFileURL.path
         guard assetPath.hasPrefix(packageAssetsPath + "/") else { throw AppError.invalidImport }
@@ -1851,18 +2239,203 @@ struct PackageService: Sendable {
         return assetURL
     }
 
-    private func validatedPackageAssetFileName(_ relativePath: String) throws -> String {
-        let fileName = relativePath.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !fileName.isEmpty,
-              fileName == URL(fileURLWithPath: fileName).lastPathComponent,
-              !fileName.hasPrefix("."),
-              fileName != ".",
-              fileName != "..",
-              !fileName.contains("/"),
-              !fileName.contains("\\") else {
+    private func validatedPackageAssetRelativePath(_ relativePath: String) throws -> String {
+        let path = relativePath.trimmingCharacters(in: .whitespacesAndNewlines)
+        let components = path.split(separator: "/", omittingEmptySubsequences: false).map(String.init)
+        let allowedDirectory = components.count == 2
+            && ["GeneratedClips", "MissingImportedAssets"].contains(components[0])
+        let isSingleFile = components.count == 1
+        guard !path.isEmpty,
+              isSingleFile || allowedDirectory,
+              components.allSatisfy({
+                  !$0.isEmpty && $0 != "." && $0 != ".." && !$0.hasPrefix(".") && !$0.contains("\\")
+              }) else {
             throw AppError.invalidImport
         }
-        return fileName
+        return components.joined(separator: "/")
+    }
+
+    private func uniqueSongClips(in team: Team) -> [SongClip] {
+        var seen: Set<UUID> = []
+        return (team.teamClips + team.players.compactMap(\.songAssignment?.privateClip)).filter {
+            seen.insert($0.id).inserted
+        }
+    }
+
+    private func transferState(for clip: SongClip) -> PackageClipTransferState {
+        if clip.generatedAsset.status == .pending {
+            return .stillPreparing
+        }
+        if clip.readinessInputs.playback == .needsRepair {
+            return .needsRepair
+        }
+        if clip.readinessInputs.playback == .needsAppleMusic {
+            return .needsAppleMusic
+        }
+        if clip.generatedAsset.status == .ready,
+           clip.portabilityInputs.generatedAssetCanBeExported,
+           let path = clip.generatedAsset.relativePath,
+           assetExists(relativePath: path) {
+            return .localClipIncluded
+        }
+        switch clip.originalSource {
+        case .localAudio(let source):
+            return assetExists(relativePath: source.relativePath) ? .localClipIncluded : .needsRepair
+        case .builtInClip:
+            return .localClipIncluded
+        case .appleMusic:
+            return .sourceReferenceOnly
+        }
+    }
+
+    private func previewTransferState(
+        for clip: SongClip,
+        packageAssetsDirectory: URL
+    ) throws -> PackageClipTransferState {
+        if clip.generatedAsset.status == .pending {
+            return .stillPreparing
+        }
+        if clip.generatedAsset.status == .ready,
+           clip.portabilityInputs.generatedAssetCanBeExported,
+           let path = clip.generatedAsset.relativePath,
+           try packageAssetURLIfPresent(
+               relativePath: path,
+               from: packageAssetsDirectory
+           ) != nil {
+            return .localClipIncluded
+        }
+        switch clip.originalSource {
+        case .localAudio(let source):
+            return try packageAssetURLIfPresent(
+                relativePath: source.relativePath,
+                from: packageAssetsDirectory
+            ) == nil ? .needsRepair : .localClipIncluded
+        case .builtInClip:
+            return .localClipIncluded
+        case .appleMusic:
+            return clip.readinessInputs.playback == .needsAppleMusic
+                ? .needsAppleMusic
+                : .sourceReferenceOnly
+        }
+    }
+
+    private func importAudit(
+        for team: Team,
+        musicAuthorizationStatus: MusicAuthorization.Status
+    ) -> PackageImportAudit {
+        var items: [PackageImportAudit.Item] = []
+        let assignedTeamClipIDs = Set(team.players.compactMap { player -> UUID? in
+            guard case .sharedTeamClip(let clipID)? = player.songAssignment else { return nil }
+            return clipID
+        })
+
+        for player in team.players {
+            guard let clip = team.songClip(for: player) else { continue }
+            items.append(
+                auditItem(
+                    clip: clip,
+                    title: player.displayName,
+                    destination: .player(player.id),
+                    musicAuthorizationStatus: musicAuthorizationStatus
+                )
+            )
+        }
+        for clip in team.teamClips where !assignedTeamClipIDs.contains(clip.id) {
+            items.append(
+                auditItem(
+                    clip: clip,
+                    title: clip.displayName ?? "Team Clip",
+                    destination: .teamClip(clip.id),
+                    musicAuthorizationStatus: musicAuthorizationStatus
+                )
+            )
+        }
+        return PackageImportAudit(
+            teamID: team.id,
+            teamName: team.name,
+            items: items
+        )
+    }
+
+    private func auditItem(
+        clip: SongClip,
+        title: String,
+        destination: PackageImportAudit.Item.Destination,
+        musicAuthorizationStatus: MusicAuthorization.Status
+    ) -> PackageImportAudit.Item {
+        let state: PackageClipTransferState
+        let detail: String
+        if clip.generatedAsset.status == .ready,
+           let path = clip.generatedAsset.relativePath,
+           assetExists(relativePath: path) {
+            state = .localClipIncluded
+            detail = "A portable Roll Call clip was included and is ready on this device."
+        } else {
+            switch clip.originalSource {
+            case .localAudio(let source) where assetExists(relativePath: source.relativePath):
+                state = .localClipIncluded
+                detail = "Local audio was included and is ready on this device."
+            case .builtInClip:
+                state = .localClipIncluded
+                detail = "This built-in Roll Call clip is ready on this device."
+            case .appleMusic:
+                if musicAuthorizationStatus == .authorized {
+                    state = .sourceReferenceOnly
+                    detail = "The Apple Music link was preserved. Roll Call will verify playback on this device."
+                } else {
+                    state = .needsAppleMusic
+                    detail = "The song choice was preserved, but Apple Music access is needed here."
+                }
+            case .localAudio:
+                state = .needsRepair
+                detail = "The song choice was preserved, but its local audio file was not included."
+            }
+        }
+        return PackageImportAudit.Item(
+            id: UUID(),
+            destination: destination,
+            title: title,
+            state: state,
+            detail: detail
+        )
+    }
+
+    private func assetExists(relativePath: String) -> Bool {
+        guard let url = try? AppPaths.assetURL(relativePath: relativePath) else { return false }
+        return FileManager.default.fileExists(atPath: url.path)
+    }
+
+    private func fallbackReadiness(for source: SongSource) -> SongClipPlaybackReadiness {
+        switch source {
+        case .appleMusic:
+            return .needsAppleMusic
+        case .localAudio(let local):
+            return assetExists(relativePath: local.relativePath) ? .sourceBackedReady : .needsRepair
+        case .builtInClip:
+            return .sourceBackedReady
+        }
+    }
+
+    private func fallbackPortability(for source: SongSource) -> SongClipPortabilityInputs {
+        switch source {
+        case .appleMusic:
+            return SongClipPortabilityInputs(
+                portability: .sourceReferenceOnly,
+                generatedAssetCanBeExported: false
+            )
+        case .localAudio(let local):
+            return SongClipPortabilityInputs(
+                portability: assetExists(relativePath: local.relativePath)
+                    ? .portableLocalClip
+                    : .metadataOnly,
+                generatedAssetCanBeExported: false
+            )
+        case .builtInClip:
+            return SongClipPortabilityInputs(
+                portability: .portableLocalClip,
+                generatedAssetCanBeExported: false
+            )
+        }
     }
 
     private func isDirectory(_ url: URL) throws -> Bool {

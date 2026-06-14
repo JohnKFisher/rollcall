@@ -223,6 +223,18 @@ struct SongClip: Codable, Equatable, Identifiable {
         )
     }
 
+    var editingCue: Cue {
+        Cue(
+            id: id,
+            label: displayName ?? "Walk-Up Song",
+            source: originalSource.cueSource,
+            startTime: requestedSelection.startTime,
+            duration: requestedSelection.duration,
+            fadeOutDuration: requestedSelection.fadeOutDuration,
+            pauseAfterAnnouncer: pauseAfterAnnouncer
+        )
+    }
+
     var generationKey: String {
         let sourceKey: String
         switch originalSource {
@@ -245,6 +257,19 @@ struct SongClip: Codable, Equatable, Identifiable {
         return SHA256.hash(data: Data(rawValue.utf8))
             .map { String(format: "%02x", $0) }
             .joined()
+    }
+
+    func isExactCreativeDuplicate(of other: SongClip) -> Bool {
+        originalSource == other.originalSource
+            && requestedSelection == other.requestedSelection
+            && pauseAfterAnnouncer == other.pauseAfterAnnouncer
+    }
+
+    func privateCopy() -> SongClip {
+        var copy = self
+        copy.id = UUID()
+        copy.sourceLineageClipID = id
+        return copy
     }
 
     private static func defaultReadiness(for source: CueSource) -> SongClipReadinessInputs {
@@ -293,9 +318,14 @@ enum SongClipPreparationTrigger: String, Codable, Equatable {
 }
 
 struct SongClipPreparationRequest: Equatable, Identifiable {
+    enum Target: Equatable, Hashable {
+        case player(UUID)
+        case teamClip(UUID)
+    }
+
     var id: UUID
     var teamID: UUID
-    var playerID: UUID
+    var target: Target
     var clipID: UUID
     var generationKey: String
     var trigger: SongClipPreparationTrigger
@@ -303,6 +333,75 @@ struct SongClipPreparationRequest: Equatable, Identifiable {
 
     func matches(_ clip: SongClip) -> Bool {
         clip.id == clipID && clip.generationKey == generationKey
+    }
+}
+
+enum PackageClipTransferState: String, Codable, Equatable {
+    case localClipIncluded
+    case sourceReferenceOnly
+    case needsAppleMusic
+    case stillPreparing
+    case needsRepair
+}
+
+struct PackageTransferSummary: Codable, Equatable {
+    var localClipIncludedCount: Int
+    var sourceReferenceOnlyCount: Int
+    var needsAppleMusicCount: Int
+    var stillPreparingCount: Int
+    var needsRepairCount: Int
+
+    var totalClipCount: Int {
+        localClipIncludedCount
+            + sourceReferenceOnlyCount
+            + needsAppleMusicCount
+            + stillPreparingCount
+            + needsRepairCount
+    }
+
+    var hasDeviceDependentClips: Bool {
+        sourceReferenceOnlyCount > 0 || needsAppleMusicCount > 0
+    }
+
+    var hasUnresolvedClips: Bool {
+        stillPreparingCount > 0 || needsRepairCount > 0
+    }
+}
+
+struct PackageImportAudit: Identifiable, Equatable {
+    struct Item: Identifiable, Equatable {
+        enum Destination: Equatable {
+            case player(UUID)
+            case teamClip(UUID)
+        }
+
+        var id: UUID
+        var destination: Destination
+        var title: String
+        var state: PackageClipTransferState
+        var detail: String
+    }
+
+    var id = UUID()
+    var teamID: UUID
+    var teamName: String
+    var items: [Item]
+
+    var summary: PackageTransferSummary {
+        PackageTransferSummary(
+            localClipIncludedCount: items.filter { $0.state == .localClipIncluded }.count,
+            sourceReferenceOnlyCount: items.filter { $0.state == .sourceReferenceOnly }.count,
+            needsAppleMusicCount: items.filter { $0.state == .needsAppleMusic }.count,
+            stillPreparingCount: items.filter { $0.state == .stillPreparing }.count,
+            needsRepairCount: items.filter { $0.state == .needsRepair }.count
+        )
+    }
+
+    func retargeted(from _: UUID, to teamID: UUID, teamName: String) -> PackageImportAudit {
+        var copy = self
+        copy.teamID = teamID
+        copy.teamName = teamName
+        return copy
     }
 }
 

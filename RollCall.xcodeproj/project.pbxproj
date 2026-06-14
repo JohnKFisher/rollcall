@@ -44,8 +44,10 @@
 		A70000000000000000000003 /* SongClipGenerationQueue.swift in Sources */ = {isa = PBXBuildFile; fileRef = A70000000000000000000103 /* SongClipGenerationQueue.swift */; };
 		A70000000000000000000004 /* SongPickerFlow.swift in Sources */ = {isa = PBXBuildFile; fileRef = A70000000000000000000104 /* SongPickerFlow.swift */; };
 		A70000000000000000000005 /* SongWaveformService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A70000000000000000000105 /* SongWaveformService.swift */; };
+		A70000000000000000000006 /* GeneratedClipCleanupService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A70000000000000000000106 /* GeneratedClipCleanupService.swift */; };
 		A60000000000000000000001 /* MusicRenderProbeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A60000000000000000000101 /* MusicRenderProbeTests.swift */; };
 		A60000000000000000000002 /* SongClipGenerationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A60000000000000000000102 /* SongClipGenerationTests.swift */; };
+		A60000000000000000000003 /* GeneratedClipCleanupTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A60000000000000000000103 /* GeneratedClipCleanupTests.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -98,8 +100,10 @@
 		A70000000000000000000103 /* SongClipGenerationQueue.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SongClipGenerationQueue.swift; sourceTree = "<group>"; };
 		A70000000000000000000104 /* SongPickerFlow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SongPickerFlow.swift; sourceTree = "<group>"; };
 		A70000000000000000000105 /* SongWaveformService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SongWaveformService.swift; sourceTree = "<group>"; };
+		A70000000000000000000106 /* GeneratedClipCleanupService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GeneratedClipCleanupService.swift; sourceTree = "<group>"; };
 		A60000000000000000000101 /* MusicRenderProbeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MusicRenderProbeTests.swift; sourceTree = "<group>"; };
 		A60000000000000000000102 /* SongClipGenerationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SongClipGenerationTests.swift; sourceTree = "<group>"; };
+		A60000000000000000000103 /* GeneratedClipCleanupTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GeneratedClipCleanupTests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -140,6 +144,7 @@
 				A70000000000000000000103 /* SongClipGenerationQueue.swift */,
 				A70000000000000000000104 /* SongPickerFlow.swift */,
 				A70000000000000000000105 /* SongWaveformService.swift */,
+				A70000000000000000000106 /* GeneratedClipCleanupService.swift */,
 				A10000000000000000000103 /* Services.swift */,
 				A10000000000000000000104 /* AppModel.swift */,
 				A10000000000000000000105 /* RootView.swift */,
@@ -196,6 +201,7 @@
 				A40000000000000000000110 /* TeamAppleMusicPlaylistSummaryTests.swift */,
 				A60000000000000000000101 /* MusicRenderProbeTests.swift */,
 				A60000000000000000000102 /* SongClipGenerationTests.swift */,
+				A60000000000000000000103 /* GeneratedClipCleanupTests.swift */,
 			);
 			path = RollCallTests;
 			sourceTree = "<group>";
@@ -318,6 +324,7 @@
 				A70000000000000000000003 /* SongClipGenerationQueue.swift in Sources */,
 				A70000000000000000000004 /* SongPickerFlow.swift in Sources */,
 				A70000000000000000000005 /* SongWaveformService.swift in Sources */,
+				A70000000000000000000006 /* GeneratedClipCleanupService.swift in Sources */,
 				A10000000000000000000003 /* Services.swift in Sources */,
 				A10000000000000000000004 /* AppModel.swift in Sources */,
 				A10000000000000000000005 /* RootView.swift in Sources */,
@@ -351,6 +358,7 @@
 				A40000000000000000000009 /* TeamAppleMusicPlaylistSummaryTests.swift in Sources */,
 				A60000000000000000000001 /* MusicRenderProbeTests.swift in Sources */,
 				A60000000000000000000002 /* SongClipGenerationTests.swift in Sources */,
+				A60000000000000000000003 /* GeneratedClipCleanupTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -512,7 +520,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = YES;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 66;
+				CURRENT_PROJECT_VERSION = 68;
 				DEVELOPMENT_TEAM = 5Y9T5WZ4J3;
 				ENABLE_DEBUG_DYLIB = NO;
 				ENABLE_PREVIEWS = NO;
@@ -534,7 +542,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = YES;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 66;
+				CURRENT_PROJECT_VERSION = 68;
 				DEVELOPMENT_TEAM = 5Y9T5WZ4J3;
 				ENABLE_DEBUG_DYLIB = NO;
 				ENABLE_PREVIEWS = NO;
@@ -556,7 +564,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = YES;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 66;
+				CURRENT_PROJECT_VERSION = 68;
 				DEVELOPMENT_TEAM = 5Y9T5WZ4J3;
 				ENABLE_DEBUG_DYLIB = NO;
 				ENABLE_PREVIEWS = NO;

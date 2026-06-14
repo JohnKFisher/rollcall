@@ -618,6 +618,28 @@ struct Team: Codable, Equatable, Identifiable {
             builtInClips = BuiltInClip.defaults
         }
     }
+
+    func songClip(for player: Player) -> SongClip? {
+        switch player.songAssignment {
+        case .privateClip(let clip):
+            return clip
+        case .sharedTeamClip(let clipID):
+            return teamClips.first(where: { $0.id == clipID })
+        case nil:
+            return nil
+        }
+    }
+
+    func cue(for player: Player) -> Cue? {
+        songClip(for: player)?.playbackCue
+    }
+
+    func playerAssignmentCount(forTeamClipID clipID: UUID) -> Int {
+        players.filter {
+            guard case .sharedTeamClip(let assignedID)? = $0.songAssignment else { return false }
+            return assignedID == clipID
+        }.count
+    }
 }
 
 enum ReadinessState: String, Codable {
@@ -1043,6 +1065,7 @@ struct PendingPackageImport: Identifiable {
     let id = UUID()
     var url: URL
     var manifest: TeamPackageManifest
+    var transferSummary: PackageTransferSummary
     var opensOnboardingHandoff: Bool
 
     var team: Team {
@@ -1054,12 +1077,12 @@ struct PendingPackageImport: Identifiable {
     }
 
     var playersWithAudioCount: Int {
-        team.players.filter { $0.cue != nil }.count
+        team.players.filter { team.cue(for: $0) != nil }.count
     }
 
     var appleMusicCueCount: Int {
         team.players.filter {
-            if case .appleMusic? = $0.cue?.source {
+            if case .appleMusic? = team.cue(for: $0)?.source {
                 return true
             }
             return false
@@ -1068,7 +1091,7 @@ struct PendingPackageImport: Identifiable {
 
     var localAudioCueCount: Int {
         team.players.filter {
-            if case .localAudio? = $0.cue?.source {
+            if case .localAudio? = team.cue(for: $0)?.source {
                 return true
             }
             return false
@@ -1077,7 +1100,7 @@ struct PendingPackageImport: Identifiable {
 
     var builtInCueCount: Int {
         team.players.filter {
-            if case .builtInClip? = $0.cue?.source {
+            if case .builtInClip? = team.cue(for: $0)?.source {
                 return true
             }
             return false
@@ -1091,6 +1114,13 @@ struct PendingPackageImport: Identifiable {
     var customAnnouncementCount: Int {
         team.players.filter { $0.customAnnouncerRelativePath != nil }.count
     }
+}
+
+struct PendingPackageExport: Identifiable {
+    let id = UUID()
+    var teamID: UUID
+    var teamName: String
+    var summary: PackageTransferSummary
 }
 
 enum AppPaths {

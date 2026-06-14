@@ -298,6 +298,7 @@ struct RootView: View {
     @State private var whatsNewPresentation: WhatsNewPresentation?
     @State private var ratingRequestPresentation: RatingRequestPresentation?
     @State private var teamPlaylistPreview: TeamAppleMusicPlaylistSummary?
+    @State private var showTeamClips = false
 
     init(appModel: AppModel) {
         self.appModel = appModel
@@ -628,6 +629,23 @@ struct RootView: View {
 
     private var rootSheetContent: some View {
         rootAlertContent
+            .sheet(item: Binding(get: { appModel.pendingPackageExport }, set: { appModel.pendingPackageExport = $0 })) { pending in
+                PackageExportPreviewSheet(
+                    pending: pending,
+                    onExport: {
+                        Task { await appModel.confirmPendingPackageExport() }
+                    },
+                    onPrepareFirst: {
+                        appModel.cancelPendingPackageExport()
+                        appModel.prepareSongsForReadiness()
+                        selectedTab = .readiness
+                    },
+                    onCancel: {
+                        appModel.cancelPendingPackageExport()
+                    }
+                )
+                .interactiveDismissDisabled()
+            }
             .sheet(item: Binding(get: { appModel.pendingPackageImport }, set: { appModel.pendingPackageImport = $0 })) { pending in
                 PackageImportConfirmationSheet(
                     pending: pending,
@@ -639,6 +657,17 @@ struct RootView: View {
                     }
                 )
                 .interactiveDismissDisabled()
+            }
+            .sheet(item: Binding(get: { appModel.completedPackageImportAudit }, set: { appModel.completedPackageImportAudit = $0 })) { audit in
+                PackageImportAuditSheet(
+                    audit: audit,
+                    onRepair: { item in
+                        openImportedRepair(item, audit: audit)
+                    },
+                    onDone: {
+                        appModel.completedPackageImportAudit = nil
+                    }
+                )
             }
             .sheet(item: Binding(get: { appModel.pendingRosterImport }, set: { appModel.pendingRosterImport = $0 })) { pending in
                 let duplicateCount = pending.duplicateCount(comparedTo: appModel.selectedTeam?.players ?? [])
@@ -684,6 +713,10 @@ struct RootView: View {
                     }
                 )
                 .teamAccentScope(selectedTeamAccentTheme)
+            }
+            .sheet(isPresented: $showTeamClips) {
+                TeamClipsSheet(appModel: appModel)
+                    .teamAccentScope(selectedTeamAccentTheme)
             }
             .fileImporter(isPresented: $csvImportPresented, allowedContentTypes: [.commaSeparatedText, .text], allowsMultipleSelection: false) { result in
                 handleRosterImportResult(result)
@@ -796,7 +829,7 @@ struct RootView: View {
 
                     Section {
                         ForEach(playersTabRoster(for: team)) { player in
-                            let cue = player.cue
+                            let cue = team.cue(for: player)
                             let hasCustomIntro = appModel.hasStoredCustomAnnouncer(for: player)
                             let isCustomIntroMissing = player.customAnnouncerRelativePath != nil && !hasCustomIntro
                             let isPresent = player.isPresent
@@ -1204,6 +1237,24 @@ struct RootView: View {
                 VStack(alignment: .leading, spacing: RollCallSpacingTier.large.value) {
                     if let team = appModel.selectedTeam {
                         TeamsSectionGroup(
+                            title: "Team Clips",
+                            helperText: "Save reusable walk-up clips for this team without changing every player's setup."
+                        ) {
+                            Button {
+                                showTeamClips = true
+                            } label: {
+                                SettingsRowLabel(
+                                    title: team.teamClips.isEmpty ? "Create Team Clips" : "Manage Team Clips",
+                                    detail: team.teamClips.isEmpty
+                                        ? "Build a reusable team-level clip library."
+                                        : "\(team.teamClips.count) saved \(team.teamClips.count == 1 ? "clip" : "clips").",
+                                    systemImage: "music.note.house"
+                                )
+                            }
+                            .rollCallButtonStyle(.secondary)
+                        }
+
+                        TeamsSectionGroup(
                             title: "Currently Selected Team",
                             helperText: "Lifecycle tools stay here so they do not interrupt normal team selection."
                         ) {
@@ -1389,7 +1440,7 @@ struct RootView: View {
                     ) {
                         VStack(spacing: RollCallSpacingTier.standard.value) {
                             Button {
-                                Task { await appModel.exportSelectedTeam() }
+                                appModel.prepareSelectedTeamExport()
                             } label: {
                                 SettingsRowLabel(
                                     title: "Export Selected Team",
@@ -1663,6 +1714,29 @@ struct RootView: View {
             check.id.hasPrefix("player-")
                 && !check.id.contains("announcement-upgrade")
                 && !check.id.contains("photo-upgrade")
+        }
+    }
+
+    private func openImportedRepair(
+        _ item: PackageImportAudit.Item,
+        audit: PackageImportAudit
+    ) {
+        guard let team = appModel.state.teams.first(where: { $0.id == audit.teamID }) else {
+            appModel.completedPackageImportAudit = nil
+            return
+        }
+        appModel.selectTeam(team)
+        appModel.completedPackageImportAudit = nil
+        switch item.destination {
+        case .player(let playerID):
+            selectedTab = .players
+            guard let player = team.players.first(where: { $0.id == playerID }) else { return }
+            Task { @MainActor in
+                await Task.yield()
+                presentPlayerEditor(for: player)
+            }
+        case .teamClip:
+            selectedTab = .teams
         }
     }
 
@@ -2148,25 +2222,26 @@ private struct OnboardingRootView: View {
     }
 
     private func audioContent(for player: Player) -> some View {
-        OnboardingCard {
+        let cue = appModel.resolvedCue(for: player)
+        return OnboardingCard {
             VStack(alignment: .leading, spacing: RollCallSpacingTier.standard.value) {
-                StatusChip(text: player.displayName, role: player.cue == nil ? .warning : .ready, systemImage: "music.note", emphasis: .subdued)
-                Text(player.cue == nil ? "Choose the walkup audio." : "\(player.displayName)'s clip is ready.")
+                StatusChip(text: player.displayName, role: cue == nil ? .warning : .ready, systemImage: "music.note", emphasis: .subdued)
+                Text(cue == nil ? "Choose the walkup audio." : "\(player.displayName)'s clip is ready.")
                     .rollCallText(.screenTitle)
-                if player.cue == nil {
+                if cue == nil {
                     Text("Choose from this iPhone's Music Library, search Apple Music, or import an audio or video file.")
                         .rollCallText(.body)
                     Text("After you pick a song, Make Your Clip lets you drag the waveform, choose the length, preview it, and save.")
                         .rollCallText(.body)
                 } else {
-                    onboardingCueSummary(player.cue)
+                    onboardingCueSummary(cue)
                     Text("To change it, choose another source and shape the replacement in Make Your Clip before saving.")
                         .rollCallText(.body)
                 }
                 Text("You can also just select crowd cheering sound effects too, and pick the song later, but where's the fun in that?")
                     .rollCallText(.body)
 
-                if player.cue != nil {
+                if cue != nil {
                     Button {
                         visibleStepOverride = .lineup
                     } label: {
@@ -2182,7 +2257,7 @@ private struct OnboardingRootView: View {
                     Label("Choose from Music Library", systemImage: "music.note.list")
                         .frame(maxWidth: .infinity)
                 }
-                .rollCallButtonStyle(player.cue == nil ? .primary : .secondary)
+                .rollCallButtonStyle(cue == nil ? .primary : .secondary)
 
                 Button {
                     songPickerMode = .appleMusic
@@ -2200,7 +2275,7 @@ private struct OnboardingRootView: View {
                 }
                 .rollCallButtonStyle(.secondary)
 
-                if player.cue == nil {
+                if cue == nil {
                     Button {
                         appModel.markOnboardingCheerFallbackChosen()
                         visibleStepOverride = nil
@@ -2393,7 +2468,7 @@ private struct OnboardingRootView: View {
         guard let team = activeTeam else { return .team }
         if team.players.isEmpty { return .player }
         if let player = team.players.first,
-           player.cue == nil && !appModel.state.onboarding.didChooseCheerFallback {
+           team.cue(for: player) == nil && !appModel.state.onboarding.didChooseCheerFallback {
             return .audio
         }
         return .lineup
@@ -3253,6 +3328,305 @@ private struct TeamsEmptyState: View {
     }
 }
 
+private struct TeamClipsSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    @ObservedObject var appModel: AppModel
+
+    @State private var songPickerMode: SongPickerMode?
+    @State private var showFileImporter = false
+    @State private var importedURL: URL?
+    @State private var pendingNewCue: Cue?
+    @State private var newClipName = ""
+    @State private var editingClip: SongClip?
+    @State private var renamingClip: SongClip?
+    @State private var renameText = ""
+    @State private var deletingClip: SongClip?
+    @State private var showPromotionConfirmation = false
+    @State private var notice: String?
+
+    private var team: Team? {
+        appModel.selectedTeam
+    }
+
+    private var privatePlayerSongCount: Int {
+        team?.players.filter {
+            guard case .privateClip? = $0.songAssignment else { return false }
+            return true
+        }.count ?? 0
+    }
+
+    var body: some View {
+        NavigationStack {
+            List {
+                Section {
+                    if let team, !team.teamClips.isEmpty {
+                        ForEach(team.teamClips) { clip in
+                            teamClipRow(clip, team: team)
+                        }
+                    } else {
+                        ContentUnavailableView(
+                            "No Team Clips",
+                            systemImage: "music.note.house",
+                            description: Text("Create a reusable clip here, or save existing player songs below.")
+                        )
+                    }
+                } header: {
+                    Text("Saved Clips")
+                } footer: {
+                    Text("Players can share these clips. Editing here updates every player using the shared clip.")
+                }
+
+                Section("Create Team Clip") {
+                    Button {
+                        songPickerMode = .musicLibrary
+                    } label: {
+                        Label("Choose from Music Library", systemImage: "music.note.list")
+                    }
+                    Button {
+                        songPickerMode = .appleMusic
+                    } label: {
+                        Label("Search Apple Music", systemImage: "magnifyingglass")
+                    }
+                    Button {
+                        showFileImporter = true
+                    } label: {
+                        Label("Import Audio or Video", systemImage: "square.and.arrow.down")
+                    }
+                }
+
+                Section {
+                    Button("Save Player Songs to Team Clips") {
+                        showPromotionConfirmation = true
+                    }
+                    .disabled(privatePlayerSongCount == 0)
+                } header: {
+                    Text("Advanced")
+                } footer: {
+                    Text("This converts each player's private song into a shared Team Clip. Exact duplicates are reused instead of added twice.")
+                }
+
+                if let notice {
+                    Section {
+                        Label(notice, systemImage: "info.circle")
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            }
+            .navigationTitle("Team Clips")
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Done") { dismiss() }
+                }
+            }
+            .sheet(item: $songPickerMode, onDismiss: {
+                songPickerMode = nil
+                importedURL = nil
+            }) { mode in
+                SongPickerFlow(
+                    appModel: appModel,
+                    mode: mode,
+                    importedURL: mode == .files ? importedURL : nil
+                ) { cue in
+                    pendingNewCue = cue
+                    newClipName = cue.rosterDisplayTitle
+                }
+            }
+            .sheet(item: $editingClip) { clip in
+                NavigationStack {
+                    SongClipEditorView(appModel: appModel, initialCue: clip.editingCue) { cue in
+                        appModel.updateTeamClip(
+                            clip.id,
+                            with: cue,
+                            named: clip.displayName ?? cue.rosterDisplayTitle
+                        )
+                        editingClip = nil
+                    }
+                }
+            }
+            .fileImporter(
+                isPresented: $showFileImporter,
+                allowedContentTypes: [.audio, .movie],
+                allowsMultipleSelection: false
+            ) { result in
+                switch result {
+                case .success(let urls):
+                    guard let url = urls.first else { return }
+                    importedURL = url
+                    songPickerMode = .files
+                case .failure(let error):
+                    guard !MusicCatalogService.isCancellation(error) else { return }
+                    appModel.lastError = error.localizedDescription
+                }
+            }
+            .alert("Name Team Clip", isPresented: Binding(
+                get: { pendingNewCue != nil },
+                set: { if !$0 { pendingNewCue = nil } }
+            )) {
+                TextField("Clip name", text: $newClipName)
+                Button("Cancel", role: .cancel) {
+                    pendingNewCue = nil
+                }
+                Button("Save") {
+                    savePendingCue()
+                }
+            } message: {
+                Text("Use a short name players will recognize.")
+            }
+            .alert("Rename Team Clip", isPresented: Binding(
+                get: { renamingClip != nil },
+                set: { if !$0 { renamingClip = nil } }
+            )) {
+                TextField("Clip name", text: $renameText)
+                Button("Cancel", role: .cancel) {
+                    renamingClip = nil
+                }
+                Button("Rename") {
+                    guard let clip = renamingClip else { return }
+                    appModel.updateTeamClip(clip.id, with: clip.editingCue, named: renameText)
+                    renamingClip = nil
+                }
+            }
+            .confirmationDialog(
+                "Delete Team Clip?",
+                isPresented: Binding(
+                    get: { deletingClip != nil },
+                    set: { if !$0 { deletingClip = nil } }
+                ),
+                titleVisibility: .visible
+            ) {
+                if let deletingClip {
+                    let assignmentCount = team?.playerAssignmentCount(forTeamClipID: deletingClip.id) ?? 0
+                    if assignmentCount > 0 {
+                        Button("Keep \(assignmentCount) Player \(assignmentCount == 1 ? "Copy" : "Copies")") {
+                            appModel.deleteTeamClip(deletingClip.id, keepPlayerCopies: true)
+                            self.deletingClip = nil
+                        }
+                        Button("Remove from Players and Delete", role: .destructive) {
+                            appModel.deleteTeamClip(deletingClip.id, keepPlayerCopies: false)
+                            self.deletingClip = nil
+                        }
+                    } else {
+                        Button("Delete Team Clip", role: .destructive) {
+                            appModel.deleteTeamClip(deletingClip.id, keepPlayerCopies: false)
+                            self.deletingClip = nil
+                        }
+                    }
+                    Button("Cancel", role: .cancel) {
+                        self.deletingClip = nil
+                    }
+                }
+            } message: {
+                if let deletingClip {
+                    let assignmentCount = team?.playerAssignmentCount(forTeamClipID: deletingClip.id) ?? 0
+                    if assignmentCount > 0 {
+                        Text("\(assignmentCount) \(assignmentCount == 1 ? "player uses" : "players use") this shared clip. Keep private player copies to preserve their current Game Day songs.")
+                    } else {
+                        Text("This clip is not assigned to any players.")
+                    }
+                }
+            }
+            .alert("Save Player Songs?", isPresented: $showPromotionConfirmation) {
+                Button("Cancel", role: .cancel) { }
+                Button("Save \(privatePlayerSongCount) Songs") {
+                    let result = appModel.savePlayerSongsToTeamClips()
+                    notice = "Saved \(result.addedCount) new clips, reused \(result.reusedCount) exact matches, and linked \(result.assignedPlayerCount) players."
+                }
+            } message: {
+                Text("Each private player song will become a shared Team Clip. Existing exact matches will be reused.")
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func teamClipRow(_ clip: SongClip, team: Team) -> some View {
+        let assignmentCount = team.playerAssignmentCount(forTeamClipID: clip.id)
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(clip.displayName ?? clip.playbackCue.rosterDisplayTitle)
+                        .font(.headline)
+                    Text("\(assignmentCount) \(assignmentCount == 1 ? "player" : "players")")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+                Menu {
+                    Button("Edit Clip") {
+                        editingClip = clip
+                    }
+                    Button("Rename") {
+                        renameText = clip.displayName ?? clip.playbackCue.rosterDisplayTitle
+                        renamingClip = clip
+                    }
+                    Button("Delete", role: .destructive) {
+                        deletingClip = clip
+                    }
+                } label: {
+                    Image(systemName: "ellipsis.circle")
+                        .font(.title3)
+                }
+            }
+            Text(clip.playbackCue.rosterDisplayTitle)
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+        }
+        .padding(.vertical, 4)
+    }
+
+    private func savePendingCue() {
+        guard let cue = pendingNewCue else { return }
+        switch appModel.saveTeamClip(cue: cue, named: newClipName) {
+        case .saved:
+            notice = "Team Clip saved."
+        case .exactDuplicate:
+            notice = "That exact clip is already in Team Clips, so Roll Call did not add a duplicate."
+        case nil:
+            break
+        }
+        pendingNewCue = nil
+    }
+}
+
+private struct TeamClipPickerSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    @ObservedObject var appModel: AppModel
+    let playerID: UUID
+
+    var body: some View {
+        NavigationStack {
+            List(appModel.selectedTeam?.teamClips ?? []) { clip in
+                Button {
+                    appModel.assignTeamClip(clip.id, to: playerID)
+                    dismiss()
+                } label: {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(clip.displayName ?? clip.playbackCue.rosterDisplayTitle)
+                            .foregroundStyle(.primary)
+                        Text(clip.playbackCue.rosterDisplayTitle)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            }
+            .overlay {
+                if appModel.selectedTeam?.teamClips.isEmpty != false {
+                    ContentUnavailableView(
+                        "No Team Clips",
+                        systemImage: "music.note.house",
+                        description: Text("Create reusable clips from the Teams tab first.")
+                    )
+                }
+            }
+            .navigationTitle("Choose Team Clip")
+            .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button("Cancel") { dismiss() }
+                }
+            }
+        }
+    }
+}
+
 private struct TeamAppleMusicPlaylistPreviewSheet: View {
     @ObservedObject var appModel: AppModel
     let summary: TeamAppleMusicPlaylistSummary
@@ -4004,6 +4378,154 @@ private struct SettingsIcon: View {
     }
 }
 
+private struct PackageExportPreviewSheet: View {
+    let pending: PendingPackageExport
+    let onExport: () -> Void
+    let onPrepareFirst: () -> Void
+    let onCancel: () -> Void
+
+    var body: some View {
+        NavigationStack {
+            List {
+                Section {
+                    Text("Roll Call will include portable local clips. Apple Music-linked songs remain saved as links and may need Apple Music access on the receiving device.")
+                        .rollCallText(.body)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                PackageTransferSummarySection(summary: pending.summary)
+
+                if pending.summary.stillPreparingCount > 0 {
+                    Section {
+                        Text("Some clips are still preparing. You can export now, but waiting may allow more portable local clips to be included.")
+                            .rollCallText(.helperText)
+                            .foregroundStyle(.secondary)
+                        Button("Try Preparing Clips First", action: onPrepareFirst)
+                    }
+                }
+
+                if pending.summary.needsRepairCount > 0 {
+                    Section {
+                        Text("Some saved audio already needs repair on this device. Its identifying information will remain in the package, but the missing audio cannot be included.")
+                            .rollCallText(.helperText)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            }
+            .accentWashListBackground()
+            .navigationTitle("Export \(pending.teamName)?")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel", role: .cancel, action: onCancel)
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Create Package", action: onExport)
+                        .fontWeight(.semibold)
+                }
+            }
+        }
+    }
+}
+
+private struct PackageImportAuditSheet: View {
+    let audit: PackageImportAudit
+    let onRepair: (PackageImportAudit.Item) -> Void
+    let onDone: () -> Void
+
+    var body: some View {
+        NavigationStack {
+            List {
+                Section {
+                    Text("The team was imported. Roll Call checked what is actually ready on this device and preserved any song choices that still need attention.")
+                        .rollCallText(.body)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                PackageTransferSummarySection(summary: audit.summary)
+
+                Section("Audio Check") {
+                    ForEach(audit.items) { item in
+                        VStack(alignment: .leading, spacing: 7) {
+                            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                                Text(item.title)
+                                    .rollCallText(.cardTitle)
+                                Spacer(minLength: 8)
+                                Text(item.state.packageLabel)
+                                    .font(.caption.weight(.semibold))
+                                    .foregroundStyle(item.state.packageColor)
+                            }
+                            Text(item.detail)
+                                .rollCallText(.helperText)
+                                .foregroundStyle(.secondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                            if item.state == .needsAppleMusic || item.state == .needsRepair {
+                                Button(item.destination.repairButtonTitle) {
+                                    onRepair(item)
+                                }
+                                .buttonStyle(.bordered)
+                            }
+                        }
+                        .padding(.vertical, 4)
+                    }
+                }
+            }
+            .accentWashListBackground()
+            .navigationTitle("Import Check")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Done", action: onDone)
+                        .fontWeight(.semibold)
+                }
+            }
+        }
+    }
+}
+
+private struct PackageTransferSummarySection: View {
+    let summary: PackageTransferSummary
+
+    var body: some View {
+        Section("Clip Portability") {
+            PackageImportStatRow(title: "Local clips included", value: "\(summary.localClipIncludedCount)")
+            PackageImportStatRow(title: "Apple Music links", value: "\(summary.sourceReferenceOnlyCount)")
+            PackageImportStatRow(title: "Needs Apple Music", value: "\(summary.needsAppleMusicCount)")
+            PackageImportStatRow(title: "Still preparing", value: "\(summary.stillPreparingCount)")
+            PackageImportStatRow(title: "Needs repair", value: "\(summary.needsRepairCount)")
+        }
+    }
+}
+
+private extension PackageClipTransferState {
+    var packageLabel: String {
+        switch self {
+        case .localClipIncluded: return "Ready"
+        case .sourceReferenceOnly: return "Verify Here"
+        case .needsAppleMusic: return "Needs Apple Music"
+        case .stillPreparing: return "Preparing"
+        case .needsRepair: return "Needs Repair"
+        }
+    }
+
+    var packageColor: Color {
+        switch self {
+        case .localClipIncluded: return Color.rollCall(.ready)
+        case .sourceReferenceOnly, .stillPreparing: return Color.rollCall(.warning)
+        case .needsAppleMusic, .needsRepair: return Color.rollCall(.destructive)
+        }
+    }
+}
+
+private extension PackageImportAudit.Item.Destination {
+    var repairButtonTitle: String {
+        switch self {
+        case .player: return "Open Player Repair"
+        case .teamClip: return "Open Team Clips"
+        }
+    }
+}
+
 private struct PackageImportConfirmationSheet: View {
     let pending: PendingPackageImport
     let onImport: () -> Void
@@ -4053,6 +4575,17 @@ private struct PackageImportConfirmationSheet: View {
                     PackageImportStatRow(title: "Player Photos", value: "\(pending.photoCount)")
                     PackageImportStatRow(title: "Announcement Cues", value: "\(pending.customAnnouncementCount)")
                     PackageImportStatRow(title: "General Clips", value: "\(pending.team.builtInClips.count)")
+                }
+
+                PackageTransferSummarySection(summary: pending.transferSummary)
+
+                if pending.transferSummary.hasDeviceDependentClips {
+                    Section {
+                        Text("Apple Music-linked songs are preserved, but this device still needs its own Apple Music access and song availability.")
+                            .rollCallText(.helperText)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
                 }
             }
             .accentWashListBackground()
@@ -4424,7 +4957,7 @@ private struct GameDayTeamStack: View {
     }
 
     private func isActive(_ player: Player) -> Bool {
-        if let cueID = player.cue?.id {
+        if let cueID = team.cue(for: player)?.id {
             return playbackEngine.activeCueID == cueID
         }
         return playbackEngine.activeCueID == player.id
@@ -4460,7 +4993,7 @@ private struct GameDayTeamStack: View {
         case .announcerOnly:
             return !appModel.hasStoredCustomAnnouncer(for: player)
         case .announcerAndSong, .songOnly:
-            return player.cue == nil
+            return team.cue(for: player) == nil
         }
     }
 
@@ -4583,7 +5116,7 @@ private struct GameDayNowBattingHero: View {
         case .announcerOnly:
             return hasCustomAnnouncer ? "Announcer Only" : "Fallback: Small Cheer"
         case .announcerAndSong, .songOnly:
-            if let cue = player.cue {
+            if let cue = appModel.resolvedCue(for: player) {
                 return cue.label
             }
             return "Fallback: Small Cheer"
@@ -4591,7 +5124,7 @@ private struct GameDayNowBattingHero: View {
     }
 
     private var cueTitleShowsMusicIcon: Bool {
-        announcerMode != .announcerOnly && player.cue != nil
+        announcerMode != .announcerOnly && appModel.resolvedCue(for: player) != nil
     }
 
     private var hasCustomAnnouncer: Bool {
@@ -4603,7 +5136,7 @@ private struct GameDayNowBattingHero: View {
         case .announcerOnly:
             return !hasCustomAnnouncer
         case .announcerAndSong, .songOnly:
-            return player.cue == nil
+            return appModel.resolvedCue(for: player) == nil
         }
     }
 
@@ -4627,7 +5160,7 @@ private struct GameDayNowBattingHero: View {
     }
 
     private var cueIcons: [GameDayTileCueIcon] {
-        let hasSong = player.cue != nil
+        let hasSong = appModel.resolvedCue(for: player) != nil
         let availableColor = Color.rollCall(.ready, surface: .live)
         let missingColor = Color.rollCall(.destructive, surface: .live)
 
@@ -4787,7 +5320,7 @@ private struct GameDayNowBattingHero: View {
     }
 
     private var isCurrentlyActive: Bool {
-        if let cueID = player.cue?.id {
+        if let cueID = appModel.resolvedCue(for: player)?.id {
             return appModel.playbackEngine.activeCueID == cueID
             }
         return appModel.playbackEngine.activeCueID == player.id
@@ -4933,7 +5466,7 @@ private struct GameDayOnDeckCard: View {
 
     private func onDeckCueIcons(for player: Player) -> [GameDayTileCueIcon] {
         let hasCustomAnnouncer = appModel.hasStoredCustomAnnouncer(for: player)
-        let hasSong = player.cue != nil
+        let hasSong = appModel.resolvedCue(for: player) != nil
         let availableColor = Color.rollCall(.ready, surface: .live)
         let missingColor = Color.rollCall(.destructive, surface: .live)
 
@@ -5240,14 +5773,14 @@ private struct GameDayPlayerGrid: View {
     }
 
     private func isActive(_ player: Player) -> Bool {
-        if let cueID = player.cue?.id {
+        if let cueID = appModel.resolvedCue(for: player)?.id {
             return playbackEngine.activeCueID == cueID
         }
         return playbackEngine.activeCueID == player.id
     }
 
     private func isCurrentlyActive(_ player: Player) -> Bool {
-        if let cueID = player.cue?.id {
+        if let cueID = appModel.resolvedCue(for: player)?.id {
             return appModel.playbackEngine.activeCueID == cueID
         }
         return appModel.playbackEngine.activeCueID == player.id
@@ -5281,7 +5814,7 @@ private struct GameDayPlayerGrid: View {
 
     private func tileCueIcons(for player: Player) -> [GameDayTileCueIcon] {
         let hasAnnouncer = appModel.hasStoredCustomAnnouncer(for: player)
-        let hasSong = player.cue != nil
+        let hasSong = appModel.resolvedCue(for: player) != nil
         let availableColor = Color(uiColor: .secondaryLabel)
         let missingColor = Color(uiColor: .tertiaryLabel)
 
@@ -5345,7 +5878,7 @@ private struct GameDayPlayerGrid: View {
         case .announcerOnly:
             return !appModel.hasStoredCustomAnnouncer(for: player)
         case .announcerAndSong, .songOnly:
-            return player.cue == nil
+            return appModel.resolvedCue(for: player) == nil
         }
     }
 
@@ -5772,6 +6305,7 @@ private struct DeveloperToolsView: View {
     let onShowRatingRequestSheet: () -> Void
     let onEmailSupport: () -> Void
     let onOpenReviewPage: () -> Void
+    @State private var showGeneratedClipCleanupConfirmation = false
 
     private var flags: FeatureFlags {
         appModel.featureFlags
@@ -5914,7 +6448,52 @@ private struct DeveloperToolsView: View {
                                 Label("Share Latest Support Bundle", systemImage: "square.and.arrow.up")
                             }
                         }
-                        Text("Support bundles include app version, schema version, feature flags, readiness results, playback diagnostics, and redacted team counts. Team names, player names, IDs, media, and other user-created content are excluded.")
+                        Text("Support bundles include app version, schema version, feature flags, aggregate readiness and song-clip counts, cleanup totals, boolean playback state, and redacted team counts. Team names, player names, IDs, filenames, song metadata, media, and other user-created content are excluded.")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                    }
+
+                    Section("Generated Clip Storage") {
+                        Button("Inspect Generated Clips") {
+                            Task { await appModel.refreshGeneratedClipCleanupReport() }
+                        }
+
+                        if let report = appModel.generatedClipCleanupReport {
+                            LabeledContent("Stored Files", value: "\(report.discoveredFileCount)")
+                            LabeledContent(
+                                "Storage Used",
+                                value: ByteCountFormatter.string(
+                                    fromByteCount: report.discoveredByteCount,
+                                    countStyle: .file
+                                )
+                            )
+                            LabeledContent("Safe to Remove", value: "\(report.orphanedFileCount)")
+
+                            if let blockedReason = report.blockedReason {
+                                Label(blockedReason, systemImage: "lock.shield")
+                                    .font(.footnote)
+                                    .foregroundStyle(.secondary)
+                            } else if report.orphanedFileCount == 0 {
+                                Label("No unreferenced generated clips found.", systemImage: "checkmark.circle")
+                                    .font(.footnote)
+                                    .foregroundStyle(.secondary)
+                            } else {
+                                Button(
+                                    "Remove \(report.orphanedFileCount) Unreferenced \(report.orphanedFileCount == 1 ? "Clip" : "Clips")",
+                                    role: .destructive
+                                ) {
+                                    showGeneratedClipCleanupConfirmation = true
+                                }
+                            }
+
+                            if report.removedFileCount > 0 {
+                                Text("Removed \(report.removedFileCount) files and recovered \(ByteCountFormatter.string(fromByteCount: report.removedByteCount, countStyle: .file)).")
+                                    .font(.footnote)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+
+                        Text("Cleanup only examines Roll Call's GeneratedClips folder. Files referenced by teams, Team Clips, Recently Deleted, preparation work, or readable backups are retained. If anything is uncertain, cleanup stops without deleting files.")
                             .font(.footnote)
                             .foregroundStyle(.secondary)
                     }
@@ -5924,6 +6503,20 @@ private struct DeveloperToolsView: View {
         }
         .accentWashBackground()
         .navigationTitle("Developer Tools")
+        .confirmationDialog(
+            "Remove Unreferenced Generated Clips?",
+            isPresented: $showGeneratedClipCleanupConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button("Remove Files", role: .destructive) {
+                Task { await appModel.cleanGeneratedClipsNow() }
+            }
+            Button("Cancel", role: .cancel) { }
+        } message: {
+            if let report = appModel.generatedClipCleanupReport {
+                Text("Roll Call will remove \(report.orphanedFileCount) files using \(ByteCountFormatter.string(fromByteCount: report.orphanedByteCount, countStyle: .file)). This cannot be undone.")
+            }
+        }
     }
 }
 
@@ -6293,6 +6886,7 @@ private struct PlayerEditorSheet: View {
     @State private var songReadinessExplanation: SongReadinessExplanation?
     @State private var showDiscardChangesConfirmation = false
     @State private var isStartTrimEditingEnabled = false
+    @State private var showTeamClipPicker = false
     @FocusState private var focusedField: Field?
 
     private let lengthOptions: [Double] = [6, 8, 10, 12, 15]
@@ -6341,7 +6935,7 @@ private struct PlayerEditorSheet: View {
 
                 Section {
                     VStack(alignment: .leading, spacing: 12) {
-                        if let cue = player.cue {
+                        if let cue = effectiveCue {
                             VStack(alignment: .leading, spacing: 12) {
                                 HStack(alignment: .top, spacing: 10) {
                                     PlayerEditorSectionIcon(systemImage: "music.note", role: .accent)
@@ -6349,15 +6943,33 @@ private struct PlayerEditorSheet: View {
                                         Text("Selected Cue")
                                             .rollCallText(.cardTitle)
                                         selectedCueSummary(for: cue)
+                                        if isUsingSharedTeamClip {
+                                            StatusChip(
+                                                text: "Shared Team Clip",
+                                                role: .neutral,
+                                                systemImage: "person.3",
+                                                emphasis: .subdued
+                                            )
+                                        }
                                     }
                                 }
 
-                                Button {
-                                    songPickerMode = .musicLibrary
-                                } label: {
-                                    Label("Choose from Music Library", systemImage: "music.note.list")
+                                if isUsingSharedTeamClip {
+                                    Button {
+                                        appModel.makePrivateSongCopy(for: player.id)
+                                        refreshPlayerFromModel()
+                                    } label: {
+                                        Label("Make Player Copy to Edit", systemImage: "doc.on.doc")
+                                    }
+                                    .rollCallButtonStyle(.secondary)
+                                } else {
+                                    Button {
+                                        songPickerMode = .musicLibrary
+                                    } label: {
+                                        Label("Choose from Music Library", systemImage: "music.note.list")
+                                    }
+                                    .rollCallButtonStyle(.secondary)
                                 }
-                                .rollCallButtonStyle(.secondary)
                             }
                         } else {
                             VStack(alignment: .leading, spacing: 10) {
@@ -6382,6 +6994,14 @@ private struct PlayerEditorSheet: View {
                         }
 
                         Button {
+                            showTeamClipPicker = true
+                        } label: {
+                            Label("Use Team Clip", systemImage: "music.note.house")
+                        }
+                        .rollCallButtonStyle(.secondary)
+                        .disabled(appModel.selectedTeam?.teamClips.isEmpty != false)
+
+                        Button {
                             songPickerMode = .appleMusic
                         } label: {
                             Label("Search Apple Music", systemImage: "magnifyingglass")
@@ -6398,7 +7018,7 @@ private struct PlayerEditorSheet: View {
                         Text("Choose or change the song, shape the clip, then save it before returning here.")
                             .rollCallText(.helperText)
 
-                        if player.cue != nil {
+                        if effectiveCue != nil {
                             Button {
                                 pendingClearAction = .song
                             } label: {
@@ -6602,6 +7222,11 @@ private struct PlayerEditorSheet: View {
                     }
                 )
             }
+            .sheet(isPresented: $showTeamClipPicker, onDismiss: {
+                refreshPlayerFromModel()
+            }) {
+                TeamClipPickerSheet(appModel: appModel, playerID: player.id)
+            }
             .sheet(isPresented: $showAdvancedTrim) {
                 if player.cue != nil {
                     AdvancedTrimSheet(
@@ -6644,13 +7269,26 @@ private struct PlayerEditorSheet: View {
         return appModel.cueTimelineLength(for: cue)
     }
 
+    private var effectiveSongClip: SongClip? {
+        appModel.resolvedSongClip(for: player)
+    }
+
+    private var effectiveCue: Cue? {
+        effectiveSongClip?.playbackCue
+    }
+
+    private var isUsingSharedTeamClip: Bool {
+        guard case .sharedTeamClip? = player.songAssignment else { return false }
+        return true
+    }
+
     private var cueDurationLimit: Double {
         guard let cue = player.cue else { return 30 }
         return appModel.cueDurationLimit(for: cue)
     }
 
     private var setupSummary: (status: String, nextStep: String?, role: StatusChipRole, systemImage: String) {
-        if player.cue == nil {
+        if effectiveCue == nil {
             return ("Song cue needed", "Next need: song cue", .warning, "music.note")
         }
 
@@ -6735,7 +7373,7 @@ private struct PlayerEditorSheet: View {
     @ViewBuilder
     private var savedSongReadinessChip: some View {
         if let savedPlayer = appModel.selectedTeam?.players.first(where: { $0.id == player.id }),
-           case .privateClip(let clip)? = savedPlayer.songAssignment {
+           let clip = appModel.resolvedSongClip(for: savedPlayer) {
             let explanation = songReadinessExplanation(for: clip)
             Button {
                 songReadinessExplanation = explanation
