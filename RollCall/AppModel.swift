@@ -60,6 +60,7 @@ struct PartialRestorePrompt: Identifiable, Equatable {
     enum ItemType: Equatable {
         case team
         case player
+        case customClip
     }
 
     let id = UUID()
@@ -505,6 +506,7 @@ final class AppModel: ObservableObject {
     private var initialStateLoadWarning: String?
     private var bannerDismissTask: Task<Void, Never>?
     private var songClipPreparationTask: Task<Void, Never>?
+    private var songClipPreparationLiveUseThrottled = false
     private var lowPowerModeTask: Task<Void, Never>?
 
     let audioAssetService = AudioAssetService()
@@ -844,17 +846,14 @@ final class AppModel: ObservableObject {
         selectedTeam?.cue(for: player)
     }
 
-    func saveTeamClip(cue: Cue, named name: String) -> TeamClipSaveResult? {
+    @discardableResult
+    func saveCustomClip(cue: Cue, named name: String) -> UUID? {
         guard let teamIndex else { return nil }
         var clip = SongClip(cue: cue)
+        clip.id = UUID()
         let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
-        clip.displayName = trimmedName.isEmpty ? cue.label : trimmedName
-
-        if let duplicate = state.teams[teamIndex].teamClips.first(where: {
-            $0.isExactCreativeDuplicate(of: clip)
-        }) {
-            return .exactDuplicate(duplicate.id)
-        }
+        clip.displayName = trimmedName.isEmpty ? nil : trimmedName
+        clip.pauseAfterAnnouncer = 0
 
         state.teams[teamIndex].teamClips.append(clip)
         state.teams[teamIndex].modifiedAt = .now
@@ -864,10 +863,10 @@ final class AppModel: ObservableObject {
             teamClipID: clip.id,
             trigger: .assignmentSaved
         )
-        return .saved(clip.id)
+        return clip.id
     }
 
-    func updateTeamClip(_ clipID: UUID, with cue: Cue, named name: String) {
+    func updateCustomClip(_ clipID: UUID, with cue: Cue, named name: String) {
         guard let teamIndex,
               let clipIndex = state.teams[teamIndex].teamClips.firstIndex(where: { $0.id == clipID }) else {
             return
@@ -877,7 +876,8 @@ final class AppModel: ObservableObject {
         var updated = SongClip(cue: cue)
         updated.id = clipID
         let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
-        updated.displayName = trimmedName.isEmpty ? cue.label : trimmedName
+        updated.displayName = trimmedName.isEmpty ? nil : trimmedName
+        updated.pauseAfterAnnouncer = 0
         updated.sourceLineageClipID = previous.sourceLineageClipID
         if previous.generationKey == updated.generationKey {
             updated.generatedAsset = previous.generatedAsset
@@ -901,27 +901,39 @@ final class AppModel: ObservableObject {
             .forEach(removeAssetIfUnreferenced(relativePath:))
     }
 
-    func assignTeamClip(_ clipID: UUID, to playerID: UUID) {
+    func copyExistingClip(_ clip: SongClip, to playerID: UUID) {
         guard let teamIndex,
-              state.teams[teamIndex].teamClips.contains(where: { $0.id == clipID }),
               let playerIndex = state.teams[teamIndex].players.firstIndex(where: { $0.id == playerID }) else {
             return
         }
-        state.teams[teamIndex].players[playerIndex].songAssignment = .sharedTeamClip(clipID)
+        state.teams[teamIndex].players[playerIndex].songAssignment = .privateClip(clip.playerSongCopy())
         state.teams[teamIndex].modifiedAt = .now
         prewarmNextBatterCue()
         scheduleReadinessRefresh()
         persist()
+        scheduleSongClipPreparation(
+            teamID: state.teams[teamIndex].id,
+            playerID: playerID,
+            trigger: .assignmentSaved
+        )
     }
 
-    func makePrivateSongCopy(for playerID: UUID) {
+    func savePlayerSongCopy(from sourceClip: SongClip, editedCue: Cue, to playerID: UUID) {
+        var copy = SongClip(cue: editedCue)
+        copy.id = UUID()
+        copy.sourceLineageClipID = sourceClip.id
+        copy.pauseAfterAnnouncer = 0.2
+        if copy.generationKey == sourceClip.generationKey {
+            copy.generatedAsset = sourceClip.generatedAsset
+            copy.readinessInputs = sourceClip.readinessInputs
+            copy.portabilityInputs = sourceClip.portabilityInputs
+            copy.retryMetadata = sourceClip.retryMetadata
+        }
         guard let teamIndex,
-              let playerIndex = state.teams[teamIndex].players.firstIndex(where: { $0.id == playerID }),
-              case .sharedTeamClip(let clipID)? = state.teams[teamIndex].players[playerIndex].songAssignment,
-              let clip = state.teams[teamIndex].teamClips.first(where: { $0.id == clipID }) else {
+              let playerIndex = state.teams[teamIndex].players.firstIndex(where: { $0.id == playerID }) else {
             return
         }
-        state.teams[teamIndex].players[playerIndex].songAssignment = .privateClip(clip.privateCopy())
+        state.teams[teamIndex].players[playerIndex].songAssignment = .privateClip(copy)
         state.teams[teamIndex].modifiedAt = .now
         persist()
         scheduleSongClipPreparation(
@@ -931,37 +943,53 @@ final class AppModel: ObservableObject {
         )
     }
 
-    func deleteTeamClip(_ clipID: UUID, keepPlayerCopies: Bool) {
+    @discardableResult
+    func saveCustomClipCopy(from sourceClip: SongClip, editedCue: Cue, named name: String) -> UUID? {
+        guard let teamIndex else { return nil }
+        var copy = SongClip(cue: editedCue)
+        copy.id = UUID()
+        copy.sourceLineageClipID = sourceClip.id
+        copy.pauseAfterAnnouncer = 0
+        let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        copy.displayName = trimmedName.isEmpty ? nil : trimmedName
+        if copy.generationKey == sourceClip.generationKey {
+            copy.generatedAsset = sourceClip.generatedAsset
+            copy.readinessInputs = sourceClip.readinessInputs
+            copy.portabilityInputs = sourceClip.portabilityInputs
+            copy.retryMetadata = sourceClip.retryMetadata
+        }
+        state.teams[teamIndex].teamClips.append(copy)
+        state.teams[teamIndex].modifiedAt = .now
+        persist()
+        scheduleTeamClipPreparation(
+            teamID: state.teams[teamIndex].id,
+            teamClipID: copy.id,
+            trigger: .assignmentSaved
+        )
+        return copy.id
+    }
+
+    func deleteCustomClip(_ clipID: UUID) {
         guard let teamIndex,
               let clipIndex = state.teams[teamIndex].teamClips.firstIndex(where: { $0.id == clipID }) else {
             return
         }
-        let clip = state.teams[teamIndex].teamClips[clipIndex]
-        let clipPaths = storedAssetRelativePaths(for: clip)
-        for playerIndex in state.teams[teamIndex].players.indices {
-            guard case .sharedTeamClip(let assignedID)? = state.teams[teamIndex].players[playerIndex].songAssignment,
-                  assignedID == clipID else {
-                continue
-            }
-            if keepPlayerCopies {
-                state.teams[teamIndex].players[playerIndex].songAssignment = .privateClip(clip.privateCopy())
-            } else {
-                state.teams[teamIndex].players[playerIndex].songAssignment = nil
-            }
-        }
-        for itemIndex in state.recentlyDeleted.indices {
-            guard case .player(var deletedPlayer) = state.recentlyDeleted[itemIndex].payload,
-                  deletedPlayer.originalTeamID == state.teams[teamIndex].id,
-                  case .sharedTeamClip(let assignedID)? = deletedPlayer.player.songAssignment,
-                  assignedID == clipID else {
-                continue
-            }
-            deletedPlayer.player.songAssignment = keepPlayerCopies
-                ? .privateClip(clip.privateCopy())
-                : nil
-            state.recentlyDeleted[itemIndex].payload = .player(deletedPlayer)
-        }
-        state.teams[teamIndex].teamClips.remove(at: clipIndex)
+        let team = state.teams[teamIndex]
+        let clip = state.teams[teamIndex].teamClips.remove(at: clipIndex)
+        addRecentlyDeletedItem(
+            RecentlyDeletedItem(
+                id: UUID(),
+                deletedAt: .now,
+                payload: .customClip(
+                    DeletedCustomClipRecord(
+                        clip: clip,
+                        originalTeamID: team.id,
+                        originalTeamName: team.name,
+                        previousIndex: clipIndex
+                    )
+                )
+            )
+        )
         state.teams[teamIndex].modifiedAt = .now
         Task {
             await songClipGenerationQueue.cancel(
@@ -973,50 +1001,13 @@ final class AppModel: ObservableObject {
         prewarmNextBatterCue()
         scheduleReadinessRefresh()
         persist()
-        clipPaths.forEach(removeAssetIfUnreferenced(relativePath:))
     }
 
-    func savePlayerSongsToTeamClips() -> TeamClipPromotionResult {
-        guard let teamIndex else {
-            return TeamClipPromotionResult(addedCount: 0, reusedCount: 0, assignedPlayerCount: 0)
-        }
-        var addedCount = 0
-        var reusedCount = 0
-        var assignedPlayerCount = 0
-        var replacedPrivatePaths: [String] = []
-
-        for playerIndex in state.teams[teamIndex].players.indices {
-            guard case .privateClip(let privateClip)? = state.teams[teamIndex].players[playerIndex].songAssignment else {
-                continue
-            }
-            let sharedID: UUID
-            if let duplicate = state.teams[teamIndex].teamClips.first(where: {
-                $0.isExactCreativeDuplicate(of: privateClip)
-            }) {
-                sharedID = duplicate.id
-                reusedCount += 1
-                replacedPrivatePaths.append(contentsOf: storedAssetRelativePaths(for: privateClip))
-            } else {
-                state.teams[teamIndex].teamClips.append(privateClip)
-                sharedID = privateClip.id
-                addedCount += 1
-            }
-            state.teams[teamIndex].players[playerIndex].songAssignment = .sharedTeamClip(sharedID)
-            assignedPlayerCount += 1
-        }
-
-        if assignedPlayerCount > 0 {
-            state.teams[teamIndex].modifiedAt = .now
-            prewarmNextBatterCue()
-            scheduleReadinessRefresh()
-            persist()
-            replacedPrivatePaths.forEach(removeAssetIfUnreferenced(relativePath:))
-        }
-        return TeamClipPromotionResult(
-            addedCount: addedCount,
-            reusedCount: reusedCount,
-            assignedPlayerCount: assignedPlayerCount
-        )
+    func moveCustomClips(fromOffsets: IndexSet, toOffset: Int) {
+        guard let teamIndex else { return }
+        state.teams[teamIndex].teamClips.move(fromOffsets: fromOffsets, toOffset: toOffset)
+        state.teams[teamIndex].modifiedAt = .now
+        persist()
     }
 
     func removePlayer(_ player: Player) {
@@ -1284,6 +1275,32 @@ final class AppModel: ObservableObject {
             lastError = error.localizedDescription
             haptics.warning(isEnabled: state.settings.hapticsEnabled)
         }
+    }
+
+    func play(customClip: SongClip) async {
+        let currentClip = selectedTeam?.teamClips.first(where: { $0.id == customClip.id }) ?? customClip
+        let cue = currentClip.playbackCue
+        guard cueIsPlayable(cue) else {
+            lastError = currentClip.readinessInputs.playback == .needsAppleMusic
+                ? "This Custom Clip needs Apple Music access on this device."
+                : "This Custom Clip needs repair before it can play."
+            haptics.warning(isEnabled: state.settings.hapticsEnabled)
+            return
+        }
+        do {
+            try await playbackEngine.play(
+                cue: cue,
+                fadeOutVolumeAutomationEnabled: state.settings.fadeOutVolumeAutomationEnabled
+            )
+            haptics.success(isEnabled: state.settings.hapticsEnabled)
+        } catch {
+            lastError = error.localizedDescription
+            haptics.warning(isEnabled: state.settings.hapticsEnabled)
+        }
+    }
+
+    func customClipCanPlay(_ clip: SongClip) -> Bool {
+        cueIsPlayable(clip.playbackCue)
     }
 
     func stopPlayback() {
@@ -1599,12 +1616,10 @@ final class AppModel: ObservableObject {
         persist()
     }
 
-    func setSongClipPreparationLiveUsePaused(_ paused: Bool) {
+    func setSongClipPreparationLiveUseThrottled(_ throttled: Bool) {
+        songClipPreparationLiveUseThrottled = throttled
         Task {
-            await songClipGenerationQueue.setPaused(paused, reason: .liveUse)
-            if !paused {
-                await runSongClipPreparationQueueIfNeeded()
-            }
+            await runSongClipPreparationQueueIfNeeded()
             await refreshPendingSongClipPreparationCount()
         }
     }
@@ -1919,6 +1934,7 @@ final class AppModel: ObservableObject {
             let originalImportedTeamID = importResult.manifest.team.id
             self.state.teams.append(imported)
             self.state.selectedTeamID = imported.id
+            self.flattenLegacySharedAssignments(for: self.state.teams.count - 1)
             self.normalizeLineup(for: self.state.teams.count - 1)
             if opensOnboardingHandoff {
                 self.state.onboarding = .completed()
@@ -2129,6 +2145,12 @@ final class AppModel: ObservableObject {
             let missingTypes = missingMediaTypes(for: deletedPlayer.player)
             guard !missingTypes.isEmpty else { return .ready }
             return .partialPrompt(playerPartialPrompt(for: item, player: deletedPlayer.player, missingTypes: missingTypes))
+        case .customClip(let deletedClip):
+            guard state.teams.contains(where: { $0.id == deletedClip.originalTeamID }) else {
+                return .blocked("Restore the team first to bring this Custom Clip back.")
+            }
+            guard !cueIsPlayable(deletedClip.clip.playbackCue) else { return .ready }
+            return .partialPrompt(customClipPartialPrompt(for: item, clip: deletedClip.clip))
         }
     }
 
@@ -2152,6 +2174,17 @@ final class AppModel: ObservableObject {
                 return
             }
             restoreDeletedPlayer(item, deletedPlayer: deletedPlayer, missingTypes: missingTypes)
+        case .customClip(let deletedClip):
+            guard state.teams.contains(where: { $0.id == deletedClip.originalTeamID }) else {
+                lastError = "Restore the team first to bring this Custom Clip back."
+                return
+            }
+            let isMissingMedia = !cueIsPlayable(deletedClip.clip.playbackCue)
+            if isMissingMedia && !allowPartial {
+                lastError = "Roll Call could not fully restore this Custom Clip. Choose Restore What We Can to keep its place and repair it afterward."
+                return
+            }
+            restoreDeletedCustomClip(item, deletedClip: deletedClip, isMissingMedia: isMissingMedia)
         }
     }
 
@@ -2164,6 +2197,10 @@ final class AppModel: ObservableObject {
 
     func recoveryTeamName(for deletedPlayer: DeletedPlayerRecord) -> String {
         state.teams.first(where: { $0.id == deletedPlayer.originalTeamID })?.name ?? deletedPlayer.originalTeamName
+    }
+
+    func recoveryTeamName(for deletedClip: DeletedCustomClipRecord) -> String {
+        state.teams.first(where: { $0.id == deletedClip.originalTeamID })?.name ?? deletedClip.originalTeamName
     }
 
     func exportSupportBundle() async {
@@ -2262,6 +2299,10 @@ final class AppModel: ObservableObject {
         selectedTeam?.builtInClips ?? []
     }
 
+    var selectedTeamCustomClips: [SongClip] {
+        selectedTeam?.teamClips ?? []
+    }
+
     private func playableCueForPlayerPlayback(_ player: Player) -> Cue? {
         if let cue = resolvedCue(for: player), cueIsPlayable(cue) {
             return cue
@@ -2336,7 +2377,36 @@ final class AppModel: ObservableObject {
 
     private func normalizeAllTeams() {
         for index in state.teams.indices {
+            flattenLegacySharedAssignments(for: index)
             normalizeLineup(for: index)
+        }
+        flattenLegacyRecentlyDeletedAssignments()
+    }
+
+    private func flattenLegacySharedAssignments(for teamIndex: Int) {
+        let clipsByID = Dictionary(uniqueKeysWithValues: state.teams[teamIndex].teamClips.map { ($0.id, $0) })
+        for playerIndex in state.teams[teamIndex].players.indices {
+            guard case .sharedTeamClip(let clipID)? = state.teams[teamIndex].players[playerIndex].songAssignment,
+                  let clip = clipsByID[clipID] else {
+                continue
+            }
+            state.teams[teamIndex].players[playerIndex].songAssignment = .privateClip(clip.playerSongCopy())
+        }
+        for clipIndex in state.teams[teamIndex].teamClips.indices {
+            state.teams[teamIndex].teamClips[clipIndex].pauseAfterAnnouncer = 0
+        }
+    }
+
+    private func flattenLegacyRecentlyDeletedAssignments() {
+        for itemIndex in state.recentlyDeleted.indices {
+            guard case .player(var deletedPlayer) = state.recentlyDeleted[itemIndex].payload,
+                  case .sharedTeamClip(let clipID)? = deletedPlayer.player.songAssignment,
+                  let team = state.teams.first(where: { $0.id == deletedPlayer.originalTeamID }),
+                  let clip = team.teamClips.first(where: { $0.id == clipID }) else {
+                continue
+            }
+            deletedPlayer.player.songAssignment = .privateClip(clip.playerSongCopy())
+            state.recentlyDeleted[itemIndex].payload = .player(deletedPlayer)
         }
     }
 
@@ -2454,6 +2524,8 @@ final class AppModel: ObservableObject {
             return storedAssetRelativePaths(for: deletedTeam.team)
         case .player(let deletedPlayer):
             return storedAssetRelativePaths(for: deletedPlayer.player)
+        case .customClip(let deletedClip):
+            return storedAssetRelativePaths(for: deletedClip.clip)
         }
     }
 
@@ -2553,9 +2625,18 @@ final class AppModel: ObservableObject {
     private func playerPartialPrompt(for item: RecentlyDeletedItem, player: Player, missingTypes: [MissingMediaType]) -> PartialRestorePrompt {
         PartialRestorePrompt(
             itemID: item.id,
-            itemType: .player,
+            itemType: .customClip,
             title: "Restore What We Can?",
             message: "\(player.displayName) could not be fully restored because \(playerMissingSummaryText(missingTypes)) missing. You can still restore the player and re-add the missing media afterward."
+        )
+    }
+
+    private func customClipPartialPrompt(for item: RecentlyDeletedItem, clip: SongClip) -> PartialRestorePrompt {
+        PartialRestorePrompt(
+            itemID: item.id,
+            itemType: .player,
+            title: "Restore What We Can?",
+            message: "\(clip.displayName ?? clip.playbackCue.label) could not be fully restored because its audio is unavailable. You can still restore it in its saved position and repair it afterward."
         )
     }
 
@@ -2586,6 +2667,7 @@ final class AppModel: ObservableObject {
         restoredTeam.modifiedAt = .now
         state.teams.append(restoredTeam)
         state.selectedTeamID = restoredTeam.id
+        flattenLegacySharedAssignments(for: state.teams.count - 1)
         normalizeLineup(for: state.teams.count - 1)
         state.recentlyDeleted.removeAll { $0.id == item.id }
         scheduleReadinessRefresh()
@@ -2629,6 +2711,35 @@ final class AppModel: ObservableObject {
         } else {
             showBanner("\(restoredPlayer.displayName) restored, but \(playerMissingSummaryText(missingTypes)) missing. Open the player to re-add it.", style: .warning)
         }
+        persist()
+    }
+
+    private func restoreDeletedCustomClip(
+        _ item: RecentlyDeletedItem,
+        deletedClip: DeletedCustomClipRecord,
+        isMissingMedia: Bool
+    ) {
+        guard let restoreTeamIndex = state.teams.firstIndex(where: { $0.id == deletedClip.originalTeamID }) else {
+            lastError = "Restore the team first to bring this Custom Clip back."
+            return
+        }
+        let insertionIndex = min(max(deletedClip.previousIndex, 0), state.teams[restoreTeamIndex].teamClips.count)
+        state.teams[restoreTeamIndex].teamClips.insert(deletedClip.clip, at: insertionIndex)
+        state.teams[restoreTeamIndex].modifiedAt = .now
+        state.selectedTeamID = state.teams[restoreTeamIndex].id
+        state.recentlyDeleted.removeAll { $0.id == item.id }
+        scheduleTeamClipPreparation(
+            teamID: state.teams[restoreTeamIndex].id,
+            teamClipID: deletedClip.clip.id,
+            trigger: .importRepair
+        )
+        scheduleReadinessRefresh()
+        pendingRecoveryNavigationToken = UUID()
+        let name = deletedClip.clip.displayName ?? deletedClip.clip.playbackCue.label
+        showBanner(
+            isMissingMedia ? "\(name) restored, but it still needs repair." : "\(name) restored.",
+            style: isMissingMedia ? .warning : .success
+        )
         persist()
     }
 
@@ -2841,6 +2952,10 @@ final class AppModel: ObservableObject {
             return
         }
         if !isExplicit,
+           shouldSkipAutomaticSongClipPreparation(for: clip, generationKey: generationKey, trigger: trigger) {
+            return
+        }
+        if !isExplicit,
            let nextRetryAt = clip.retryMetadata.nextRetryAt,
            nextRetryAt > .now {
             return
@@ -2876,6 +2991,11 @@ final class AppModel: ObservableObject {
             defer { self.songClipPreparationTask = nil }
 
             while !Task.isCancelled, let request = await self.songClipGenerationQueue.next() {
+                await self.waitForSongClipPreparationSlotIfNeeded()
+                guard !Task.isCancelled else {
+                    await self.songClipGenerationQueue.complete(request)
+                    continue
+                }
                 guard let clip = self.songClip(matching: request) else {
                     await self.songClipGenerationQueue.complete(request)
                     continue
@@ -2891,6 +3011,52 @@ final class AppModel: ObservableObject {
             }
         }
         await songClipPreparationTask?.value
+    }
+
+    private func shouldSkipAutomaticSongClipPreparation(
+        for clip: SongClip,
+        generationKey: String,
+        trigger: SongClipPreparationTrigger
+    ) -> Bool {
+        guard clip.generatedAsset.generationKey == generationKey else { return false }
+
+        switch clip.generatedAsset.status {
+        case .none:
+            switch clip.readinessInputs.playback {
+            case .sourceBackedReady, .sourceBackedDownloaded:
+                return trigger != .authorizationChanged
+            default:
+                return false
+            }
+        case .failedPermanent:
+            return true
+        case .failedRetryable:
+            if clip.retryMetadata.lastFailureCode == SongClipPreparationFailureCode.musicAuthorizationRequired.rawValue,
+               MusicAuthorization.currentStatus != .authorized,
+               trigger != .authorizationChanged {
+                return true
+            }
+            return clip.retryMetadata.attemptCount >= 3
+                && trigger != .authorizationChanged
+        case .pending, .ready:
+            return false
+        }
+    }
+
+    private func waitForSongClipPreparationSlotIfNeeded() async {
+        guard songClipPreparationLiveUseThrottled else { return }
+
+        while songClipPreparationLiveUseThrottled {
+            guard playbackEngine.activeCueID == nil else {
+                try? await Task.sleep(for: .milliseconds(250))
+                continue
+            }
+
+            try? await Task.sleep(for: .milliseconds(700))
+            if playbackEngine.activeCueID == nil {
+                return
+            }
+        }
     }
 
     private func songClip(

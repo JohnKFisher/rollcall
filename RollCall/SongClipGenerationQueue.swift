@@ -2,7 +2,6 @@ import Foundation
 
 actor SongClipGenerationQueue {
     enum PauseReason: Hashable {
-        case liveUse
         case lowPowerMode
     }
 

@@ -1501,7 +1501,7 @@ final class ReadinessService {
             )
         }
 
-        if clip.generatedAsset.status == .ready,
+        if clip.hasCurrentGeneratedAsset,
            let generatedPath = clip.generatedAsset.relativePath,
            audioAssetService.assetExists(relativePath: generatedPath) {
             return playerReadinessCheck(
@@ -1951,7 +1951,7 @@ struct PackageService: Sendable {
             local.hiddenOriginNote = nil
             clip.originalSource = .localAudio(local)
         }
-        guard clip.generatedAsset.status == .ready,
+        guard clip.hasCurrentGeneratedAsset,
               clip.portabilityInputs.generatedAssetCanBeExported,
               let relativePath = clip.generatedAsset.relativePath,
               assetExists(relativePath: relativePath) else {
@@ -2027,7 +2027,7 @@ struct PackageService: Sendable {
         if case .localAudio(let source) = clip.originalSource {
             try copyAssetIfPresent(relativePath: source.relativePath, into: assetsDirectory)
         }
-        if clip.generatedAsset.status == .ready,
+        if clip.hasCurrentGeneratedAsset,
            clip.portabilityInputs.generatedAssetCanBeExported {
             try copyAssetIfPresent(
                 relativePath: clip.generatedAsset.relativePath,
@@ -2104,7 +2104,7 @@ struct PackageService: Sendable {
             }
         }
 
-        if clip.generatedAsset.status == .ready,
+        if clip.hasCurrentGeneratedAsset,
            clip.portabilityInputs.generatedAssetCanBeExported,
            let relativePath = clip.generatedAsset.relativePath,
            let importedGeneratedPath = try importGeneratedClipIfPresent(
@@ -2272,7 +2272,7 @@ struct PackageService: Sendable {
         if clip.readinessInputs.playback == .needsAppleMusic {
             return .needsAppleMusic
         }
-        if clip.generatedAsset.status == .ready,
+        if clip.hasCurrentGeneratedAsset,
            clip.portabilityInputs.generatedAssetCanBeExported,
            let path = clip.generatedAsset.relativePath,
            assetExists(relativePath: path) {
@@ -2295,7 +2295,7 @@ struct PackageService: Sendable {
         if clip.generatedAsset.status == .pending {
             return .stillPreparing
         }
-        if clip.generatedAsset.status == .ready,
+        if clip.hasCurrentGeneratedAsset,
            clip.portabilityInputs.generatedAssetCanBeExported,
            let path = clip.generatedAsset.relativePath,
            try packageAssetURLIfPresent(
@@ -2324,10 +2324,6 @@ struct PackageService: Sendable {
         musicAuthorizationStatus: MusicAuthorization.Status
     ) -> PackageImportAudit {
         var items: [PackageImportAudit.Item] = []
-        let assignedTeamClipIDs = Set(team.players.compactMap { player -> UUID? in
-            guard case .sharedTeamClip(let clipID)? = player.songAssignment else { return nil }
-            return clipID
-        })
 
         for player in team.players {
             guard let clip = team.songClip(for: player) else { continue }
@@ -2340,11 +2336,11 @@ struct PackageService: Sendable {
                 )
             )
         }
-        for clip in team.teamClips where !assignedTeamClipIDs.contains(clip.id) {
+        for clip in team.teamClips {
             items.append(
                 auditItem(
                     clip: clip,
-                    title: clip.displayName ?? "Team Clip",
+                    title: clip.displayName ?? clip.playbackCue.label,
                     destination: .teamClip(clip.id),
                     musicAuthorizationStatus: musicAuthorizationStatus
                 )
@@ -2365,7 +2361,7 @@ struct PackageService: Sendable {
     ) -> PackageImportAudit.Item {
         let state: PackageClipTransferState
         let detail: String
-        if clip.generatedAsset.status == .ready,
+        if clip.hasCurrentGeneratedAsset,
            let path = clip.generatedAsset.relativePath,
            assetExists(relativePath: path) {
             state = .localClipIncluded

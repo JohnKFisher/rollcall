@@ -42,6 +42,47 @@ final class SongClipGenerationTests: XCTestCase {
         XCTAssertFalse(currentRequest.matches(clip))
     }
 
+    func testPlaybackUsesCurrentGeneratedAsset() {
+        var clip = SongClip(cue: RollCallTestFixtures.localCue(relativePath: "original.caf"))
+        clip.generatedAsset = GeneratedClipAsset(
+            relativePath: "GeneratedClips/current.m4a",
+            status: .ready,
+            renderedSelection: clip.requestedSelection,
+            generationKey: clip.generationKey,
+            generatedAt: RollCallTestFixtures.now
+        )
+
+        XCTAssertTrue(clip.hasCurrentGeneratedAsset)
+        guard case .localAudio(let source) = clip.playbackCue.source else {
+            return XCTFail("Expected current generated audio.")
+        }
+        XCTAssertEqual(source.relativePath, "GeneratedClips/current.m4a")
+        XCTAssertEqual(clip.playbackCue.startTime, 0)
+        XCTAssertEqual(clip.playbackCue.fadeOutDuration, 0)
+    }
+
+    func testPlaybackRejectsGeneratedAssetAfterCreativeSelectionChanges() {
+        var clip = SongClip(cue: RollCallTestFixtures.localCue(relativePath: "original.caf"))
+        clip.generatedAsset = GeneratedClipAsset(
+            relativePath: "GeneratedClips/stale.m4a",
+            status: .ready,
+            renderedSelection: clip.requestedSelection,
+            generationKey: clip.generationKey,
+            generatedAt: RollCallTestFixtures.now
+        )
+        clip.requestedSelection.startTime += 1
+        clip.requestedSelection.duration -= 1
+
+        XCTAssertFalse(clip.hasCurrentGeneratedAsset)
+        guard case .localAudio(let source) = clip.playbackCue.source else {
+            return XCTFail("Expected source-backed playback while regeneration is pending.")
+        }
+        XCTAssertEqual(source.relativePath, "original.caf")
+        XCTAssertEqual(clip.playbackCue.startTime, clip.requestedSelection.startTime)
+        XCTAssertEqual(clip.playbackCue.duration, clip.requestedSelection.duration)
+        XCTAssertEqual(clip.playbackCue.fadeOutDuration, clip.requestedSelection.fadeOutDuration)
+    }
+
     func testPublicAPICannotRequestAppleMusicOfflineDownload() {
         XCTAssertFalse(SongClipGenerationService.canRequestAppleMusicOfflineDownload)
         XCTAssertFalse(SongClipPolicy.current.autoDownloadEligibleSongsEnabled)
@@ -109,8 +150,10 @@ final class SongClipGenerationTests: XCTestCase {
         XCTAssertNotEqual(PlayerEditorDraftState(player: player), PlayerEditorDraftState(player: retrimmed))
     }
 
-    func testTeamResolvesSharedAssignmentToPlaybackCue() {
-        let clip = SongClip(cue: RollCallTestFixtures.localCue())
+    @MainActor
+    func testLegacySharedAssignmentFlattensToIndependentPlayerCopy() throws {
+        var clip = SongClip(cue: RollCallTestFixtures.localCue())
+        clip.displayName = "Legacy Shared Clip"
         var player = RollCallTestFixtures.player(
             id: RollCallTestFixtures.alexID,
             name: "Alex Morgan",
@@ -119,30 +162,34 @@ final class SongClipGenerationTests: XCTestCase {
         player.songAssignment = .sharedTeamClip(clip.id)
         var team = RollCallTestFixtures.team(players: [player])
         team.teamClips = [clip]
+        try writeState(RollCallTestFixtures.appState(team: team))
 
-        XCTAssertEqual(team.songClip(for: player), clip)
-        XCTAssertEqual(team.cue(for: player), clip.playbackCue)
-        XCTAssertEqual(team.playerAssignmentCount(forTeamClipID: clip.id), 1)
+        let model = AppModel()
+        let loadedPlayer = try XCTUnwrap(model.selectedTeam?.players.first)
+        guard case .privateClip(let playerClip)? = loadedPlayer.songAssignment else {
+            return XCTFail("Expected the legacy shared assignment to flatten.")
+        }
+        XCTAssertNotEqual(playerClip.id, clip.id)
+        XCTAssertEqual(playerClip.sourceLineageClipID, clip.id)
+        XCTAssertEqual(model.selectedTeam?.teamClips.first?.pauseAfterAnnouncer, 0)
     }
 
     @MainActor
-    func testSavingExactTeamClipDuplicateReusesExistingClip() throws {
+    func testCustomClipsAllowIndependentDuplicatesAndImmediatePlayback() throws {
         try writeState(RollCallTestFixtures.appState(team: RollCallTestFixtures.team()))
         let model = AppModel()
         let cue = RollCallTestFixtures.localCue()
 
-        let first = try XCTUnwrap(model.saveTeamClip(cue: cue, named: "Warmup"))
-        let second = try XCTUnwrap(model.saveTeamClip(cue: cue, named: "Different Name"))
+        let first = try XCTUnwrap(model.saveCustomClip(cue: cue, named: "Warmup"))
+        let second = try XCTUnwrap(model.saveCustomClip(cue: cue, named: "Different Name"))
 
-        guard case .saved(let savedID) = first else {
-            return XCTFail("Expected the first clip to be saved.")
-        }
-        XCTAssertEqual(second, .exactDuplicate(savedID))
-        XCTAssertEqual(model.selectedTeam?.teamClips.count, 1)
+        XCTAssertNotEqual(first, second)
+        XCTAssertEqual(model.selectedTeam?.teamClips.count, 2)
+        XCTAssertTrue(model.selectedTeam?.teamClips.allSatisfy { $0.pauseAfterAnnouncer == 0 } == true)
     }
 
     @MainActor
-    func testSavingReadableTeamClipSchedulesPortableGeneration() async throws {
+    func testSavingReadableCustomClipSchedulesPortableGeneration() async throws {
         let sourcePath = "team-source.caf"
         try writeSilentAudio(to: AppPaths.assetURL(relativePath: sourcePath), duration: 2)
         var cue = RollCallTestFixtures.localCue(relativePath: sourcePath)
@@ -151,9 +198,7 @@ final class SongClipGenerationTests: XCTestCase {
         try writeState(RollCallTestFixtures.appState(team: team))
         let model = AppModel()
 
-        guard case .saved(let clipID) = model.saveTeamClip(cue: cue, named: "Team Intro") else {
-            return XCTFail("Expected Team Clip to save.")
-        }
+        let clipID = try XCTUnwrap(model.saveCustomClip(cue: cue, named: "Team Intro"))
 
         let generated = try await waitForTeamClip(in: model, id: clipID) {
             $0.generatedAsset.status == .ready
@@ -165,78 +210,94 @@ final class SongClipGenerationTests: XCTestCase {
     }
 
     @MainActor
-    func testPromotionReusesDuplicatesAndProtectedDeleteKeepsPlayerCopies() throws {
-        let alex = RollCallTestFixtures.player(
-            id: RollCallTestFixtures.alexID,
-            name: "Alex Morgan",
-            number: "7",
-            cue: RollCallTestFixtures.localCue()
+    func testSourceBackedCustomClipDoesNotBounceBackToPreparingOnForeground() throws {
+        var clip = SongClip(cue: RollCallTestFixtures.appleMusicCue(songID: "apple-1", title: "Catalog Song", artistName: "Artist"))
+        clip.generatedAsset = GeneratedClipAsset(
+            relativePath: nil,
+            status: .none,
+            renderedSelection: nil,
+            generationKey: clip.generationKey,
+            generatedAt: nil
         )
-        let jordan = RollCallTestFixtures.player(
-            id: RollCallTestFixtures.jordanID,
-            name: "Jordan Lee",
-            number: "4",
-            cue: RollCallTestFixtures.localCue()
+        clip.readinessInputs = SongClipReadinessInputs(
+            playback: .sourceBackedReady,
+            sourceAvailableOnDevice: true,
+            downloadedOnDevice: false
         )
-        let team = RollCallTestFixtures.team(players: [alex, jordan])
+        clip.portabilityInputs = SongClipPortabilityInputs(
+            portability: .sourceReferenceOnly,
+            generatedAssetCanBeExported: false
+        )
+        var team = RollCallTestFixtures.team(players: [])
+        team.teamClips = [clip]
         try writeState(RollCallTestFixtures.appState(team: team))
         let model = AppModel()
 
-        let result = model.savePlayerSongsToTeamClips()
+        model.prepareSongsAfterForeground()
 
-        XCTAssertEqual(result.addedCount, 1)
-        XCTAssertEqual(result.reusedCount, 1)
-        XCTAssertEqual(result.assignedPlayerCount, 2)
-        let sharedClip = try XCTUnwrap(model.selectedTeam?.teamClips.first)
-        XCTAssertEqual(model.selectedTeam?.playerAssignmentCount(forTeamClipID: sharedClip.id), 2)
-
-        model.deleteTeamClip(sharedClip.id, keepPlayerCopies: true)
-
-        let updatedTeam = try XCTUnwrap(model.selectedTeam)
-        XCTAssertTrue(updatedTeam.teamClips.isEmpty)
-        XCTAssertTrue(updatedTeam.players.allSatisfy {
-            guard case .privateClip? = $0.songAssignment else { return false }
-            return updatedTeam.cue(for: $0) != nil
-        })
+        XCTAssertEqual(model.selectedTeam?.teamClips.first?.generatedAsset.status, GeneratedClipAssetStatus.none)
+        XCTAssertEqual(model.selectedTeam?.teamClips.first?.readinessInputs.playback, .sourceBackedReady)
     }
 
     @MainActor
-    func testProtectedTeamClipDeletePreservesRecentlyDeletedPlayerAssignment() throws {
-        let sharedClip = SongClip(cue: RollCallTestFixtures.localCue())
-        var deletedPlayer = RollCallTestFixtures.player(
+    func testExhaustedRetryableCustomClipDoesNotBounceBackToPreparingOnForeground() throws {
+        var clip = SongClip(cue: RollCallTestFixtures.appleMusicCue(songID: "apple-2", title: "Unavailable Song", artistName: "Artist"))
+        clip.generatedAsset = GeneratedClipAsset(
+            relativePath: nil,
+            status: .failedRetryable,
+            renderedSelection: nil,
+            generationKey: clip.generationKey,
+            generatedAt: nil
+        )
+        clip.readinessInputs = SongClipReadinessInputs(
+            playback: .needsAppleMusic,
+            sourceAvailableOnDevice: false,
+            downloadedOnDevice: false
+        )
+        clip.retryMetadata = SongClipRetryMetadata(
+            attemptCount: 3,
+            lastAttemptAt: RollCallTestFixtures.now,
+            nextRetryAt: nil,
+            lastFailureCode: SongClipPreparationFailureCode.musicAuthorizationRequired.rawValue
+        )
+        var team = RollCallTestFixtures.team(players: [])
+        team.teamClips = [clip]
+        try writeState(RollCallTestFixtures.appState(team: team))
+        let model = AppModel()
+
+        model.prepareSongsAfterForeground()
+
+        XCTAssertEqual(model.selectedTeam?.teamClips.first?.generatedAsset.status, .failedRetryable)
+        XCTAssertEqual(model.selectedTeam?.teamClips.first?.readinessInputs.playback, .needsAppleMusic)
+    }
+
+    @MainActor
+    func testCopyingCustomClipToPlayerCreatesIndependentAssignment() throws {
+        let alex = RollCallTestFixtures.player(
             id: RollCallTestFixtures.alexID,
             name: "Alex Morgan",
             number: "7"
         )
-        deletedPlayer.songAssignment = .sharedTeamClip(sharedClip.id)
-        var team = RollCallTestFixtures.team(players: [])
-        team.teamClips = [sharedClip]
-        var state = RollCallTestFixtures.appState(team: team)
-        state.recentlyDeleted = [
-            RecentlyDeletedItem(
-                id: UUID(),
-                deletedAt: .now,
-                payload: .player(
-                    DeletedPlayerRecord(
-                        player: deletedPlayer,
-                        originalTeamID: team.id,
-                        originalTeamName: team.name,
-                        previousBattingOrder: [deletedPlayer.id]
-                    )
-                )
-            )
-        ]
-        try writeState(state)
+        var sourceClip = SongClip(cue: RollCallTestFixtures.localCue())
+        sourceClip.displayName = "Hype"
+        sourceClip.pauseAfterAnnouncer = 0
+        var team = RollCallTestFixtures.team(players: [alex])
+        team.teamClips = [sourceClip]
+        try writeState(RollCallTestFixtures.appState(team: team))
         let model = AppModel()
 
-        model.deleteTeamClip(sharedClip.id, keepPlayerCopies: true)
+        var editedCue = sourceClip.editingCue
+        editedCue.startTime = 2
+        model.savePlayerSongCopy(from: sourceClip, editedCue: editedCue, to: alex.id)
 
-        guard case .player(let updated)? = model.state.recentlyDeleted.first?.payload,
-              case .privateClip(let privateClip)? = updated.player.songAssignment else {
-            return XCTFail("Expected a preserved private clip for the recoverable player.")
+        guard case .privateClip(let playerClip)? = model.selectedTeam?.players.first?.songAssignment else {
+            return XCTFail("Expected an independent player song.")
         }
-        XCTAssertEqual(privateClip.sourceLineageClipID, sharedClip.id)
-        XCTAssertEqual(privateClip.playbackCue.source, sharedClip.playbackCue.source)
+        XCTAssertNotEqual(playerClip.id, sourceClip.id)
+        XCTAssertEqual(playerClip.sourceLineageClipID, sourceClip.id)
+        XCTAssertEqual(playerClip.requestedSelection.startTime, 2)
+        XCTAssertEqual(model.selectedTeam?.teamClips.first?.requestedSelection.startTime, 0)
+        XCTAssertEqual(playerClip.pauseAfterAnnouncer, 0.2)
     }
 
     func testRuntimeVolumeAutomationAppliesOnlyToSourceBackedAppleMusic() {
@@ -428,21 +489,21 @@ final class SongClipGenerationTests: XCTestCase {
         XCTAssertEqual(maximumFade.fadeOutDuration, 3)
     }
 
-    func testQueueDeduplicatesPlayerRequestsAndHonorsPause() async {
+    func testQueueDeduplicatesPlayerRequestsAndHonorsLowPowerPause() async {
         let queue = SongClipGenerationQueue()
         let first = request(key: "first")
         let replacement = request(key: "replacement")
 
         await queue.enqueue(first)
         await queue.enqueue(replacement)
-        await queue.setPaused(true, reason: .liveUse)
+        await queue.setPaused(true, reason: .lowPowerMode)
 
         let pausedNext = await queue.next()
         let pausedCount = await queue.pendingCount()
         XCTAssertNil(pausedNext)
         XCTAssertEqual(pausedCount, 1)
 
-        await queue.setPaused(false, reason: .liveUse)
+        await queue.setPaused(false, reason: .lowPowerMode)
         let next = await queue.next()
         XCTAssertEqual(next, replacement)
         await queue.complete(replacement)
@@ -466,7 +527,7 @@ final class SongClipGenerationTests: XCTestCase {
         XCTAssertEqual(second, teamClipRequest)
     }
 
-    func testExplicitRequestBypassesLowPowerPauseButNotLiveUsePause() async {
+    func testExplicitRequestBypassesLowPowerPause() async {
         let queue = SongClipGenerationQueue()
         var explicit = request(key: "explicit")
         explicit.isExplicit = true
@@ -476,11 +537,6 @@ final class SongClipGenerationTests: XCTestCase {
         let lowPowerNext = await queue.next()
         XCTAssertEqual(lowPowerNext, explicit)
         await queue.complete(explicit)
-
-        await queue.enqueue(explicit)
-        await queue.setPaused(true, reason: .liveUse)
-        let liveUseNext = await queue.next()
-        XCTAssertNil(liveUseNext)
     }
 
     @MainActor
@@ -590,7 +646,7 @@ final class SongClipGenerationTests: XCTestCase {
         throw NSError(
             domain: "SongClipGenerationTests",
             code: 2,
-            userInfo: [NSLocalizedDescriptionKey: "Timed out waiting for Team Clip preparation."]
+            userInfo: [NSLocalizedDescriptionKey: "Timed out waiting for Custom Clip preparation."]
         )
     }
 

@@ -702,9 +702,17 @@ struct DeletedPlayerRecord: Codable, Equatable {
     var previousBattingOrder: [UUID]
 }
 
+struct DeletedCustomClipRecord: Codable, Equatable {
+    var clip: SongClip
+    var originalTeamID: UUID
+    var originalTeamName: String
+    var previousIndex: Int
+}
+
 enum RecentlyDeletedPayload: Equatable {
     case team(DeletedTeamRecord)
     case player(DeletedPlayerRecord)
+    case customClip(DeletedCustomClipRecord)
 }
 
 extension RecentlyDeletedPayload: Codable {
@@ -712,11 +720,13 @@ extension RecentlyDeletedPayload: Codable {
         case type
         case team
         case player
+        case customClip
     }
 
     enum Kind: String, Codable {
         case team
         case player
+        case customClip
     }
 
     init(from decoder: Decoder) throws {
@@ -726,6 +736,8 @@ extension RecentlyDeletedPayload: Codable {
             self = .team(try container.decode(DeletedTeamRecord.self, forKey: .team))
         case .player:
             self = .player(try container.decode(DeletedPlayerRecord.self, forKey: .player))
+        case .customClip:
+            self = .customClip(try container.decode(DeletedCustomClipRecord.self, forKey: .customClip))
         }
     }
 
@@ -738,6 +750,9 @@ extension RecentlyDeletedPayload: Codable {
         case .player(let value):
             try container.encode(Kind.player, forKey: .type)
             try container.encode(value, forKey: .player)
+        case .customClip(let value):
+            try container.encode(Kind.customClip, forKey: .type)
+            try container.encode(value, forKey: .customClip)
         }
     }
 }
@@ -941,7 +956,7 @@ struct RatingRequestState: Codable, Equatable {
 }
 
 struct AppState: Codable, Equatable {
-    static let currentSchemaVersion = 8
+    static let currentSchemaVersion = 9
 
     var schemaVersion: Int
     var appVersion: String

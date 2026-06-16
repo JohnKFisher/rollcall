@@ -2,11 +2,23 @@
 
 Use this file as a concise decision log for project-specific architectural, behavioral, tooling, and scope decisions.
 
+## 2026-06-16
+
+- Approved: cue preparation may continue during Game Day and Clips, but live use throttles the one-job-at-a-time queue so a job starts only after playback has been idle for a short quiet window. Low Power Mode remains paused except for explicit `Try Now`.
+  Rationale: Custom Clips should not sit in `Preparing` unnecessarily on the live Clips screen, but user-triggered sounds must stay more important than background rendering work.
+  Status: approved; supersedes the live-use pause portion of the 2026-06-14 cue preparation decision
+
+## 2026-06-15
+
+- Approved: replace user-facing shared Team Clips with team-specific Custom Clips on the live Clips page. Player Songs and Custom Clips are independent after copying; creation and editing require explicit Clips Edit mode; Custom Clip order travels in team exports/backups; deletion uses the existing 60-day Recently Deleted system.
+  Rationale: coaches should choose whether they are setting a Player Song or adding a live soundboard clip, without understanding shared masters, references, or cross-player edit effects. Independent copies preserve Game Day simplicity and user investment while keeping generated/local portability honest.
+  Status: approved; supersedes the 2026-06-14 Phase 4 shared Team Clips decision and the shared-assignment portion of Phase 5
+
 ## 2026-06-14
 
 - Approved: Phase 5 playback always prefers a valid generated Roll Call clip and otherwise preserves the original source-backed recipe. Team Clips and private player clips use the same bounded preparation queue, with shared Team Clips prepared once for every assigned player.
   Rationale: playback should gain portability when public APIs make it possible without weakening the normal Apple Music path or duplicating work for shared clips.
-  Status: approved
+  Status: superseded in part by the 2026-06-15 independent Custom Clips decision; generated-first playback and the bounded queue remain approved
 
 - Approved: 1.2 team-package export previews portable, device-dependent, preparing, and repair-needed clips before creating the package. Import preserves identifiable assignments, copies valid generated and local assets, audits what is actually ready on the receiving device, and routes unresolved player or Team Clip items toward repair.
   Rationale: team ownership requires honest portability and recovery; a missing file or unavailable Apple Music account should not erase carefully configured song choices or reject an otherwise useful team.
@@ -22,7 +34,7 @@ Use this file as a concise decision log for project-specific architectural, beha
 
 - Approved: Phase 4 Team Clips are team-scoped reusable `SongClip`s; players may explicitly reference a shared clip, while editing from Player Editor requires a private copy so one player's changes cannot silently alter teammates. Deleting a shared clip must offer to preserve assigned players as private copies, and exact creative duplicates are reused.
   Rationale: reusable songs should reduce repeated setup without making player-specific edits or deletion surprising, destructive, or difficult to recover from.
-  Status: approved
+  Status: superseded by the 2026-06-15 independent Custom Clips decision
 
 - Approved: the Setup Guide audio step uses the same Music Library-first source choices and draft `Make Your Clip` editor as Player Editor, rather than maintaining a separate inline onboarding trimmer.
   Rationale: one consistent selection and waveform-trimming experience is easier to learn, preserves explicit Save behavior, and prevents the simpler onboarding controls from drifting away from the real editor.
@@ -52,7 +64,7 @@ Use this file as a concise decision log for project-specific architectural, beha
 
 - Approved: cue preparation runs through a one-job-at-a-time queue, stores job truth on `SongClip`, uses deterministic generation keys to reject stale results, preserves an older working generated asset when regeneration fails, pauses during Game Day/Clips and Low Power Mode, and permits explicit `Try Now` to bypass only the Low Power pause.
   Rationale: derived audio work must remain bounded, cancellable by replacement, safe around live use, and unable to overwrite a known-good clip with a late or failed result.
-  Status: approved
+  Status: superseded in part by the 2026-06-16 live-use throttling decision; Low Power behavior remains approved
 
 - Approved: Roll Call 1.2 will generate local song clips only when public APIs expose a genuinely readable local source; Apple Music-linked songs remain a normal source-backed playback path, downloaded availability may improve readiness on the current device without implying portability, and no remote policy switch or unsupported capture/extraction behavior will be added.
   Rationale: the Phase 0 probe successfully narrowed the public-API reality and did not support the earlier assumption that Apple Music songs could generally be localized, so the product must preserve the easy Apple Music path while reporting readiness and portability honestly.

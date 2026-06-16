@@ -193,11 +193,20 @@ struct SongClip: Codable, Equatable, Identifiable {
         sourceLineageClipID = nil
     }
 
+    var hasCurrentGeneratedAsset: Bool {
+        generatedAsset.status == .ready
+            && generatedAsset.generationKey == generationKey
+            && generatedAsset.relativePath != nil
+    }
+
     var playbackCue: Cue {
-        let selection = generatedAsset.renderedSelection ?? requestedSelection
+        let usesGeneratedAsset = hasCurrentGeneratedAsset
+        let selection = usesGeneratedAsset
+            ? generatedAsset.renderedSelection ?? requestedSelection
+            : requestedSelection
         let source: CueSource
 
-        if generatedAsset.status == .ready, let relativePath = generatedAsset.relativePath {
+        if usesGeneratedAsset, let relativePath = generatedAsset.relativePath {
             source = .localAudio(
                 LocalAudioSource(
                     id: id,
@@ -216,9 +225,9 @@ struct SongClip: Codable, Equatable, Identifiable {
             id: id,
             label: displayName ?? "Walk-Up Song",
             source: source,
-            startTime: generatedAsset.status == .ready ? 0 : selection.startTime,
+            startTime: usesGeneratedAsset ? 0 : selection.startTime,
             duration: selection.duration,
-            fadeOutDuration: generatedAsset.status == .ready ? 0 : selection.fadeOutDuration,
+            fadeOutDuration: usesGeneratedAsset ? 0 : selection.fadeOutDuration,
             pauseAfterAnnouncer: pauseAfterAnnouncer
         )
     }
@@ -269,6 +278,18 @@ struct SongClip: Codable, Equatable, Identifiable {
         var copy = self
         copy.id = UUID()
         copy.sourceLineageClipID = id
+        return copy
+    }
+
+    func playerSongCopy() -> SongClip {
+        var copy = privateCopy()
+        copy.pauseAfterAnnouncer = 0.2
+        return copy
+    }
+
+    func customClipCopy() -> SongClip {
+        var copy = privateCopy()
+        copy.pauseAfterAnnouncer = 0
         return copy
     }
 
@@ -414,6 +435,7 @@ enum SongClipPreparationOutcome: Equatable {
 
 enum SongAssignment: Codable, Equatable {
     case privateClip(SongClip)
+    // Decode-only compatibility for unreleased 1.2 test data.
     case sharedTeamClip(UUID)
 
     private enum CodingKeys: String, CodingKey {

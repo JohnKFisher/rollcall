@@ -281,6 +281,7 @@ struct RootView: View {
     @Environment(\.colorScheme) private var deviceColorScheme
     @Environment(\.scenePhase) private var scenePhase
     @ObservedObject var appModel: AppModel
+    @ObservedObject private var playbackEngine: CuePlaybackEngine
     @State private var newTeamName = ""
     @State private var playerEditorRoute: PlayerEditorRoute?
     @State private var showExperimentalWarning = false
@@ -299,9 +300,12 @@ struct RootView: View {
     @State private var ratingRequestPresentation: RatingRequestPresentation?
     @State private var teamPlaylistPreview: TeamAppleMusicPlaylistSummary?
     @State private var showTeamClips = false
+    @State private var customClipRepairPrompt: SongClip?
+    @State private var customClipManagerInitialClipID: UUID?
 
     init(appModel: AppModel) {
         self.appModel = appModel
+        _playbackEngine = ObservedObject(initialValue: appModel.playbackEngine)
         _selectedTab = State(initialValue: RootTab.sensibleInitialTab(for: appModel.selectedTeam))
     }
 
@@ -450,7 +454,10 @@ struct RootView: View {
 
     private func handleSelectedTabChange(from previousTab: RootTab, to newTab: RootTab) {
         updateIdleTimer()
-        appModel.setSongClipPreparationLiveUsePaused(newTab == .gameDay || newTab == .generalClips)
+        appModel.setSongClipPreparationLiveUseThrottled(newTab == .gameDay || newTab == .generalClips)
+        if previousTab == .generalClips, newTab != .generalClips {
+            showTeamClips = false
+        }
 
         if newTab == .gameDay {
             appModel.beginGameDayVisitForRatingIfNeeded()
@@ -466,6 +473,9 @@ struct RootView: View {
 
     private func handleScenePhaseChange(from previousPhase: ScenePhase, to newPhase: ScenePhase) {
         updateIdleTimer()
+        if newPhase != .active {
+            showTeamClips = false
+        }
 
         if newPhase == .active, selectedTab == .gameDay {
             appModel.refreshGameDayWarmup()
@@ -484,12 +494,12 @@ struct RootView: View {
     }
 
     private func finishLaunchingTask() async {
-        appModel.setSongClipPreparationLiveUsePaused(
+            appModel.setSongClipPreparationLiveUseThrottled(
             selectedTab == .gameDay || selectedTab == .generalClips
         )
         await appModel.finishLaunchingIfNeeded()
         resolveInitialTabIfNeeded()
-        appModel.setSongClipPreparationLiveUsePaused(
+            appModel.setSongClipPreparationLiveUseThrottled(
             selectedTab == .gameDay || selectedTab == .generalClips
         )
         if selectedTab == .gameDay {
@@ -714,9 +724,33 @@ struct RootView: View {
                 )
                 .teamAccentScope(selectedTeamAccentTheme)
             }
-            .sheet(isPresented: $showTeamClips) {
-                TeamClipsSheet(appModel: appModel)
+            .sheet(isPresented: $showTeamClips, onDismiss: {
+                customClipManagerInitialClipID = nil
+            }) {
+                CustomClipsManagerSheet(
+                    appModel: appModel,
+                    initialClipID: customClipManagerInitialClipID
+                )
                     .teamAccentScope(selectedTeamAccentTheme)
+            }
+            .alert("Custom Clip Unavailable", isPresented: Binding(
+                get: { customClipRepairPrompt != nil },
+                set: { if !$0 { customClipRepairPrompt = nil } }
+            ), presenting: customClipRepairPrompt) { clip in
+                Button("Cancel", role: .cancel) {
+                    customClipRepairPrompt = nil
+                }
+                Button("Repair Clip") {
+                    customClipManagerInitialClipID = clip.id
+                    customClipRepairPrompt = nil
+                    showTeamClips = true
+                }
+            } message: { clip in
+                Text(
+                    clip.readinessInputs.playback == .needsAppleMusic
+                        ? "This clip needs Apple Music access on this device."
+                        : "This clip needs a replacement source before it can play."
+                )
             }
             .fileImporter(isPresented: $csvImportPresented, allowedContentTypes: [.commaSeparatedText, .text], allowsMultipleSelection: false) { result in
                 handleRosterImportResult(result)
@@ -727,7 +761,7 @@ struct RootView: View {
         rootSheetContent
             .onAppear {
                 updateIdleTimer()
-                appModel.setSongClipPreparationLiveUsePaused(
+                appModel.setSongClipPreparationLiveUseThrottled(
                     selectedTab == .gameDay || selectedTab == .generalClips
                 )
             }
@@ -982,15 +1016,59 @@ struct RootView: View {
 
                 ScrollView {
                     VStack(alignment: .leading, spacing: 14) {
-                        if appModel.selectedTeamBuiltInClips.isEmpty {
+                        if appModel.selectedTeamBuiltInClips.isEmpty && appModel.selectedTeamCustomClips.isEmpty {
                             ClipsEmptyStateCard(surface: clipsSurface)
                         } else {
-                            ClipsHeaderCard(clipCount: appModel.selectedTeamBuiltInClips.count, surface: clipsSurface)
+                            HStack {
+                                Spacer()
+                                Button("Edit") {
+                                    appModel.stopPlayback()
+                                    customClipManagerInitialClipID = nil
+                                    showTeamClips = true
+                                }
+                                .buttonStyle(.bordered)
+                            }
 
-                            LazyVStack(spacing: 10) {
+                            Text("Sound Effects")
+                                .rollCallText(.sectionTitle, surface: clipsSurface)
+
+                            LazyVGrid(columns: soundEffectGridColumns, spacing: 8) {
                                 ForEach(appModel.selectedTeamBuiltInClips) { clip in
-                                    GeneralClipCard(clip: clip, surface: clipsSurface) {
+                                    GeneralClipCard(
+                                        clip: clip,
+                                        surface: clipsSurface,
+                                        isPlaying: playbackEngine.activeCueID == clip.cue.id
+                                    ) {
                                         Task { await appModel.play(builtInClip: clip) }
+                                    }
+                                }
+                            }
+
+                            Text("Custom Clips")
+                                .rollCallText(.sectionTitle, surface: clipsSurface)
+                                .padding(.top, 8)
+
+                            if appModel.selectedTeamCustomClips.isEmpty {
+                                Text("Use Edit to add quick song clips for live sideline moments.")
+                                    .rollCallText(.helperText, surface: clipsSurface)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                    .padding()
+                                    .background(Color.rollCall(.neutralSurface, surface: .live), in: RoundedRectangle(cornerRadius: 12))
+                            } else {
+                                LazyVGrid(columns: customClipGridColumns, spacing: 10) {
+                                    ForEach(appModel.selectedTeamCustomClips) { clip in
+                                        CustomClipCard(
+                                            clip: clip,
+                                            surface: clipsSurface,
+                                            isPlayable: appModel.customClipCanPlay(clip),
+                                            isPlaying: playbackEngine.activeCueID == clip.playbackCue.id
+                                        ) {
+                                            if appModel.customClipCanPlay(clip) {
+                                                Task { await appModel.play(customClip: clip) }
+                                            } else {
+                                                customClipRepairPrompt = clip
+                                            }
+                                        }
                                     }
                                 }
                             }
@@ -1010,39 +1088,12 @@ struct RootView: View {
         .environment(\.colorScheme, effectiveLiveColorScheme)
     }
 
-    private struct ClipsHeaderCard: View {
-        let clipCount: Int
-        let surface: RollCallSurfaceVariant
+    private var soundEffectGridColumns: [GridItem] {
+        Array(repeating: GridItem(.flexible(minimum: 0), spacing: 8), count: 5)
+    }
 
-        @Environment(\.colorScheme) private var colorScheme
-        @Environment(\.rollCallTeamAccentTheme) private var teamAccentTheme
-
-        var body: some View {
-            HStack(spacing: RollCallSpacingTier.standard.value) {
-                Image(systemName: "speaker.wave.2.fill")
-                    .font(.headline.weight(.semibold))
-                    .foregroundStyle(Color.rollCall(.live, surface: surface))
-                    .frame(width: 24, alignment: .leading)
-
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Crowd clips ready")
-                        .rollCallText(.cardTitle, surface: surface)
-                    Text("\(clipCount) built-in reactions for quick live moments")
-                        .rollCallText(.helperText, surface: surface)
-                        .lineLimit(2)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-                .layoutPriority(1)
-            }
-            .padding(.horizontal, 2)
-            .padding(.top, 2)
-            .padding(.bottom, 10)
-            .overlay(alignment: .bottom) {
-                Rectangle()
-                    .fill(liveAccentOutlineColor(theme: teamAccentTheme, colorScheme: colorScheme, lightOpacity: 0.7, darkOpacity: 0.34))
-                    .frame(height: 1)
-            }
-        }
+    private var customClipGridColumns: [GridItem] {
+        [GridItem(.adaptive(minimum: 145), spacing: 10)]
     }
 
     private struct ClipsEmptyStateCard: View {
@@ -1070,6 +1121,7 @@ struct RootView: View {
     private struct GeneralClipCard: View {
         let clip: BuiltInClip
         let surface: RollCallSurfaceVariant
+        let isPlaying: Bool
         let play: () -> Void
 
         @Environment(\.colorScheme) private var colorScheme
@@ -1077,55 +1129,51 @@ struct RootView: View {
 
         var body: some View {
             Button(action: play) {
-                HStack(spacing: RollCallSpacingTier.standard.value) {
-                    VStack(alignment: .leading, spacing: 5) {
-                        Text(clip.title)
-                            .rollCallText(.cardTitle, surface: surface)
-                            .lineLimit(1)
-                            .minimumScaleFactor(0.82)
-
-                        HStack(spacing: RollCallSpacingTier.tight.value) {
-                            Label("Tap to play", systemImage: "hand.tap.fill")
-                            Text(clipDurationText)
-                        }
-                        .rollCallText(.helperText, surface: surface)
-                        .lineLimit(1)
+                VStack(spacing: 6) {
+                    if isPlaying {
+                        PlayingSpeakerSymbol(systemImage: soundSymbol, color: Color.rollCall(.live, surface: .live))
+                            .font(.caption.weight(.bold))
+                    } else {
+                        Image(systemName: soundSymbol)
+                            .font(.caption.weight(.bold))
+                            .foregroundStyle(teamAccentTheme.color(.primary, surface: .live))
                     }
 
-                    Spacer(minLength: RollCallSpacingTier.tight.value)
-
-                    Label("Play", systemImage: "play.fill")
-                        .labelStyle(.iconOnly)
-                        .font(.headline.weight(.bold))
-                        .foregroundStyle(teamAccentTheme.color(.onFill, surface: .live))
-                        .frame(width: 48, height: 48)
-                        .background(teamAccentTheme.color(.fill, surface: .live), in: Circle())
-                        .overlay {
-                            Circle()
-                                .strokeBorder(Color.white.opacity(0.22), lineWidth: 1)
-                        }
-                        .accessibilityHidden(true)
+                    Text(clip.title)
+                        .font(.caption2.weight(.bold))
+                        .foregroundStyle(Color(uiColor: .label))
+                        .multilineTextAlignment(.center)
+                        .lineLimit(2)
+                        .minimumScaleFactor(0.62)
+                        .frame(maxWidth: .infinity)
                 }
-                .padding(.vertical, 12)
-                .padding(.leading, 14)
-                .padding(.trailing, 12)
-                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 5)
+                .padding(.vertical, 8)
+                .frame(maxWidth: .infinity, minHeight: 68, alignment: .center)
                 .background(cardBackground)
                 .overlay(cardBorder)
                 .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
                 .contentShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
             }
             .buttonStyle(.plain)
+            .shadow(color: cardShadowColor, radius: isPlaying ? 8 : 0, y: isPlaying ? 4 : 0)
+            .animation(.easeInOut(duration: 0.16), value: isPlaying)
             .accessibilityLabel("Play \(clip.title)")
-            .accessibilityHint("Plays this built-in crowd clip.")
-        }
-
-        private var clipDurationText: String {
-            let roundedDuration = Int(clip.cue.duration.rounded())
-            return "\(roundedDuration) sec"
+            .accessibilityValue(isPlaying ? "Currently playing" : "")
+            .accessibilityHint(isPlaying ? "Stops the active built-in crowd clip." : "Plays this built-in crowd clip.")
         }
 
         private var cardBackground: some ShapeStyle {
+            if isPlaying {
+                return LinearGradient(
+                    colors: [
+                        Color.rollCall(.live, surface: .live).opacity(0.22),
+                        Color.rollCall(.live, surface: .live).opacity(0.14)
+                    ],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
+            }
             if surface == .live {
                 return LinearGradient(
                     colors: [
@@ -1148,7 +1196,138 @@ struct RootView: View {
 
         private var cardBorder: some View {
             RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .strokeBorder(liveAccentOutlineColor(theme: teamAccentTheme, colorScheme: colorScheme, lightOpacity: 0.85, darkOpacity: 0.42), lineWidth: 1)
+                .strokeBorder(cardBorderColor, lineWidth: isPlaying ? 2 : 1)
+        }
+
+        private var cardBorderColor: Color {
+            if isPlaying {
+                return Color.rollCall(.live, surface: .live).opacity(0.95)
+            }
+            return liveAccentOutlineColor(theme: teamAccentTheme, colorScheme: colorScheme, lightOpacity: 0.85, darkOpacity: 0.42)
+        }
+
+        private var cardShadowColor: Color {
+            isPlaying ? Color.rollCall(.live, surface: .live).opacity(0.20) : .clear
+        }
+
+        private var soundSymbol: String {
+            let title = clip.title.lowercased()
+            if title.contains("cheer") {
+                return firstAvailableSymbol(["hands.clap.fill", "hand.wave.fill", "speaker.wave.2.fill"])
+            }
+            if title.contains("victory") || title.contains("roar") {
+                return firstAvailableSymbol(["trophy.fill", "megaphone.fill", "speaker.wave.3.fill"])
+            }
+            if title.contains("stadium") || title.contains("burst") {
+                return firstAvailableSymbol(["burst.fill", "sparkles", "speaker.wave.3.fill"])
+            }
+            if title.contains("clap") || title.contains("rhythmic") {
+                return firstAvailableSymbol(["metronome.fill", "hands.clap.fill", "music.note"])
+            }
+            if title.contains("whistle") {
+                return firstAvailableSymbol(["whistle.fill", "speaker.wave.2.fill"])
+            }
+            return firstAvailableSymbol(["waveform", "speaker.wave.2.fill"])
+        }
+
+        private func firstAvailableSymbol(_ symbols: [String]) -> String {
+            symbols.first { UIImage(systemName: $0) != nil } ?? "speaker.wave.2.fill"
+        }
+    }
+
+    private struct CustomClipCard: View {
+        let clip: SongClip
+        let surface: RollCallSurfaceVariant
+        let isPlayable: Bool
+        let isPlaying: Bool
+        let play: () -> Void
+
+        @Environment(\.colorScheme) private var colorScheme
+        @Environment(\.rollCallTeamAccentTheme) private var teamAccentTheme
+
+        private var status: (text: String, icon: String, role: StatusChipRole)? {
+            if clip.generatedAsset.status == .pending {
+                return ("Preparing", "clock.arrow.circlepath", .neutral)
+            }
+            switch clip.readinessInputs.playback {
+            case .needsAppleMusic:
+                return ("Needs Apple Music", "music.note", .warning)
+            case .needsRepair:
+                return ("Needs Repair", "wrench.and.screwdriver", .warning)
+            default:
+                return nil
+            }
+        }
+
+        var body: some View {
+            Button(action: play) {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text(clip.displayName ?? clip.playbackCue.rosterDisplayTitle)
+                        .rollCallText(.cardTitle, surface: surface)
+                        .lineLimit(2)
+                        .minimumScaleFactor(0.78)
+                    if let status {
+                        StatusChip(
+                            text: status.text,
+                            role: status.role,
+                            systemImage: status.icon,
+                            emphasis: .subdued
+                        )
+                    }
+                    Spacer(minLength: 0)
+                    HStack {
+                        Spacer()
+                        Image(systemName: isPlaying ? "stop.fill" : (isPlayable ? "play.fill" : "exclamationmark.triangle.fill"))
+                            .foregroundStyle(teamAccentTheme.color(.onFill, surface: .live))
+                            .frame(width: 36, height: 36)
+                            .background(
+                                isPlayable ? teamAccentTheme.color(.fill, surface: .live) : Color.rollCall(.warning, surface: surface),
+                                in: Circle()
+                            )
+                    }
+                }
+                .padding(14)
+                .frame(minHeight: 112)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(
+                    customClipBackgroundColor,
+                    in: RoundedRectangle(cornerRadius: 12, style: .continuous)
+                )
+                .overlay {
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .strokeBorder(
+                            customClipBorderColor,
+                            lineWidth: isPlaying ? 2 : 1
+                        )
+                }
+            }
+            .buttonStyle(.plain)
+            .shadow(color: customClipShadowColor, radius: isPlaying ? 8 : 0, y: isPlaying ? 4 : 0)
+            .animation(.easeInOut(duration: 0.16), value: isPlaying)
+            .accessibilityLabel(clip.displayName ?? clip.playbackCue.rosterDisplayTitle)
+            .accessibilityValue(isPlaying ? "Currently playing" : "")
+            .accessibilityHint(isPlayable ? "Plays this Custom Clip." : "Explains what this Custom Clip needs before it can play.")
+        }
+
+        private var customClipBackgroundColor: Color {
+            if isPlaying {
+                return Color.rollCall(.live, surface: .live).opacity(0.22)
+            }
+            return Color.rollCall(.neutralSurface, surface: .live)
+        }
+
+        private var customClipBorderColor: Color {
+            if isPlaying {
+                return Color.rollCall(.live, surface: .live).opacity(0.95)
+            }
+            if isPlayable {
+                return liveAccentOutlineColor(theme: teamAccentTheme, colorScheme: colorScheme, lightOpacity: 0.85, darkOpacity: 0.42)
+            }
+            return Color.rollCall(.warning, surface: surface)
+        }
+
+        private var customClipShadowColor: Color {
+            isPlaying ? Color.rollCall(.live, surface: .live).opacity(0.20) : .clear
         }
     }
 
@@ -1236,24 +1415,6 @@ struct RootView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: RollCallSpacingTier.large.value) {
                     if let team = appModel.selectedTeam {
-                        TeamsSectionGroup(
-                            title: "Team Clips",
-                            helperText: "Save reusable walk-up clips for this team without changing every player's setup."
-                        ) {
-                            Button {
-                                showTeamClips = true
-                            } label: {
-                                SettingsRowLabel(
-                                    title: team.teamClips.isEmpty ? "Create Team Clips" : "Manage Team Clips",
-                                    detail: team.teamClips.isEmpty
-                                        ? "Build a reusable team-level clip library."
-                                        : "\(team.teamClips.count) saved \(team.teamClips.count == 1 ? "clip" : "clips").",
-                                    systemImage: "music.note.house"
-                                )
-                            }
-                            .rollCallButtonStyle(.secondary)
-                        }
-
                         TeamsSectionGroup(
                             title: "Currently Selected Team",
                             helperText: "Lifecycle tools stay here so they do not interrupt normal team selection."
@@ -1736,7 +1897,7 @@ struct RootView: View {
                 presentPlayerEditor(for: player)
             }
         case .teamClip:
-            selectedTab = .teams
+            selectedTab = .generalClips
         }
     }
 
@@ -3328,9 +3489,10 @@ private struct TeamsEmptyState: View {
     }
 }
 
-private struct TeamClipsSheet: View {
+private struct CustomClipsManagerSheet: View {
     @Environment(\.dismiss) private var dismiss
     @ObservedObject var appModel: AppModel
+    let initialClipID: UUID?
 
     @State private var songPickerMode: SongPickerMode?
     @State private var showFileImporter = false
@@ -3341,18 +3503,22 @@ private struct TeamClipsSheet: View {
     @State private var renamingClip: SongClip?
     @State private var renameText = ""
     @State private var deletingClip: SongClip?
-    @State private var showPromotionConfirmation = false
+    @State private var sourcePlayerClip: SongClip?
+    @State private var copySourceForEditor: SongClip?
     @State private var notice: String?
+
+    init(appModel: AppModel, initialClipID: UUID? = nil) {
+        self.appModel = appModel
+        self.initialClipID = initialClipID
+        _editingClip = State(
+            initialValue: initialClipID.flatMap { id in
+                appModel.selectedTeam?.teamClips.first(where: { $0.id == id })
+            }
+        )
+    }
 
     private var team: Team? {
         appModel.selectedTeam
-    }
-
-    private var privatePlayerSongCount: Int {
-        team?.players.filter {
-            guard case .privateClip? = $0.songAssignment else { return false }
-            return true
-        }.count ?? 0
     }
 
     var body: some View {
@@ -3361,22 +3527,23 @@ private struct TeamClipsSheet: View {
                 Section {
                     if let team, !team.teamClips.isEmpty {
                         ForEach(team.teamClips) { clip in
-                            teamClipRow(clip, team: team)
+                            customClipRow(clip)
                         }
+                        .onMove(perform: appModel.moveCustomClips)
                     } else {
                         ContentUnavailableView(
-                            "No Team Clips",
-                            systemImage: "music.note.house",
-                            description: Text("Create a reusable clip here, or save existing player songs below.")
+                            "No Custom Clips",
+                            systemImage: "music.note",
+                            description: Text("Add quick song clips for live sideline moments.")
                         )
                     }
                 } header: {
-                    Text("Saved Clips")
+                    Text("Custom Clips")
                 } footer: {
-                    Text("Players can share these clips. Editing here updates every player using the shared clip.")
+                    Text("Drag to arrange the live Clips grid. Copies remain independent from Player Songs.")
                 }
 
-                Section("Create Team Clip") {
+                Section("Add Custom Clip") {
                     Button {
                         songPickerMode = .musicLibrary
                     } label: {
@@ -3392,17 +3559,20 @@ private struct TeamClipsSheet: View {
                     } label: {
                         Label("Import Audio or Video", systemImage: "square.and.arrow.down")
                     }
-                }
-
-                Section {
-                    Button("Save Player Songs to Team Clips") {
-                        showPromotionConfirmation = true
+                    Menu {
+                        ForEach(team?.players ?? []) { player in
+                            if let clip = team?.songClip(for: player) {
+                                Button("\(player.displayName) — \(clip.playbackCue.rosterDisplayTitle)") {
+                                    sourcePlayerClip = clip
+                                    newClipName = "\(player.displayName) — \(clip.playbackCue.rosterDisplayTitle)"
+                                    copySourceForEditor = clip
+                                }
+                            }
+                        }
+                    } label: {
+                        Label("Use Existing Clip", systemImage: "doc.on.doc")
                     }
-                    .disabled(privatePlayerSongCount == 0)
-                } header: {
-                    Text("Advanced")
-                } footer: {
-                    Text("This converts each player's private song into a shared Team Clip. Exact duplicates are reused instead of added twice.")
+                    .disabled(team?.players.contains(where: { team?.songClip(for: $0) != nil }) != true)
                 }
 
                 if let notice {
@@ -3412,10 +3582,13 @@ private struct TeamClipsSheet: View {
                     }
                 }
             }
-            .navigationTitle("Team Clips")
+            .navigationTitle("Edit Custom Clips")
             .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
+                ToolbarItem(placement: .topBarLeading) {
                     Button("Done") { dismiss() }
+                }
+                ToolbarItem(placement: .topBarTrailing) {
+                    EditButton()
                 }
             }
             .sheet(item: $songPickerMode, onDismiss: {
@@ -3434,12 +3607,20 @@ private struct TeamClipsSheet: View {
             .sheet(item: $editingClip) { clip in
                 NavigationStack {
                     SongClipEditorView(appModel: appModel, initialCue: clip.editingCue) { cue in
-                        appModel.updateTeamClip(
+                        appModel.updateCustomClip(
                             clip.id,
                             with: cue,
-                            named: clip.displayName ?? cue.rosterDisplayTitle
+                            named: clip.displayName ?? ""
                         )
                         editingClip = nil
+                    }
+                }
+            }
+            .sheet(item: $copySourceForEditor) { clip in
+                NavigationStack {
+                    SongClipEditorView(appModel: appModel, initialCue: clip.editingCue) { cue in
+                        pendingNewCue = cue
+                        copySourceForEditor = nil
                     }
                 }
             }
@@ -3458,21 +3639,27 @@ private struct TeamClipsSheet: View {
                     appModel.lastError = error.localizedDescription
                 }
             }
-            .alert("Name Team Clip", isPresented: Binding(
+            .alert("Name Custom Clip", isPresented: Binding(
                 get: { pendingNewCue != nil },
-                set: { if !$0 { pendingNewCue = nil } }
+                set: {
+                    if !$0 {
+                        pendingNewCue = nil
+                        sourcePlayerClip = nil
+                    }
+                }
             )) {
                 TextField("Clip name", text: $newClipName)
                 Button("Cancel", role: .cancel) {
                     pendingNewCue = nil
+                    sourcePlayerClip = nil
                 }
                 Button("Save") {
                     savePendingCue()
                 }
             } message: {
-                Text("Use a short name players will recognize.")
+                Text("Names are optional. If left blank, Roll Call shows the song title.")
             }
-            .alert("Rename Team Clip", isPresented: Binding(
+            .alert("Rename Custom Clip", isPresented: Binding(
                 get: { renamingClip != nil },
                 set: { if !$0 { renamingClip = nil } }
             )) {
@@ -3482,12 +3669,12 @@ private struct TeamClipsSheet: View {
                 }
                 Button("Rename") {
                     guard let clip = renamingClip else { return }
-                    appModel.updateTeamClip(clip.id, with: clip.editingCue, named: renameText)
+                    appModel.updateCustomClip(clip.id, with: clip.editingCue, named: renameText)
                     renamingClip = nil
                 }
             }
             .confirmationDialog(
-                "Delete Team Clip?",
+                "Delete Custom Clip?",
                 isPresented: Binding(
                     get: { deletingClip != nil },
                     set: { if !$0 { deletingClip = nil } }
@@ -3495,21 +3682,9 @@ private struct TeamClipsSheet: View {
                 titleVisibility: .visible
             ) {
                 if let deletingClip {
-                    let assignmentCount = team?.playerAssignmentCount(forTeamClipID: deletingClip.id) ?? 0
-                    if assignmentCount > 0 {
-                        Button("Keep \(assignmentCount) Player \(assignmentCount == 1 ? "Copy" : "Copies")") {
-                            appModel.deleteTeamClip(deletingClip.id, keepPlayerCopies: true)
-                            self.deletingClip = nil
-                        }
-                        Button("Remove from Players and Delete", role: .destructive) {
-                            appModel.deleteTeamClip(deletingClip.id, keepPlayerCopies: false)
-                            self.deletingClip = nil
-                        }
-                    } else {
-                        Button("Delete Team Clip", role: .destructive) {
-                            appModel.deleteTeamClip(deletingClip.id, keepPlayerCopies: false)
-                            self.deletingClip = nil
-                        }
+                    Button("Move to Recently Deleted", role: .destructive) {
+                        appModel.deleteCustomClip(deletingClip.id)
+                        self.deletingClip = nil
                     }
                     Button("Cancel", role: .cancel) {
                         self.deletingClip = nil
@@ -3517,35 +3692,20 @@ private struct TeamClipsSheet: View {
                 }
             } message: {
                 if let deletingClip {
-                    let assignmentCount = team?.playerAssignmentCount(forTeamClipID: deletingClip.id) ?? 0
-                    if assignmentCount > 0 {
-                        Text("\(assignmentCount) \(assignmentCount == 1 ? "player uses" : "players use") this shared clip. Keep private player copies to preserve their current Game Day songs.")
-                    } else {
-                        Text("This clip is not assigned to any players.")
-                    }
+                    Text("\(deletingClip.displayName ?? deletingClip.playbackCue.rosterDisplayTitle) will stay in Recently Deleted for 60 days. Player Songs copied from it will not change.")
                 }
-            }
-            .alert("Save Player Songs?", isPresented: $showPromotionConfirmation) {
-                Button("Cancel", role: .cancel) { }
-                Button("Save \(privatePlayerSongCount) Songs") {
-                    let result = appModel.savePlayerSongsToTeamClips()
-                    notice = "Saved \(result.addedCount) new clips, reused \(result.reusedCount) exact matches, and linked \(result.assignedPlayerCount) players."
-                }
-            } message: {
-                Text("Each private player song will become a shared Team Clip. Existing exact matches will be reused.")
             }
         }
     }
 
     @ViewBuilder
-    private func teamClipRow(_ clip: SongClip, team: Team) -> some View {
-        let assignmentCount = team.playerAssignmentCount(forTeamClipID: clip.id)
+    private func customClipRow(_ clip: SongClip) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
                 VStack(alignment: .leading, spacing: 3) {
                     Text(clip.displayName ?? clip.playbackCue.rosterDisplayTitle)
                         .font(.headline)
-                    Text("\(assignmentCount) \(assignmentCount == 1 ? "player" : "players")")
+                    Text(clip.playbackCue.rosterDisplayTitle)
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
@@ -3566,62 +3726,99 @@ private struct TeamClipsSheet: View {
                         .font(.title3)
                 }
             }
-            Text(clip.playbackCue.rosterDisplayTitle)
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
         }
         .padding(.vertical, 4)
     }
 
     private func savePendingCue() {
         guard let cue = pendingNewCue else { return }
-        switch appModel.saveTeamClip(cue: cue, named: newClipName) {
-        case .saved:
-            notice = "Team Clip saved."
-        case .exactDuplicate:
-            notice = "That exact clip is already in Team Clips, so Roll Call did not add a duplicate."
-        case nil:
-            break
+        if let sourcePlayerClip {
+            _ = appModel.saveCustomClipCopy(from: sourcePlayerClip, editedCue: cue, named: newClipName)
+        } else {
+            _ = appModel.saveCustomClip(cue: cue, named: newClipName)
         }
+        notice = "Custom Clip saved."
         pendingNewCue = nil
+        sourcePlayerClip = nil
     }
 }
 
-private struct TeamClipPickerSheet: View {
+private struct ExistingClipPickerSheet: View {
     @Environment(\.dismiss) private var dismiss
     @ObservedObject var appModel: AppModel
     let playerID: UUID
+    @State private var selectedClip: SongClip?
 
     var body: some View {
         NavigationStack {
-            List(appModel.selectedTeam?.teamClips ?? []) { clip in
-                Button {
-                    appModel.assignTeamClip(clip.id, to: playerID)
-                    dismiss()
-                } label: {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text(clip.displayName ?? clip.playbackCue.rosterDisplayTitle)
-                            .foregroundStyle(.primary)
-                        Text(clip.playbackCue.rosterDisplayTitle)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
+            List {
+                if let team = appModel.selectedTeam {
+                    Section("Player Songs") {
+                        ForEach(team.players.filter { $0.id != playerID }) { player in
+                            if let clip = team.songClip(for: player) {
+                                existingClipButton(
+                                    clip: clip,
+                                    title: player.displayName,
+                                    subtitle: clip.playbackCue.rosterDisplayTitle
+                                )
+                            }
+                        }
+                    }
+
+                    Section("Custom Clips") {
+                        ForEach(team.teamClips) { clip in
+                            existingClipButton(
+                                clip: clip,
+                                title: clip.displayName ?? clip.playbackCue.rosterDisplayTitle,
+                                subtitle: clip.playbackCue.rosterDisplayTitle
+                            )
+                        }
                     }
                 }
             }
             .overlay {
-                if appModel.selectedTeam?.teamClips.isEmpty != false {
+                if sourceCount == 0 {
                     ContentUnavailableView(
-                        "No Team Clips",
-                        systemImage: "music.note.house",
-                        description: Text("Create reusable clips from the Teams tab first.")
+                        "No Existing Clips",
+                        systemImage: "music.note",
+                        description: Text("Add another Player Song or Custom Clip first.")
                     )
                 }
             }
-            .navigationTitle("Choose Team Clip")
+            .navigationTitle("Use Existing Clip")
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
                     Button("Cancel") { dismiss() }
                 }
+            }
+            .sheet(item: $selectedClip) { clip in
+                NavigationStack {
+                    SongClipEditorView(appModel: appModel, initialCue: clip.editingCue) { cue in
+                        appModel.savePlayerSongCopy(from: clip, editedCue: cue, to: playerID)
+                        selectedClip = nil
+                        dismiss()
+                    }
+                }
+            }
+        }
+    }
+
+    private var sourceCount: Int {
+        guard let team = appModel.selectedTeam else { return 0 }
+        return team.players.filter { $0.id != playerID && team.songClip(for: $0) != nil }.count
+            + team.teamClips.count
+    }
+
+    private func existingClipButton(clip: SongClip, title: String, subtitle: String) -> some View {
+        Button {
+            selectedClip = clip
+        } label: {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(title)
+                    .foregroundStyle(.primary)
+                Text(subtitle)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
         }
     }
@@ -4521,7 +4718,7 @@ private extension PackageImportAudit.Item.Destination {
     var repairButtonTitle: String {
         switch self {
         case .player: return "Open Player Repair"
-        case .teamClip: return "Open Team Clips"
+        case .teamClip: return "Open Custom Clips"
         }
     }
 }
@@ -6081,13 +6278,13 @@ private struct RecoveryCenterView: View {
     var body: some View {
         List {
             Section("Recently Deleted") {
-                Text("Deleted teams and players stay here for 60 days unless you restore or permanently delete them.")
+                Text("Deleted teams, players, and Custom Clips stay here for 60 days unless you restore or permanently delete them.")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
 
                 if appModel.state.recentlyDeleted.isEmpty {
                     VStack(alignment: .leading, spacing: 6) {
-                        Text("No recently deleted teams or players.")
+                        Text("No recently deleted teams, players, or Custom Clips.")
                         Text("If you remove something by mistake, you can restore it here.")
                             .font(.footnote)
                             .foregroundStyle(.secondary)
@@ -6242,6 +6439,8 @@ private struct RecoveryCenterView: View {
             return "Team"
         case .player:
             return "Player"
+        case .customClip:
+            return "Custom Clip"
         }
     }
 
@@ -6251,6 +6450,8 @@ private struct RecoveryCenterView: View {
             return deletedTeam.team.name
         case .player(let deletedPlayer):
             return deletedPlayer.player.displayName
+        case .customClip(let deletedClip):
+            return deletedClip.clip.displayName ?? deletedClip.clip.playbackCue.rosterDisplayTitle
         }
     }
 
@@ -6260,6 +6461,8 @@ private struct RecoveryCenterView: View {
             return nil
         case .player(let deletedPlayer):
             return appModel.recoveryTeamName(for: deletedPlayer)
+        case .customClip(let deletedClip):
+            return appModel.recoveryTeamName(for: deletedClip)
         }
     }
 
@@ -6293,6 +6496,9 @@ private struct RecoveryCenterView: View {
             return "Delete \(deletedTeam.team.name) permanently? You will not be able to restore it from Recently Deleted."
         case .player(let deletedPlayer):
             return "Delete \(deletedPlayer.player.displayName) permanently? You will not be able to restore them from Recently Deleted."
+        case .customClip(let deletedClip):
+            let name = deletedClip.clip.displayName ?? deletedClip.clip.playbackCue.rosterDisplayTitle
+            return "Delete \(name) permanently? You will not be able to restore this Custom Clip from Recently Deleted."
         }
     }
 }
@@ -6493,7 +6699,7 @@ private struct DeveloperToolsView: View {
                             }
                         }
 
-                        Text("Cleanup only examines Roll Call's GeneratedClips folder. Files referenced by teams, Team Clips, Recently Deleted, preparation work, or readable backups are retained. If anything is uncertain, cleanup stops without deleting files.")
+                        Text("Cleanup only examines Roll Call's GeneratedClips folder. Files referenced by teams, Custom Clips, Recently Deleted, preparation work, or readable backups are retained. If anything is uncertain, cleanup stops without deleting files.")
                             .font(.footnote)
                             .foregroundStyle(.secondary)
                     }
@@ -6886,7 +7092,7 @@ private struct PlayerEditorSheet: View {
     @State private var songReadinessExplanation: SongReadinessExplanation?
     @State private var showDiscardChangesConfirmation = false
     @State private var isStartTrimEditingEnabled = false
-    @State private var showTeamClipPicker = false
+    @State private var showExistingClipPicker = false
     @FocusState private var focusedField: Field?
 
     private let lengthOptions: [Double] = [6, 8, 10, 12, 15]
@@ -6943,33 +7149,15 @@ private struct PlayerEditorSheet: View {
                                         Text("Selected Cue")
                                             .rollCallText(.cardTitle)
                                         selectedCueSummary(for: cue)
-                                        if isUsingSharedTeamClip {
-                                            StatusChip(
-                                                text: "Shared Team Clip",
-                                                role: .neutral,
-                                                systemImage: "person.3",
-                                                emphasis: .subdued
-                                            )
-                                        }
                                     }
                                 }
 
-                                if isUsingSharedTeamClip {
-                                    Button {
-                                        appModel.makePrivateSongCopy(for: player.id)
-                                        refreshPlayerFromModel()
-                                    } label: {
-                                        Label("Make Player Copy to Edit", systemImage: "doc.on.doc")
-                                    }
-                                    .rollCallButtonStyle(.secondary)
-                                } else {
-                                    Button {
-                                        songPickerMode = .musicLibrary
-                                    } label: {
-                                        Label("Choose from Music Library", systemImage: "music.note.list")
-                                    }
-                                    .rollCallButtonStyle(.secondary)
+                                Button {
+                                    songPickerMode = .musicLibrary
+                                } label: {
+                                    Label("Choose from Music Library", systemImage: "music.note.list")
                                 }
+                                .rollCallButtonStyle(.secondary)
                             }
                         } else {
                             VStack(alignment: .leading, spacing: 10) {
@@ -6994,12 +7182,12 @@ private struct PlayerEditorSheet: View {
                         }
 
                         Button {
-                            showTeamClipPicker = true
+                            showExistingClipPicker = true
                         } label: {
-                            Label("Use Team Clip", systemImage: "music.note.house")
+                            Label("Use Existing Clip", systemImage: "doc.on.doc")
                         }
                         .rollCallButtonStyle(.secondary)
-                        .disabled(appModel.selectedTeam?.teamClips.isEmpty != false)
+                        .disabled(existingClipSourceCount == 0)
 
                         Button {
                             songPickerMode = .appleMusic
@@ -7222,10 +7410,10 @@ private struct PlayerEditorSheet: View {
                     }
                 )
             }
-            .sheet(isPresented: $showTeamClipPicker, onDismiss: {
+            .sheet(isPresented: $showExistingClipPicker, onDismiss: {
                 refreshPlayerFromModel()
             }) {
-                TeamClipPickerSheet(appModel: appModel, playerID: player.id)
+                ExistingClipPickerSheet(appModel: appModel, playerID: player.id)
             }
             .sheet(isPresented: $showAdvancedTrim) {
                 if player.cue != nil {
@@ -7277,9 +7465,10 @@ private struct PlayerEditorSheet: View {
         effectiveSongClip?.playbackCue
     }
 
-    private var isUsingSharedTeamClip: Bool {
-        guard case .sharedTeamClip? = player.songAssignment else { return false }
-        return true
+    private var existingClipSourceCount: Int {
+        guard let team = appModel.selectedTeam else { return 0 }
+        let otherPlayerSongs = team.players.filter { $0.id != player.id && team.songClip(for: $0) != nil }.count
+        return otherPlayerSongs + team.teamClips.count
     }
 
     private var cueDurationLimit: Double {

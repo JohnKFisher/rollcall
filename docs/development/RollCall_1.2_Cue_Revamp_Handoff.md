@@ -327,7 +327,7 @@ Settled behavior:
 - Job truth lives on the clip/model state, not a fragile external queue file.
 - One active preparation job at a time is enough for 1.2.
 - Manual `Try Now` or `Improve Reliability` can bump a clip forward.
-- Preparation pauses during Game Day and Clips.
+- Preparation is throttled during Game Day and Clips so jobs start only after live playback has been idle briefly.
 - Preparation pauses in Low Power Mode unless user explicitly requests it.
 - Local/imported/readable device-library clips can generate offline.
 - Apple Music-linked preparation may require network or device conditions depending on what is being attempted.

@@ -108,7 +108,7 @@ final class ReadinessServiceTests: XCTestCase {
     }
 
     @MainActor
-    func testSnapshotTreatsIncludedGeneratedSharedClipAsPortableReady() throws {
+    func testSnapshotTreatsIncludedGeneratedPlayerClipAsPortableReady() throws {
         let generatedPath = "GeneratedClips/shared-ready.m4a"
         try Data("generated".utf8).write(to: AppPaths.assetURL(relativePath: generatedPath))
         var clip = SongClip(
@@ -130,9 +130,8 @@ final class ReadinessServiceTests: XCTestCase {
             name: "Alex Ramirez",
             number: "12"
         )
-        player.songAssignment = .sharedTeamClip(clip.id)
-        var team = RollCallTestFixtures.team(players: [player])
-        team.teamClips = [clip]
+        player.songAssignment = .privateClip(clip)
+        let team = RollCallTestFixtures.team(players: [player])
 
         let snapshot = ReadinessService(audioAssetService: AudioAssetService()).snapshot(for: team)
         let check = snapshot.checks.first { $0.id == "player-\(player.id)-ready" }

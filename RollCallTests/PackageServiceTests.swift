@@ -170,7 +170,7 @@ final class PackageServiceTests: XCTestCase {
         }
     }
 
-    func testGeneratedTeamClipRoundTripsAsPortablePackageAsset() throws {
+    func testGeneratedCustomClipRoundTripsAsPortablePackageAsset() throws {
         let generatedPath = "GeneratedClips/team-warmup.m4a"
         try Data("portable-generated-audio".utf8)
             .write(to: AppPaths.assetURL(relativePath: generatedPath))
@@ -197,12 +197,11 @@ final class PackageServiceTests: XCTestCase {
             portability: .portableLocalClip,
             generatedAssetCanBeExported: true
         )
-        var player = RollCallTestFixtures.player(
+        let player = RollCallTestFixtures.player(
             id: RollCallTestFixtures.alexID,
             name: "Alex Ramirez",
             number: "12"
         )
-        player.songAssignment = .sharedTeamClip(clip.id)
         var team = RollCallTestFixtures.team(players: [player], battingOrder: [player.id])
         team.teamClips = [clip]
 
@@ -223,8 +222,8 @@ final class PackageServiceTests: XCTestCase {
         XCTAssertTrue(importedPath.hasPrefix("GeneratedClips/"))
         XCTAssertTrue(FileManager.default.fileExists(atPath: try AppPaths.assetURL(relativePath: importedPath).path))
         XCTAssertEqual(result.audit.items.first?.state, .localClipIncluded)
-        guard case .localAudio? = result.manifest.team.cue(for: result.manifest.team.players[0])?.source else {
-            return XCTFail("Expected imported shared Team Clip to use its included generated asset.")
+        guard case .localAudio = importedClip.playbackCue.source else {
+            return XCTFail("Expected the imported Custom Clip to use its included generated asset.")
         }
     }
 

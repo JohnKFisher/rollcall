@@ -156,6 +156,8 @@ struct GeneratedClipCleanupService {
                 collectReferences(from: deleted.team, into: &references)
             case .player(let deleted):
                 collectReferences(from: deleted.player, into: &references)
+            case .customClip(let deleted):
+                collectReferences(from: deleted.clip, into: &references)
             }
         }
         return references

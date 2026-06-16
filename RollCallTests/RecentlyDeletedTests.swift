@@ -128,6 +128,40 @@ final class RecentlyDeletedTests: XCTestCase {
     }
 
     @MainActor
+    func testDeletedCustomClipRestoresToOriginalPositionWithoutChangingPlayerCopy() throws {
+        let first = SongClip(cue: RollCallTestFixtures.localCue(relativePath: "first.m4a"))
+        var second = SongClip(cue: RollCallTestFixtures.localCue(relativePath: "second.m4a"))
+        second.id = UUID()
+        second.displayName = "Second"
+        var player = RollCallTestFixtures.player(
+            id: RollCallTestFixtures.alexID,
+            name: "Alex Ramirez",
+            number: "12"
+        )
+        player.songAssignment = .privateClip(second.playerSongCopy())
+        var team = RollCallTestFixtures.team(players: [player])
+        team.teamClips = [first, second]
+        try writeState(RollCallTestFixtures.appState(team: team))
+        try writeAsset("first.m4a")
+        try writeAsset("second.m4a")
+        let model = AppModel()
+
+        model.deleteCustomClip(first.id)
+
+        XCTAssertEqual(model.selectedTeam?.teamClips.map(\.id), [second.id])
+        guard let deletedItem = model.state.recentlyDeleted.first else {
+            return XCTFail("Expected a recoverable Custom Clip.")
+        }
+        model.restoreRecentlyDeletedItem(deletedItem)
+
+        XCTAssertEqual(model.selectedTeam?.teamClips.map(\.id), [first.id, second.id])
+        guard case .privateClip(let playerClip)? = model.selectedTeam?.players.first?.songAssignment else {
+            return XCTFail("Expected the player copy to remain private.")
+        }
+        XCTAssertNotEqual(playerClip.id, second.id)
+    }
+
+    @MainActor
     func testRefreshRecoveryStatePurgesExpiredItemsAndDeletesUnreferencedAssets() throws {
         let deletedPlayer = RollCallTestFixtures.player(
             id: RollCallTestFixtures.alexID,
