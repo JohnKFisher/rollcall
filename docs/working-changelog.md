@@ -19,7 +19,10 @@ Internal notes for building public-facing changelogs. Keep entries understandabl
 - Player Songs and Custom Clips can be copied into each other through `Use Existing Clip`; every copy is independent, so later edits and deletion never silently change the source. [public candidate] [needs review]
 - The Clips page now separates built-in Sound Effects from ordered Custom Clips, keeps live tiles playback-only, and places adding, editing, reordering, and deletion behind an explicit Edit action. [public candidate] [needs review]
 - The Clips page now shows the five built-in Sound Effects in a compact row with sound-specific icons and highlights the active playing clip with the same live blue treatment used on Game Day. [needs review]
+- Custom Clip tiles now use a denser three-wide layout that better matches the Game Day player grid, without separate visible play buttons. [needs review]
+- The Custom Clips edit sheet now opens with reorder handles visible immediately, matching the lineup editor. [needs review]
 - Custom Clip preparation can now continue carefully while Clips or Game Day is open, but waits for live playback to be idle so tap-to-play sounds stay responsive. [needs review]
+- The active-team picker now shows each team in its own team color, with a matching highlight around the current team. [needs review]
 - Onboarding now uses the same Music Library-first song choices and waveform clip editor as Player setup, so selecting, trimming, previewing, and saving a first walk-up song works consistently throughout Roll Call. [public candidate] [needs review]
 - Volume Automation now applies only to source-backed Apple Music. Local, generated, built-in, and Announcement Cue files play at their encoded volume without additional runtime fading or volume resets.
 - Song readiness now says `Ready on Any Device` for portable Roll Call-owned clips and `Ready on This Device` for device-dependent playback. Tapping the status explains what it means for playback, Apple Music, and team exports.

@@ -1093,7 +1093,7 @@ struct RootView: View {
     }
 
     private var customClipGridColumns: [GridItem] {
-        [GridItem(.adaptive(minimum: 145), spacing: 10)]
+        Array(repeating: GridItem(.flexible(), spacing: 10), count: 3)
     }
 
     private struct ClipsEmptyStateCard: View {
@@ -1261,40 +1261,39 @@ struct RootView: View {
 
         var body: some View {
             Button(action: play) {
-                VStack(alignment: .leading, spacing: 8) {
-                    Text(clip.displayName ?? clip.playbackCue.rosterDisplayTitle)
-                        .rollCallText(.cardTitle, surface: surface)
-                        .lineLimit(2)
-                        .minimumScaleFactor(0.78)
-                    if let status {
-                        StatusChip(
-                            text: status.text,
-                            role: status.role,
-                            systemImage: status.icon,
-                            emphasis: .subdued
-                        )
+                VStack(alignment: .leading, spacing: 5) {
+                    HStack(alignment: .center, spacing: 4) {
+                        Text("Clip")
+                            .font(.caption.weight(.bold))
+                            .foregroundStyle(Color(uiColor: .secondaryLabel))
+                        Spacer(minLength: 0)
+                        tileIcon
                     }
-                    Spacer(minLength: 0)
-                    HStack {
-                        Spacer()
-                        Image(systemName: isPlaying ? "stop.fill" : (isPlayable ? "play.fill" : "exclamationmark.triangle.fill"))
-                            .foregroundStyle(teamAccentTheme.color(.onFill, surface: .live))
-                            .frame(width: 36, height: 36)
-                            .background(
-                                isPlayable ? teamAccentTheme.color(.fill, surface: .live) : Color.rollCall(.warning, surface: surface),
-                                in: Circle()
-                            )
+
+                    Text(clip.displayName ?? clip.playbackCue.rosterDisplayTitle)
+                        .font(.headline.weight(.bold))
+                        .foregroundStyle(Color(uiColor: .label))
+                        .lineLimit(2)
+                        .minimumScaleFactor(0.74)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+
+                    if let status {
+                        Text(status.text)
+                            .font(.caption2.weight(.bold))
+                            .textCase(.uppercase)
+                            .foregroundStyle(statusColor(status.role))
+                            .lineLimit(2)
+                            .minimumScaleFactor(0.78)
                     }
                 }
-                .padding(14)
-                .frame(minHeight: 112)
-                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(8)
+                .frame(maxWidth: .infinity, minHeight: 82, alignment: .topLeading)
                 .background(
                     customClipBackgroundColor,
-                    in: RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    in: RoundedRectangle(cornerRadius: 13, style: .continuous)
                 )
                 .overlay {
-                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    RoundedRectangle(cornerRadius: 13, style: .continuous)
                         .strokeBorder(
                             customClipBorderColor,
                             lineWidth: isPlaying ? 2 : 1
@@ -1307,6 +1306,39 @@ struct RootView: View {
             .accessibilityLabel(clip.displayName ?? clip.playbackCue.rosterDisplayTitle)
             .accessibilityValue(isPlaying ? "Currently playing" : "")
             .accessibilityHint(isPlayable ? "Plays this Custom Clip." : "Explains what this Custom Clip needs before it can play.")
+        }
+
+        @ViewBuilder
+        private var tileIcon: some View {
+            if isPlaying {
+                PlayingSpeakerSymbol(systemImage: "speaker.wave.3.fill", color: Color.rollCall(.live, surface: .live))
+                    .font(.caption.weight(.bold))
+            } else if let status {
+                Image(systemName: status.icon)
+                    .font(.caption.weight(.bold))
+                    .foregroundStyle(statusColor(status.role))
+            } else {
+                Image(systemName: "music.note")
+                    .font(.caption.weight(.bold))
+                    .foregroundStyle(Color(uiColor: .secondaryLabel))
+            }
+        }
+
+        private func statusColor(_ role: StatusChipRole) -> Color {
+            switch role {
+            case .live:
+                return Color.rollCall(.live, surface: .live)
+            case .ready:
+                return Color.rollCall(.ready, surface: .live)
+            case .warning:
+                return Color.rollCall(.warning, surface: surface)
+            case .destructive:
+                return Color.rollCall(.destructive, surface: surface)
+            case .disabled:
+                return Color.rollCall(.disabled, surface: surface)
+            case .neutral:
+                return Color(uiColor: .secondaryLabel)
+            }
         }
 
         private var customClipBackgroundColor: Color {
@@ -3404,9 +3436,13 @@ private struct TeamSelectionRow: View {
     let team: Team
     let isSelected: Bool
 
+    private var teamAccentTheme: TeamAccentTheme {
+        team.accentPreset.theme
+    }
+
     var body: some View {
         HStack(alignment: .center, spacing: RollCallSpacingTier.standard.value) {
-            TeamRowIcon(isSelected: isSelected)
+            TeamRowIcon(isSelected: isSelected, teamAccentTheme: teamAccentTheme)
 
             VStack(alignment: .leading, spacing: 4) {
                 Text(team.name)
@@ -3418,12 +3454,30 @@ private struct TeamSelectionRow: View {
             .frame(maxWidth: .infinity, alignment: .leading)
 
             if isSelected {
-                StatusChip(
-                    text: "Current",
-                    role: .ready,
-                    systemImage: "checkmark.circle",
-                    emphasis: .subdued
-                )
+                Label("Current", systemImage: "checkmark.circle")
+                    .rollCallText(.chipLabel)
+                    .foregroundStyle(teamAccentTheme.color(.primary))
+                    .padding(.vertical, 5)
+                    .padding(.horizontal, 9)
+                    .background(teamAccentTheme.color(.subtle).opacity(0.14), in: Capsule(style: .continuous))
+                    .overlay {
+                        Capsule(style: .continuous)
+                            .strokeBorder(teamAccentTheme.color(.primary).opacity(0.35), lineWidth: 1)
+                    }
+            }
+        }
+        .padding(.horizontal, isSelected ? 10 : 0)
+        .padding(.vertical, isSelected ? 8 : 0)
+        .background {
+            if isSelected {
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .fill(teamAccentTheme.color(.subtle).opacity(0.12))
+            }
+        }
+        .overlay {
+            if isSelected {
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .strokeBorder(teamAccentTheme.color(.primary).opacity(0.48), lineWidth: 1.4)
             }
         }
         .contentShape(Rectangle())
@@ -3435,7 +3489,7 @@ private struct SelectedTeamSummary: View {
 
     var body: some View {
         HStack(alignment: .top, spacing: RollCallSpacingTier.standard.value) {
-            TeamRowIcon(isSelected: true)
+            TeamRowIcon(isSelected: true, teamAccentTheme: team.accentPreset.theme)
 
             VStack(alignment: .leading, spacing: RollCallSpacingTier.tight.value) {
                 Text(team.name)
@@ -3464,15 +3518,14 @@ private struct SelectedTeamSummary: View {
 
 private struct TeamRowIcon: View {
     let isSelected: Bool
-
-    @Environment(\.rollCallTeamAccentTheme) private var teamAccentTheme
+    let teamAccentTheme: TeamAccentTheme
 
     var body: some View {
         Image(systemName: isSelected ? "person.3.fill" : "person.3")
             .font(.system(size: 17, weight: .semibold))
-            .foregroundStyle(isSelected ? Color.rollCall(.ready) : teamAccentTheme.color(.primary))
+            .foregroundStyle(teamAccentTheme.color(.primary))
             .frame(width: 34, height: 34)
-            .background((isSelected ? Color.rollCall(.ready) : teamAccentTheme.color(.subtle)).opacity(0.13))
+            .background(teamAccentTheme.color(.subtle).opacity(isSelected ? 0.18 : 0.13))
             .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
             .accessibilityHidden(true)
     }
@@ -3506,6 +3559,7 @@ private struct CustomClipsManagerSheet: View {
     @State private var sourcePlayerClip: SongClip?
     @State private var copySourceForEditor: SongClip?
     @State private var notice: String?
+    @State private var editMode: EditMode = .active
 
     init(appModel: AppModel, initialClipID: UUID? = nil) {
         self.appModel = appModel
@@ -3583,12 +3637,10 @@ private struct CustomClipsManagerSheet: View {
                 }
             }
             .navigationTitle("Edit Custom Clips")
+            .environment(\.editMode, $editMode)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
                     Button("Done") { dismiss() }
-                }
-                ToolbarItem(placement: .topBarTrailing) {
-                    EditButton()
                 }
             }
             .sheet(item: $songPickerMode, onDismiss: {
