@@ -29,11 +29,15 @@ Internal notes for building public-facing changelogs. Keep entries understandabl
 - Song readiness now says `Ready on Any Device` for portable Roll Call-owned clips and `Ready on This Device` for device-dependent playback. Tapping the status explains what it means for playback, Apple Music, and team exports.
 - Apple Music catalog search now keeps its search field visibly anchored at the top of the screen beneath a large title, more closely matching the familiar Music Library picker layout.
 - Advanced clip editing now uses exact Start, Length, and Fade Out values with quarter-second and one-second adjustment buttons instead of imprecise sliders.
+- Make Your Clip now shows the current preview time between the selected window's start and end times while the clip is playing.
+- New song clips now start at a 12-second length by default for everyone, then remember any length you choose later; the editor also recommends 10-12 seconds for best game pace.
 - Song selection now opens Apple's familiar Music library picker by default. Apple Music catalog search and file import remain clearly available as separate choices and use the same clip editor afterward. [public candidate] [needs review]
 - Choosing a song or imported file now creates a draft first. The player's existing Game Day cue is not replaced until Save is tapped in the clip editor. [public candidate] [needs review]
 
 ### Fixed
 
+- The welcome screen's `Let's Get Started` button is readable in both light and dark mode.
+- Music Library songs now preview through the exact selected library item, preserving arbitrary start times for cloud-backed library songs instead of relying on partial asset URLs or mismatched catalog playback.
 - Apple Music-based Custom Clips no longer keep bouncing back to `Preparing` after Roll Call has already settled them as source-backed or unavailable on this device. [needs review]
 - Edited Player Songs and Custom Clips no longer play or export an older generated clip while the updated selection is being prepared.
 - Closing an unchanged Player Editor no longer shows a discard warning just because song metadata or preparation readiness refreshed in the background.

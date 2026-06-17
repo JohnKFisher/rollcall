@@ -2010,7 +2010,7 @@ private struct OnboardingWelcomeView: View {
             Button(action: onGetStarted) {
                 Text("Let’s Get Started")
                     .font(.headline.weight(.bold))
-                    .foregroundStyle(Color(uiColor: .label))
+                    .foregroundStyle(Color.black)
                     .lineLimit(1)
                     .minimumScaleFactor(0.82)
                     .frame(maxWidth: .infinity)
@@ -2428,11 +2428,13 @@ private struct OnboardingRootView: View {
                         .rollCallText(.body)
                 } else {
                     onboardingCueSummary(cue)
-                    Text("To change it, choose another source and shape the replacement in Make Your Clip before saving.")
+                    Text("To change it, choose another source and shape the replacement in Make Your Clip before continuing. To make changes later, visit the Players tab.")
                         .rollCallText(.body)
                 }
-                Text("You can also just select crowd cheering sound effects too, and pick the song later, but where's the fun in that?")
-                    .rollCallText(.body)
+                if cue == nil {
+                    Text("You can also just select crowd cheering sound effects too, and pick the song later, but where's the fun in that?")
+                        .rollCallText(.body)
+                }
 
                 if cue != nil {
                     Button {
@@ -8600,7 +8602,7 @@ private struct AdvancedTrimSheet: View {
 
 private extension RecentAppleMusicSelection {
     var asSearchResult: MusicSearchResult {
-        MusicSearchResult(songID: songID, title: title, artistName: artistName, duration: duration, previewURL: previewURL, isCatalogBacked: isCatalogBacked ?? true)
+        MusicSearchResult(songID: songID, title: title, artistName: artistName, duration: duration, previewURL: previewURL, isCatalogBacked: isCatalogBacked ?? true, libraryPersistentID: libraryPersistentID)
     }
 }
 

@@ -139,7 +139,8 @@ struct SongPickerFlow: View {
                     duration: item.playbackDuration,
                     previewURL: nil,
                     artworkURL: nil,
-                    isCatalogBacked: true
+                    isCatalogBacked: true,
+                    libraryPersistentID: item.persistentID
                 )
             )
             return
@@ -400,6 +401,28 @@ struct SongClipEditorView: View {
         case unavailable
     }
 
+    private enum TimeMetricAlignment {
+        case leading
+        case center
+        case trailing
+
+        var horizontal: HorizontalAlignment {
+            switch self {
+            case .leading: return .leading
+            case .center: return .center
+            case .trailing: return .trailing
+            }
+        }
+
+        var frame: Alignment {
+            switch self {
+            case .leading: return .leading
+            case .center: return .center
+            case .trailing: return .trailing
+            }
+        }
+    }
+
     @ObservedObject var appModel: AppModel
     @ObservedObject private var playbackEngine: CuePlaybackEngine
     let onSave: (Cue) -> Void
@@ -449,9 +472,11 @@ struct SongClipEditorView: View {
                 }
 
                 HStack {
-                    Text(timeText(cue.startTime))
+                    timeMetric("Start", value: timeText(cue.startTime), alignment: .leading)
                     Spacer()
-                    Text("\(timeText(cue.startTime + cue.duration)) of \(timeText(timelineDuration))")
+                    timeMetric("Current", value: currentTimeText, alignment: .center)
+                    Spacer()
+                    timeMetric("End", value: "\(timeText(cue.startTime + cue.duration)) of \(timeText(timelineDuration))", alignment: .trailing)
                 }
                 .font(.caption.monospacedDigit())
                 .foregroundStyle(.secondary)
@@ -466,14 +491,20 @@ struct SongClipEditorView: View {
             }
 
             Section("Length") {
-                HStack {
-                    ForEach(lengthOptions, id: \.self) { option in
-                        Button("\(Int(option))s") {
-                            setDuration(option)
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack {
+                        ForEach(lengthOptions, id: \.self) { option in
+                            Button("\(Int(option))s") {
+                                setDuration(option)
+                            }
+                            .buttonStyle(.bordered)
+                            .tint(abs(cue.duration - option) < 0.01 ? .accentColor : .secondary)
                         }
-                        .buttonStyle(.bordered)
-                        .tint(abs(cue.duration - option) < 0.01 ? .accentColor : .secondary)
                     }
+
+                    Text("We recommend 10-12 seconds for best game pace")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
                 }
             }
 
@@ -570,6 +601,12 @@ struct SongClipEditorView: View {
         return playbackEngine.activeCueProgress
     }
 
+    private var currentTimeText: String {
+        guard let previewProgress else { return timeText(cue.startTime) }
+        let boundedProgress = min(max(0, previewProgress), 1)
+        return timeText(cue.startTime + cue.duration * boundedProgress)
+    }
+
     private var songTitle: String {
         switch cue.source {
         case .appleMusic(let source): return source.title
@@ -658,6 +695,17 @@ struct SongClipEditorView: View {
     private func timeText(_ value: TimeInterval) -> String {
         let seconds = max(0, Int(value.rounded()))
         return "\(seconds / 60):\(String(format: "%02d", seconds % 60))"
+    }
+
+    private func timeMetric(_ title: String, value: String, alignment: TimeMetricAlignment) -> some View {
+        VStack(alignment: alignment.horizontal, spacing: 2) {
+            Text(title)
+                .font(.caption2)
+                .textCase(.uppercase)
+                .foregroundStyle(.tertiary)
+            Text(value)
+        }
+        .frame(minWidth: 58, alignment: alignment.frame)
     }
 
     private func preciseTimeText(_ value: TimeInterval) -> String {

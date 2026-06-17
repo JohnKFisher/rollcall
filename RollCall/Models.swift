@@ -61,6 +61,7 @@ struct AppleMusicSource: Codable, Equatable, Identifiable {
     var duration: TimeInterval?
     var previewURL: URL?
     var isCatalogBacked: Bool? = nil
+    var libraryPersistentID: UInt64? = nil
 }
 
 struct RecentAppleMusicSelection: Codable, Equatable, Identifiable {
@@ -71,6 +72,7 @@ struct RecentAppleMusicSelection: Codable, Equatable, Identifiable {
     var duration: TimeInterval?
     var previewURL: URL?
     var isCatalogBacked: Bool? = nil
+    var libraryPersistentID: UInt64? = nil
     var selectedAt: Date
 }
 
@@ -830,8 +832,28 @@ struct ExperimentalSettings: Codable, Equatable {
 
 struct TrimDefaults: Codable, Equatable {
     var preferredLength: TimeInterval
+    var hasAppliedTwelveSecondDefaultReset: Bool = true
 
-    static let `default` = TrimDefaults(preferredLength: 8)
+    enum CodingKeys: String, CodingKey {
+        case preferredLength
+        case hasAppliedTwelveSecondDefaultReset
+    }
+
+    init(preferredLength: TimeInterval, hasAppliedTwelveSecondDefaultReset: Bool = true) {
+        self.preferredLength = preferredLength
+        self.hasAppliedTwelveSecondDefaultReset = hasAppliedTwelveSecondDefaultReset
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let hasAppliedReset = try container.decodeIfPresent(Bool.self, forKey: .hasAppliedTwelveSecondDefaultReset) ?? false
+        preferredLength = hasAppliedReset
+            ? try container.decodeIfPresent(TimeInterval.self, forKey: .preferredLength) ?? 12
+            : 12
+        hasAppliedTwelveSecondDefaultReset = true
+    }
+
+    static let `default` = TrimDefaults(preferredLength: 12)
 }
 
 enum OnboardingFlow: String, Codable, Equatable {

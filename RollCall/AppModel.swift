@@ -1140,7 +1140,8 @@ final class AppModel: ObservableObject {
                     artistName: source.artistName,
                     duration: source.duration,
                     previewURL: source.previewURL,
-                    isCatalogBacked: source.isCatalogBacked ?? true
+                    isCatalogBacked: source.isCatalogBacked ?? true,
+                    libraryPersistentID: source.libraryPersistentID
                 )
             )
         }
@@ -1539,6 +1540,7 @@ final class AppModel: ObservableObject {
             source.duration = resolved.duration
             source.previewURL = resolved.previewURL
             source.isCatalogBacked = true
+            source.libraryPersistentID = nil
             cue.source = .appleMusic(source)
             state.teams[teamIndex].players[playerIndex].cue = cue
             persist()
@@ -3484,7 +3486,7 @@ final class AppModel: ObservableObject {
     }
 
     private func makeDefaultAppleMusicCue(for result: MusicSearchResult) -> Cue {
-        var cue = Cue.appleDefault(source: AppleMusicSource(songID: result.songID, title: result.title, artistName: result.artistName, duration: result.duration, previewURL: result.previewURL, isCatalogBacked: result.isCatalogBacked))
+        var cue = Cue.appleDefault(source: AppleMusicSource(songID: result.songID, title: result.title, artistName: result.artistName, duration: result.duration, previewURL: result.previewURL, isCatalogBacked: result.isCatalogBacked, libraryPersistentID: result.libraryPersistentID))
         cue.duration = min(max(state.trimDefaults.preferredLength, 6), cueDurationLimit(for: cue))
         return cue
     }
@@ -3502,6 +3504,7 @@ final class AppModel: ObservableObject {
             duration: result.duration,
             previewURL: result.previewURL,
             isCatalogBacked: result.isCatalogBacked,
+            libraryPersistentID: result.libraryPersistentID,
             selectedAt: .now
         )
         state.recentAppleMusicSelections.removeAll { $0.songID == selection.songID }

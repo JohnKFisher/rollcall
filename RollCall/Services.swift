@@ -270,6 +270,7 @@ struct MusicSearchResult: Identifiable, Hashable {
     var previewURL: URL?
     var artworkURL: URL? = nil
     var isCatalogBacked: Bool = true
+    var libraryPersistentID: UInt64? = nil
 }
 
 struct ResolvedTeamPlaylistSongs {
@@ -622,6 +623,14 @@ private protocol AppleMusicCatalogPlaybackControlling: AnyObject {
         fadeOutDuration: TimeInterval,
         transitionCrossfadeEnabled: Bool
     ) async throws
+    func play(
+        mediaItem: MPMediaItem,
+        startTime: TimeInterval,
+        duration: TimeInterval,
+        volumeAutomationEnabled: Bool,
+        setsInitialVolumeToMax: Bool,
+        fadeOutDuration: TimeInterval
+    ) async throws
     func setVolume(_ volume: Float)
     func restoreVolume()
     func discardPendingRestore()
@@ -692,6 +701,36 @@ private final class MediaPlayerCatalogPlaybackController: AppleMusicCatalogPlayb
         }
     }
 
+    func play(
+        mediaItem: MPMediaItem,
+        startTime: TimeInterval,
+        duration: TimeInterval,
+        volumeAutomationEnabled: Bool,
+        setsInitialVolumeToMax: Bool,
+        fadeOutDuration: TimeInterval
+    ) async throws {
+        volumeAutomationEnabledForCurrentCue = volumeAutomationEnabled
+        if volumeAutomationEnabled {
+            captureSystemVolumeBaseline()
+            hasPendingVolumeRestore = true
+        } else {
+            hasPendingVolumeRestore = false
+        }
+        player.stop()
+
+        player.setQueue(with: MPMediaItemCollection(items: [mediaItem]))
+        if startTime > 0 {
+            player.currentPlaybackTime = startTime
+        }
+
+        player.play()
+
+        if startTime > 0 {
+            await Task.yield()
+            player.currentPlaybackTime = startTime
+        }
+    }
+
     func setVolume(_ volume: Float) {
         let clamped = min(max(0, volume), 1)
         setPlayerVolume(capturedSystemVolumeBaseline * clamped)
@@ -746,11 +785,14 @@ private final class MediaPlayerCatalogPlaybackController: AppleMusicCatalogPlayb
 @MainActor
 private final class MusicKitTransitionCatalogPlaybackController: AppleMusicCatalogPlaybackControlling {
     private let player: ApplicationMusicPlayer
+    private let mediaPlayerFallback: MediaPlayerCatalogPlaybackController
+    private var isUsingMediaPlayerFallback = false
 
     var usesSystemTransitionCrossfade: Bool { true }
 
     init(player: ApplicationMusicPlayer = .shared) {
         self.player = player
+        self.mediaPlayerFallback = MediaPlayerCatalogPlaybackController()
     }
 
     func preconnect() {
@@ -768,6 +810,7 @@ private final class MusicKitTransitionCatalogPlaybackController: AppleMusicCatal
         transitionCrossfadeEnabled: Bool
     ) async throws {
         guard let song else { throw AppError.appleMusicSongUnavailable }
+        isUsingMediaPlayerFallback = false
 
         let boundedStartTime = max(0, startTime)
         let boundedDuration = max(0, duration)
@@ -787,18 +830,53 @@ private final class MusicKitTransitionCatalogPlaybackController: AppleMusicCatal
         try await player.play()
     }
 
+    func play(
+        mediaItem: MPMediaItem,
+        startTime: TimeInterval,
+        duration: TimeInterval,
+        volumeAutomationEnabled: Bool,
+        setsInitialVolumeToMax: Bool,
+        fadeOutDuration: TimeInterval
+    ) async throws {
+        player.stop()
+        player.transition = .none
+        isUsingMediaPlayerFallback = true
+        try await mediaPlayerFallback.play(
+            mediaItem: mediaItem,
+            startTime: startTime,
+            duration: duration,
+            volumeAutomationEnabled: volumeAutomationEnabled,
+            setsInitialVolumeToMax: setsInitialVolumeToMax,
+            fadeOutDuration: fadeOutDuration
+        )
+    }
+
     func setVolume(_ volume: Float) {
+        if isUsingMediaPlayerFallback {
+            mediaPlayerFallback.setVolume(volume)
+        }
     }
 
     func restoreVolume() {
+        if isUsingMediaPlayerFallback {
+            mediaPlayerFallback.restoreVolume()
+        }
     }
 
     func discardPendingRestore() {
+        if isUsingMediaPlayerFallback {
+            mediaPlayerFallback.discardPendingRestore()
+        }
     }
 
     func stop(restoresVolume: Bool = true) {
-        player.stop()
-        player.transition = .none
+        if isUsingMediaPlayerFallback {
+            mediaPlayerFallback.stop(restoresVolume: restoresVolume)
+            isUsingMediaPlayerFallback = false
+        } else {
+            player.stop()
+            player.transition = .none
+        }
     }
 }
 
@@ -1152,6 +1230,19 @@ final class CuePlaybackEngine: NSObject, ObservableObject {
         switch cue.source {
         case .appleMusic(let source):
             let clipDuration = min(duration, appleMusicClipDurationLimit)
+            if let libraryItem = musicLibraryItem(for: source) {
+                try await playLibraryItem(
+                    libraryItem,
+                    startTime: cue.startTime,
+                    duration: clipDuration,
+                    fadeOut: cue.fadeOutDuration,
+                    fadeOutVolumeAutomationEnabled: fadeOutVolumeAutomationEnabled,
+                    setsInitialVolumeToMax: setsInitialVolumeToMax,
+                    sessionID: sessionID
+                )
+                return
+            }
+
             if source.isCatalogBacked != false, await musicCatalogService.playbackCapability() == .fullSong {
                 guard playbackSessionID == sessionID else { return }
                 do {
@@ -1210,6 +1301,45 @@ final class CuePlaybackEngine: NSObject, ObservableObject {
                 sessionID: sessionID
             )
         }
+    }
+
+    private func musicLibraryItem(for source: AppleMusicSource) -> MPMediaItem? {
+        guard let persistentID = source.libraryPersistentID else { return nil }
+        let query = MPMediaQuery.songs()
+        query.addFilterPredicate(
+            MPMediaPropertyPredicate(
+                value: NSNumber(value: persistentID),
+                forProperty: MPMediaItemPropertyPersistentID
+            )
+        )
+        return query.items?.first
+    }
+
+    private func playLibraryItem(
+        _ item: MPMediaItem,
+        startTime: TimeInterval,
+        duration: TimeInterval,
+        fadeOut: TimeInterval,
+        fadeOutVolumeAutomationEnabled: Bool,
+        setsInitialVolumeToMax: Bool,
+        sessionID: UUID
+    ) async throws {
+        try await catalogPlaybackController.play(
+            mediaItem: item,
+            startTime: startTime,
+            duration: duration,
+            volumeAutomationEnabled: fadeOutVolumeAutomationEnabled,
+            setsInitialVolumeToMax: setsInitialVolumeToMax,
+            fadeOutDuration: fadeOut
+        )
+        guard playbackSessionID == sessionID else { return }
+        startProgressTracking(duration: duration, sessionID: sessionID)
+        scheduleCatalogStop(
+            duration: duration,
+            fadeOut: fadeOut,
+            fadeOutVolumeAutomationEnabled: fadeOutVolumeAutomationEnabled,
+            sessionID: sessionID
+        )
     }
 
     private func playCatalogSong(

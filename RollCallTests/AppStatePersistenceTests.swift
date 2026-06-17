@@ -2,6 +2,42 @@ import XCTest
 @testable import RollCall
 
 final class AppStatePersistenceTests: XCTestCase {
+    func testDefaultTrimLengthIsTwelveSeconds() throws {
+        XCTAssertEqual(AppState.empty.trimDefaults.preferredLength, 12)
+
+        let json = """
+        {
+          "schemaVersion": 8,
+          "appVersion": "1.2",
+          "deviceIdentity": { "label": "This iPhone" },
+          "selectedTeamID": null,
+          "teams": [],
+          "recentlyDeleted": [],
+          "snapshots": [],
+          "experimental": {},
+          "settings": {},
+          "recentAppleMusicSelections": []
+        }
+        """
+
+        let decoded = try JSONDecoder().decode(AppState.self, from: Data(json.utf8))
+
+        XCTAssertEqual(decoded.trimDefaults.preferredLength, 12)
+        XCTAssertTrue(decoded.trimDefaults.hasAppliedTwelveSecondDefaultReset)
+    }
+
+    func testSavedTrimLengthResetsToTwelveSecondsOnce() throws {
+        let legacyJSON = #"{"preferredLength":8}"#
+        let legacyDefaults = try JSONDecoder().decode(TrimDefaults.self, from: Data(legacyJSON.utf8))
+        XCTAssertEqual(legacyDefaults.preferredLength, 12)
+        XCTAssertTrue(legacyDefaults.hasAppliedTwelveSecondDefaultReset)
+
+        let currentJSON = #"{"preferredLength":15,"hasAppliedTwelveSecondDefaultReset":true}"#
+        let currentDefaults = try JSONDecoder().decode(TrimDefaults.self, from: Data(currentJSON.utf8))
+        XCTAssertEqual(currentDefaults.preferredLength, 15)
+        XCTAssertTrue(currentDefaults.hasAppliedTwelveSecondDefaultReset)
+    }
+
     func testAppStateRoundTripsTeamRosterAndSelection() throws {
         let team = RollCallTestFixtures.team()
         var state = RollCallTestFixtures.appState(team: team)

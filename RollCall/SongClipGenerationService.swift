@@ -67,7 +67,10 @@ struct SongClipGenerationService: Sendable {
             guard MusicAuthorization.currentStatus == .authorized else {
                 throw AppError.musicAuthorizationRequired
             }
-            guard let item = libraryItem(forPlaybackStoreID: appleMusic.songID) else {
+            guard let item = libraryItem(for: appleMusic) else {
+                return nil
+            }
+            guard !item.isCloudItem else {
                 return nil
             }
             guard let assetURL = item.assetURL else {
@@ -85,14 +88,24 @@ struct SongClipGenerationService: Sendable {
             guard MusicAuthorization.currentStatus == .authorized else {
                 return .needsAppleMusic
             }
-            let item = libraryItem(forPlaybackStoreID: appleMusic.songID)
+            let item = libraryItem(for: appleMusic)
             return .sourceBacked(downloadedOnDevice: item.map { !$0.isCloudItem } ?? false)
         }
     }
 
-    private func libraryItem(forPlaybackStoreID songID: String) -> MPMediaItem? {
-        guard !songID.isEmpty else { return nil }
-        return MPMediaQuery.songs().items?.first { $0.playbackStoreID == songID }
+    private func libraryItem(for source: AppleMusicSource) -> MPMediaItem? {
+        if let persistentID = source.libraryPersistentID {
+            let query = MPMediaQuery.songs()
+            query.addFilterPredicate(
+                MPMediaPropertyPredicate(
+                    value: NSNumber(value: persistentID),
+                    forProperty: MPMediaItemPropertyPersistentID
+                )
+            )
+            return query.items?.first
+        }
+
+        return nil
     }
 
     private func render(clip: SongClip, from sourceURL: URL) async throws -> GeneratedClipAsset {

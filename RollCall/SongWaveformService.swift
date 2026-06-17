@@ -103,9 +103,19 @@ enum SongWaveformSourceResolver {
             return try? AppPaths.assetURL(relativePath: "\(source.id).mp3")
         case .appleMusic(let source):
             guard MusicAuthorization.currentStatus == .authorized else { return nil }
-            return MPMediaQuery.songs().items?
-                .first { $0.playbackStoreID == source.songID }?
-                .assetURL
+            guard let persistentID = source.libraryPersistentID else { return nil }
+            let query = MPMediaQuery.songs()
+            query.addFilterPredicate(
+                MPMediaPropertyPredicate(
+                    value: NSNumber(value: persistentID),
+                    forProperty: MPMediaItemPropertyPersistentID
+                )
+            )
+            guard let item = query.items?.first,
+                  !item.isCloudItem else {
+                return nil
+            }
+            return item.assetURL
         }
     }
 }
