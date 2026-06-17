@@ -15,6 +15,7 @@ Internal notes for building public-facing changelogs. Keep entries understandabl
 
 ### Changed
 
+- Refreshed the app icon and `.rollcall` team file icons so exported packages match the latest Roll Call artwork with a full-bleed file icon treatment; the app icon now builds from the Icon Composer source so its dark and tinted variants are included. [public candidate] [needs review]
 - Team export now previews how many clips will travel as local audio, remain Apple Music links, are still preparing, or need repair before creating the package. [public candidate] [needs review]
 - Player Songs and Custom Clips can be copied into each other through `Use Existing Clip`; every copy is independent, so later edits and deletion never silently change the source. [public candidate] [needs review]
 - The Clips page now separates built-in Sound Effects from ordered Custom Clips, keeps live tiles playback-only, and places adding, editing, reordering, and deletion behind an explicit Edit action. [public candidate] [needs review]
@@ -54,6 +55,7 @@ Internal notes for building public-facing changelogs. Keep entries understandabl
 - Roll Call 1.2 now preserves each player's song choice in a richer model that separates the original song, selected timing, local preparation state, device readiness, and export portability. Existing teams and older `.rollcall` files migrate automatically when opened. [needs review]
 
 ### Internal / Maintenance
+- Checked-in app version metadata now reads `1.2` build `70` after the icon refresh for continued hands-on review.
 - Checked-in app version metadata now reads `1.2` build `69` for post-plan hands-on issue review.
 - Checked-in app version metadata now reads `1.2` build `68` for the completed Phase 5 implementation and automated Phase 6 verification pass.
 - Non-Release Developer Tools can inspect generated-clip storage and request confirmed manual cleanup. Support bundles now use aggregate, redacted cue diagnostics without audio, song metadata, roster names, filenames, or source/model identifiers.

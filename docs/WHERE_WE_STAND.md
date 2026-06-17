@@ -4,7 +4,7 @@ Use this file as a concise project status snapshot for the current version, what
 
 ## Roll Call
 
-Current version: `1.2` (build `69`)
+Current version: `1.2` (build `70`)
 
 Status:
 - Custom Clips now replace the unfinished shared Team Clips model. Player Songs and team-specific Custom Clips are independent after copying, so editing or deleting one never silently changes the other.
@@ -14,7 +14,8 @@ Status:
 - Phase 6 implementation and automated verification are complete: conservative cleanup, non-Release inspection/manual cleanup, redacted diagnostics, package/migration/cleanup regression coverage, Debug launch, and Debug/Release builds pass. Final field confidence still requires the planned physical-device Music Library, Apple Music playback, AirDrop/package, and audible repair checks.
 - Support bundles now report aggregate generation, readiness, portability, retry, policy, storage, cleanup, and boolean playback-state diagnostics without audio, song metadata, roster names, filenames, or source/model identifiers.
 - The Phase 3 Music Library-first picker received a high-level physical-device check on 2026-06-14 and appeared to work. Broader device coverage and detailed audible edge-case verification remain part of final Phase 6 release verification.
-- `1.2` build `69` is the checked-in post-plan build for hands-on issue review.
+- `1.2` build `70` is the checked-in post-icon-refresh build for hands-on issue review. The app target now compiles the Icon Composer `AppIcon.icon` package directly, including its dark and tinted app-icon variants, while the `.rollcall` document icons remain generated from the same artwork.
+- `1.2` build `69` was the checked-in post-plan build for hands-on issue review.
 - The Setup Guide audio step now uses the same Music Library, Apple Music search, file import, and draft `Make Your Clip` waveform editor as Player Editor. The old onboarding-only trim controls have been removed, while the crowd-cheer shortcut remains available for getting to Game Day quickly.
 - Generated clips are now considered current only when their stored generation key matches the saved source and timing. After an edit, Roll Call uses the updated source-backed selection until preparation finishes and does not advertise or export the older render as the edited clip.
 - Volume Automation is now source-backed-only: Apple Music catalog and preview playback retain the existing setting behavior, while local, generated, built-in, and Announcement Cue files receive no runtime volume normalization, fade, or reset.

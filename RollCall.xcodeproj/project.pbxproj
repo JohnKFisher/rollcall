@@ -18,6 +18,7 @@
 		A10000000000000000000009 /* BuildEnvironment.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000110 /* BuildEnvironment.swift */; };
 		A10000000000000000000010 /* RollCallDocumentIcon-44x58.png in Resources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000111 /* RollCallDocumentIcon-44x58.png */; };
 		A10000000000000000000011 /* RollCallDocumentIcon-320x320.png in Resources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000112 /* RollCallDocumentIcon-320x320.png */; };
+		A10000000000000000000012 /* AppIcon.icon in Resources */ = {isa = PBXBuildFile; fileRef = FE483C282FE2450F005E77A0 /* AppIcon.icon */; };
 		A20000000000000000000001 /* ZIPFoundation in Frameworks */ = {isa = PBXBuildFile; productRef = A20000000000000000000002 /* ZIPFoundation */; };
 		A30000000000000000000001 /* RollCallDesignSystem.swift in Sources */ = {isa = PBXBuildFile; fileRef = A30000000000000000000101 /* RollCallDesignSystem.swift */; };
 		A30000000000000000000002 /* RollCallColors.swift in Sources */ = {isa = PBXBuildFile; fileRef = A30000000000000000000102 /* RollCallColors.swift */; };
@@ -39,15 +40,15 @@
 		A50000000000000000000001 /* MusicRenderProbeModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A50000000000000000000101 /* MusicRenderProbeModels.swift */; };
 		A50000000000000000000002 /* MusicRenderProbeService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A50000000000000000000102 /* MusicRenderProbeService.swift */; };
 		A50000000000000000000003 /* MusicRenderProbeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A50000000000000000000103 /* MusicRenderProbeView.swift */; };
+		A60000000000000000000001 /* MusicRenderProbeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A60000000000000000000101 /* MusicRenderProbeTests.swift */; };
+		A60000000000000000000002 /* SongClipGenerationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A60000000000000000000102 /* SongClipGenerationTests.swift */; };
+		A60000000000000000000003 /* GeneratedClipCleanupTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A60000000000000000000103 /* GeneratedClipCleanupTests.swift */; };
 		A70000000000000000000001 /* SongClipModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A70000000000000000000101 /* SongClipModels.swift */; };
 		A70000000000000000000002 /* SongClipGenerationService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A70000000000000000000102 /* SongClipGenerationService.swift */; };
 		A70000000000000000000003 /* SongClipGenerationQueue.swift in Sources */ = {isa = PBXBuildFile; fileRef = A70000000000000000000103 /* SongClipGenerationQueue.swift */; };
 		A70000000000000000000004 /* SongPickerFlow.swift in Sources */ = {isa = PBXBuildFile; fileRef = A70000000000000000000104 /* SongPickerFlow.swift */; };
 		A70000000000000000000005 /* SongWaveformService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A70000000000000000000105 /* SongWaveformService.swift */; };
 		A70000000000000000000006 /* GeneratedClipCleanupService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A70000000000000000000106 /* GeneratedClipCleanupService.swift */; };
-		A60000000000000000000001 /* MusicRenderProbeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A60000000000000000000101 /* MusicRenderProbeTests.swift */; };
-		A60000000000000000000002 /* SongClipGenerationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A60000000000000000000102 /* SongClipGenerationTests.swift */; };
-		A60000000000000000000003 /* GeneratedClipCleanupTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A60000000000000000000103 /* GeneratedClipCleanupTests.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -95,15 +96,16 @@
 		A50000000000000000000101 /* MusicRenderProbeModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MusicRenderProbeModels.swift; sourceTree = "<group>"; };
 		A50000000000000000000102 /* MusicRenderProbeService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MusicRenderProbeService.swift; sourceTree = "<group>"; };
 		A50000000000000000000103 /* MusicRenderProbeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MusicRenderProbeView.swift; sourceTree = "<group>"; };
+		A60000000000000000000101 /* MusicRenderProbeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MusicRenderProbeTests.swift; sourceTree = "<group>"; };
+		A60000000000000000000102 /* SongClipGenerationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SongClipGenerationTests.swift; sourceTree = "<group>"; };
+		A60000000000000000000103 /* GeneratedClipCleanupTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GeneratedClipCleanupTests.swift; sourceTree = "<group>"; };
 		A70000000000000000000101 /* SongClipModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SongClipModels.swift; sourceTree = "<group>"; };
 		A70000000000000000000102 /* SongClipGenerationService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SongClipGenerationService.swift; sourceTree = "<group>"; };
 		A70000000000000000000103 /* SongClipGenerationQueue.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SongClipGenerationQueue.swift; sourceTree = "<group>"; };
 		A70000000000000000000104 /* SongPickerFlow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SongPickerFlow.swift; sourceTree = "<group>"; };
 		A70000000000000000000105 /* SongWaveformService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SongWaveformService.swift; sourceTree = "<group>"; };
 		A70000000000000000000106 /* GeneratedClipCleanupService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GeneratedClipCleanupService.swift; sourceTree = "<group>"; };
-		A60000000000000000000101 /* MusicRenderProbeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MusicRenderProbeTests.swift; sourceTree = "<group>"; };
-		A60000000000000000000102 /* SongClipGenerationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SongClipGenerationTests.swift; sourceTree = "<group>"; };
-		A60000000000000000000103 /* GeneratedClipCleanupTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GeneratedClipCleanupTests.swift; sourceTree = "<group>"; };
+		FE483C282FE2450F005E77A0 /* AppIcon.icon */ = {isa = PBXFileReference; lastKnownFileType = folder.iconcomposer.icon; path = AppIcon.icon; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -137,6 +139,7 @@
 		A10000000000000000000142 /* RollCall */ = {
 			isa = PBXGroup;
 			children = (
+				FE483C282FE2450F005E77A0 /* AppIcon.icon */,
 				A10000000000000000000101 /* RollCallApp.swift */,
 				A10000000000000000000102 /* Models.swift */,
 				A70000000000000000000101 /* SongClipModels.swift */,
@@ -307,6 +310,7 @@
 				A10000000000000000000008 /* BuiltInAudio in Resources */,
 				A10000000000000000000010 /* RollCallDocumentIcon-44x58.png in Resources */,
 				A10000000000000000000011 /* RollCallDocumentIcon-320x320.png in Resources */,
+				A10000000000000000000012 /* AppIcon.icon in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -520,7 +524,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = YES;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 69;
+				CURRENT_PROJECT_VERSION = 70;
 				DEVELOPMENT_TEAM = 5Y9T5WZ4J3;
 				ENABLE_DEBUG_DYLIB = NO;
 				ENABLE_PREVIEWS = NO;
@@ -542,7 +546,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = YES;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 69;
+				CURRENT_PROJECT_VERSION = 70;
 				DEVELOPMENT_TEAM = 5Y9T5WZ4J3;
 				ENABLE_DEBUG_DYLIB = NO;
 				ENABLE_PREVIEWS = NO;
@@ -564,7 +568,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = YES;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 69;
+				CURRENT_PROJECT_VERSION = 70;
 				DEVELOPMENT_TEAM = 5Y9T5WZ4J3;
 				ENABLE_DEBUG_DYLIB = NO;
 				ENABLE_PREVIEWS = NO;
