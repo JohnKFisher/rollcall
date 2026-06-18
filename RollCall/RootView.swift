@@ -301,6 +301,7 @@ struct RootView: View {
     @State private var showTeamClips = false
     @State private var customClipRepairPrompt: SongClip?
     @State private var customClipManagerInitialClipID: UUID?
+    @State private var liveSurfaceSwipeCooldownActive = false
 
     init(appModel: AppModel) {
         self.appModel = appModel
@@ -349,6 +350,14 @@ struct RootView: View {
             || whatsNewPresentation != nil
             || ratingRequestPresentation != nil
             || teamPlaylistPreview != nil
+    }
+
+    private var isLiveSurfaceSwipeAvailable: Bool {
+        guard selectedTab == .gameDay || selectedTab == .generalClips else { return false }
+        guard !liveSurfaceSwipeCooldownActive else { return false }
+        return !hasBlockingWhatsNewPresentation
+            && !showTeamClips
+            && customClipRepairPrompt == nil
     }
 
     private var canPresentAutomaticWhatsNew: Bool {
@@ -466,6 +475,39 @@ struct RootView: View {
         }
         if newTab == .readiness {
             appModel.prepareSongsForReadiness()
+        }
+    }
+
+    private func handleLiveSurfaceSwipe(_ value: DragGesture.Value) {
+        guard isLiveSurfaceSwipeAvailable else { return }
+
+        let horizontalDistance = value.translation.width
+        let verticalDistance = abs(value.translation.height)
+        let isDeliberateHorizontalSwipe = abs(horizontalDistance) >= 80
+            && abs(horizontalDistance) > verticalDistance * 1.4
+        guard isDeliberateHorizontalSwipe else { return }
+
+        switch (selectedTab, horizontalDistance) {
+        case (.gameDay, ..<0):
+            completeLiveSurfaceSwipe(to: .generalClips)
+        case (.generalClips, 0...):
+            completeLiveSurfaceSwipe(to: .gameDay)
+        default:
+            return
+        }
+    }
+
+    private func completeLiveSurfaceSwipe(to tab: RootTab) {
+        guard selectedTab != tab else { return }
+        liveSurfaceSwipeCooldownActive = true
+        selectedTab = tab
+        if appModel.state.settings.hapticsEnabled {
+            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+        }
+
+        Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 400_000_000)
+            liveSurfaceSwipeCooldownActive = false
         }
     }
 
@@ -834,6 +876,10 @@ struct RootView: View {
         }
         .teamAccentScope(selectedTeamAccentTheme)
         .background(TabBarAccentUpdater(theme: selectedTeamAccentTheme).frame(width: 0, height: 0))
+        .simultaneousGesture(
+            DragGesture(minimumDistance: 20)
+                .onEnded(handleLiveSurfaceSwipe)
+        )
         .onAppear { applyTabBarAccent(selectedTeamAccentTheme) }
         .onChange(of: selectedTeamAccentTheme) { _, theme in
             applyTabBarAccent(theme)

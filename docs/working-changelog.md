@@ -15,6 +15,7 @@ Internal notes for building public-facing changelogs. Keep entries understandabl
 
 ### Changed
 
+- Game Day and Clips can now be switched with a deliberate horizontal swipe, with playback continuing uninterrupted whether coaches use the swipe or the tab bar. [public candidate] [needs review]
 - Refreshed the app icon and `.rollcall` team file icons so exported packages match the latest Roll Call artwork with a full-bleed file icon treatment; the app icon now builds from the Icon Composer source so its dark and tinted variants are included. [public candidate] [needs review]
 - Team export now previews how many clips will travel as local audio, remain Apple Music links, are still preparing, or need repair before creating the package. [public candidate] [needs review]
 - Imported Apple Music-linked songs now check this device's Music access automatically when possible. The import check shows Apple Music as ready, unavailable, or still needing the user's permission instead of asking everyone to verify manually. [public candidate] [needs review]

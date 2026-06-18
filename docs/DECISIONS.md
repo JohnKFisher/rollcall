@@ -2,6 +2,12 @@
 
 Use this file as a concise decision log for project-specific architectural, behavioral, tooling, and scope decisions.
 
+## 2026-06-18
+
+- Approved: Game Day and Clips support a quiet live-surface-only horizontal swipe shortcut, with Game Day swiping left to Clips and Clips swiping right to Game Day. The gesture is deliberate, disabled while modal/edit/import/prompt flows are active, preserves playback and screen state, uses only a light haptic on successful swipes, and remains separate from full-tab swipe navigation.
+  Rationale: coaches need fast movement between the two live surfaces without accidentally entering setup/admin areas or interrupting active audio.
+  Status: approved
+
 ## 2026-06-16
 
 - Approved: cue preparation may continue during Game Day and Clips, but live use throttles the one-job-at-a-time queue so a job starts only after playback has been idle for a short quiet window. Low Power Mode remains paused except for explicit `Try Now`.

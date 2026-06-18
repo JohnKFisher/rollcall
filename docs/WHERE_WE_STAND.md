@@ -9,6 +9,7 @@ Current version: `1.2` (build `71`)
 Status:
 - Custom Clips now replace the unfinished shared Team Clips model. Player Songs and team-specific Custom Clips are independent after copying, so editing or deleting one never silently changes the other.
 - The Clips page now separates Sound Effects from an ordered Custom Clips grid. Live tiles are tap-to-play; adding, editing, reordering, and deletion require an explicit Edit action that stops playback and exits when the app backgrounds or the user leaves Clips.
+- Game Day and Clips now support a deliberate horizontal swipe shortcut between the two live surfaces. The shortcut preserves playback and screen state, stays disabled during modal/edit/import/prompt flows, and uses only a light haptic on successful swipes.
 - Team-package export and backups preserve Custom Clips, their order, generated/local audio where available, and honest Apple Music readiness. Import keeps unavailable clips in their saved positions and routes them toward repair.
 - Custom Clip deletion uses the existing 60-day Recently Deleted system, including original-team-only and position-aware restore plus conservative generated-file retention.
 - Phase 6 implementation and automated verification are complete: conservative cleanup, non-Release inspection/manual cleanup, redacted diagnostics, package/migration/cleanup regression coverage, Debug launch, and Debug/Release builds pass. Final field confidence still requires the planned physical-device Music Library, Apple Music playback, AirDrop/package, and audible repair checks.
