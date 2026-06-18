@@ -791,47 +791,32 @@ struct RecentlyDeletedItem: Codable, Equatable, Identifiable {
 
 struct ExperimentalSettings: Codable, Equatable {
     var showExperimentalFeatures: Bool
-    var unlockPremiumForTesting: Bool
-    var appleMusicLocalCopyEnabled: Bool
     var appleMusicTeamPlaylistSyncEnabled: Bool
-    var appleMusicTransitionCrossfadeEnabled: Bool
     var acknowledgedAt: Date?
     var appleMusicTeamPlaylistAcknowledgedAt: Date?
 
     static let `default` = ExperimentalSettings(
         showExperimentalFeatures: false,
-        unlockPremiumForTesting: false,
-        appleMusicLocalCopyEnabled: false,
         appleMusicTeamPlaylistSyncEnabled: false,
-        appleMusicTransitionCrossfadeEnabled: false,
         acknowledgedAt: nil,
         appleMusicTeamPlaylistAcknowledgedAt: nil
     )
 
     enum CodingKeys: String, CodingKey {
         case showExperimentalFeatures
-        case unlockPremiumForTesting
-        case appleMusicLocalCopyEnabled
         case appleMusicTeamPlaylistSyncEnabled
-        case appleMusicTransitionCrossfadeEnabled
         case acknowledgedAt
         case appleMusicTeamPlaylistAcknowledgedAt
     }
 
     init(
         showExperimentalFeatures: Bool,
-        unlockPremiumForTesting: Bool,
-        appleMusicLocalCopyEnabled: Bool,
         appleMusicTeamPlaylistSyncEnabled: Bool,
-        appleMusicTransitionCrossfadeEnabled: Bool,
         acknowledgedAt: Date?,
         appleMusicTeamPlaylistAcknowledgedAt: Date?
     ) {
         self.showExperimentalFeatures = showExperimentalFeatures
-        self.unlockPremiumForTesting = unlockPremiumForTesting
-        self.appleMusicLocalCopyEnabled = appleMusicLocalCopyEnabled
         self.appleMusicTeamPlaylistSyncEnabled = appleMusicTeamPlaylistSyncEnabled
-        self.appleMusicTransitionCrossfadeEnabled = appleMusicTransitionCrossfadeEnabled
         self.acknowledgedAt = acknowledgedAt
         self.appleMusicTeamPlaylistAcknowledgedAt = appleMusicTeamPlaylistAcknowledgedAt
     }
@@ -839,10 +824,7 @@ struct ExperimentalSettings: Codable, Equatable {
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         showExperimentalFeatures = try container.decodeIfPresent(Bool.self, forKey: .showExperimentalFeatures) ?? false
-        unlockPremiumForTesting = try container.decodeIfPresent(Bool.self, forKey: .unlockPremiumForTesting) ?? false
-        appleMusicLocalCopyEnabled = try container.decodeIfPresent(Bool.self, forKey: .appleMusicLocalCopyEnabled) ?? false
         appleMusicTeamPlaylistSyncEnabled = try container.decodeIfPresent(Bool.self, forKey: .appleMusicTeamPlaylistSyncEnabled) ?? false
-        appleMusicTransitionCrossfadeEnabled = try container.decodeIfPresent(Bool.self, forKey: .appleMusicTransitionCrossfadeEnabled) ?? false
         acknowledgedAt = try container.decodeIfPresent(Date.self, forKey: .acknowledgedAt)
         appleMusicTeamPlaylistAcknowledgedAt = try container.decodeIfPresent(Date.self, forKey: .appleMusicTeamPlaylistAcknowledgedAt)
     }

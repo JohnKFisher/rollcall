@@ -165,7 +165,6 @@ Opened from any player row (Players tab, Readiness list, Game Day tile long-pres
 - **Song Cue** — choose Apple Music song, choose Local Audio, swap source, clear cue. Shows the assigned song title and source.
 - **Fine Tune Clip** (only when a cue exists) — start scrubber, length chips, suggested-hook / start-at-beginning modes, preview, and an "Advanced Trim" navigation that opens a more detailed editor.
 - **Announcement Cue** — record a custom intro via in-app mic recording. Buttons: Start/Stop Recording, Preview, Clear. A warning is shown if the file reference exists but the audio file is missing.
-- **Experimental** (feature-flagged) — "Make Local Copy" of an Apple Music selection.
 - **Remove Player** at the bottom, destructive role.
 
 The editor is large and rich because per-player setup is where most setup time is spent. But the Setup Guide deliberately avoids most of this complexity — it only touches identity and song cue, leaving photos, announcer recordings, and advanced trim for later.

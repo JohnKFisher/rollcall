@@ -82,9 +82,13 @@ Use this file as a concise decision log for project-specific architectural, beha
 
 ## 2026-06-09
 
+- Superseded: remove the non-Release `Music Render Probe` entry from Developer Tools after Phase 0 findings were captured.
+  Rationale: the probe served its narrow learning purpose, and keeping it in Developer Tools after the failed local-copy and transition-crossfade experiments creates unnecessary debug-surface clutter without improving the release app.
+  Status: approved
+
 - Approved: `release/1.2` Phase 0 uses a non-Release in-app `Music Render Probe` with manual sample assignment, explicit run actions, temporary render files, and redacted summary export rather than guessing Apple Music/local renderability from docs or scripts alone.
   Rationale: the 1.2 cue revamp depends on what public APIs actually expose inside Roll Call's real app context on a real device, and the safest way to learn that is a deliberately scoped probe surface that stays out of Release builds and avoids retaining user media.
-  Status: approved
+  Status: superseded by the 2026-06-18 Developer Tools cleanup
 
 - Approved: until the Phase 0 real-device probe records concrete `Full Source` successes for Apple Music-derived cases, treat Apple Music local-generation policy as provisional and keep `sourceBackedOnly` as the conservative planning default for those cases.
   Rationale: the revamp needs a clear starting point now, but it would be misleading to treat aggressive Apple Music local generation as approved fact before the probe has actually proven any readable full-source paths through public APIs.

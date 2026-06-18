@@ -31,9 +31,8 @@ Release builds must always resolve to:
 
 - `showDeveloperSettings = false`
 - `showExperimentalFeatures = false`
-- `unlockPremiumForTesting = false`
 
-Debug builds force developer settings and experimental visibility on so local work is easy to exercise. Internal builds show Developer Tools, but experimental visibility comes from local persisted toggles. The legacy premium-testing flag should remain off because live product policy is now all-features-free.
+Debug builds force developer settings and experimental visibility on so local work is easy to exercise. Internal builds show Developer Tools, but experimental visibility comes from local persisted toggles. Roll Call's live product policy is all-features-free, and failed Apple Music local-copy / transition-crossfade experiments should stay removed from Developer Tools.
 
 ## Adding A Feature Flag
 

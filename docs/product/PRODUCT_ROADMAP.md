@@ -82,11 +82,6 @@ This should be the next major feature release after 1.1. If 1.1 threatens to slo
   - Keep it clearly optional, calm, and separate from feature access.
   - Should not feel like a paywall or guilt prompt.
 
-- **Make Local Copy of Apple Music selection**
-  - Treat as related but higher-risk.
-  - This overlaps with the older “Save Apple Music clip as local file” roadmap item.
-  - Do not ship unless platform behavior, App Store suitability, and user expectations are clear.
-
 - **Sample songs in Recent**
   - Keep as a later enhancement unless it naturally falls out of the new picker design.
 
@@ -332,11 +327,6 @@ The exact version number depends on timing and product strategy. These should no
 - **Advanced playlist tools**
   - Could include future free expansions such as alternate playlist types, lineup-only variants, or richer Apple Music management if demand appears.
   - The basic team-song playlist remains a free 1.1 feature.
-
-- **Make Local Copy of Apple Music selection / Save Apple Music clip as local file**
-  - Treat these as the same general idea.
-  - Platform/legal/App Store risk.
-  - Do not ship until tested and clearly acceptable.
 
 - **Lyric-based song selection**
   - Unlikely near-term.

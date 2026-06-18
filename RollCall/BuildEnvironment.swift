@@ -47,35 +47,9 @@ struct FeatureFlags: Equatable {
         }
     }
 
-    var unlockPremiumForTesting: Bool {
-        switch environment {
-        case .debug:
-            return true
-        case .internalTesting:
-            return experimental.unlockPremiumForTesting
-        case .release:
-            return false
-        }
-    }
-
-    var appleMusicLocalCopyEnabled: Bool {
-        showExperimentalFeatures && experimental.appleMusicLocalCopyEnabled
-    }
-
-    var appleMusicTransitionCrossfadeEnabled: Bool {
-        showExperimentalFeatures && experimental.appleMusicTransitionCrossfadeEnabled
-    }
-
-    var musicRenderProbeAvailable: Bool {
-        showDeveloperSettings
-    }
-
     static func assertReleaseSafety(_ flags: FeatureFlags = .currentBuildDefaults) {
         guard flags.isReleaseBuild else { return }
         precondition(!flags.showDeveloperSettings, "Release builds must not show Developer Settings.")
         precondition(!flags.showExperimentalFeatures, "Release builds must not show experimental features.")
-        precondition(!flags.unlockPremiumForTesting, "Release builds must not unlock premium testing.")
-        precondition(!flags.appleMusicLocalCopyEnabled, "Release builds must not enable Apple Music local-copy experiments.")
-        precondition(!flags.appleMusicTransitionCrossfadeEnabled, "Release builds must not enable Apple Music transition-crossfade experiments.")
     }
 }

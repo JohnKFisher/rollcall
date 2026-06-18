@@ -63,9 +63,4 @@ final class MusicRenderProbeTests: XCTestCase {
         XCTAssertTrue(json.contains("previewOnlyRenderable"))
     }
 
-    func testMusicRenderProbeAvailabilityIsOffInReleaseAndOnElsewhere() {
-        XCTAssertFalse(FeatureFlags(environment: .release, experimental: .default).musicRenderProbeAvailable)
-        XCTAssertTrue(FeatureFlags(environment: .debug, experimental: .default).musicRenderProbeAvailable)
-        XCTAssertTrue(FeatureFlags(environment: .internalTesting, experimental: .default).musicRenderProbeAvailable)
-    }
 }

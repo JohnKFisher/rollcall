@@ -10,7 +10,6 @@ import ZIPFoundation
 
 enum AppError: LocalizedError {
     case missingPreview
-    case featureDisabled
     case invalidImport
     case unsupportedImportVersion
     case unsupportedSavedStateVersion
@@ -36,9 +35,7 @@ enum AppError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .missingPreview:
-            return "This Apple Music selection does not expose preview media for the experimental local-copy path."
-        case .featureDisabled:
-            return "Experimental local copies are disabled in Settings."
+            return "This Apple Music selection does not expose preview media for fallback playback."
         case .invalidImport:
             return "That file could not be imported."
         case .unsupportedImportVersion:
@@ -611,17 +608,14 @@ private struct SupportBundlePayload: Codable {
 
 @MainActor
 private protocol AppleMusicCatalogPlaybackControlling: AnyObject {
-    var usesSystemTransitionCrossfade: Bool { get }
     func preconnect()
     func play(
         songID: String,
-        song: Song?,
         startTime: TimeInterval,
         duration: TimeInterval,
         volumeAutomationEnabled: Bool,
         setsInitialVolumeToMax: Bool,
-        fadeOutDuration: TimeInterval,
-        transitionCrossfadeEnabled: Bool
+        fadeOutDuration: TimeInterval
     ) async throws
     func play(
         mediaItem: MPMediaItem,
@@ -649,8 +643,6 @@ private final class MediaPlayerCatalogPlaybackController: AppleMusicCatalogPlayb
     private var volumeAutomationEnabledForCurrentCue = true
     private var hasPendingVolumeRestore = false
 
-    var usesSystemTransitionCrossfade: Bool { false }
-
     init(player: MPMusicPlayerApplicationController = MPMusicPlayerController.applicationQueuePlayer) {
         self.player = player
     }
@@ -661,13 +653,11 @@ private final class MediaPlayerCatalogPlaybackController: AppleMusicCatalogPlayb
 
     func play(
         songID: String,
-        song: Song?,
         startTime: TimeInterval,
         duration: TimeInterval,
         volumeAutomationEnabled: Bool,
         setsInitialVolumeToMax: Bool,
-        fadeOutDuration: TimeInterval,
-        transitionCrossfadeEnabled: Bool
+        fadeOutDuration: TimeInterval
     ) async throws {
         volumeAutomationEnabledForCurrentCue = volumeAutomationEnabled
         if volumeAutomationEnabled {
@@ -781,105 +771,6 @@ private final class MediaPlayerCatalogPlaybackController: AppleMusicCatalogPlayb
 
 }
 
-@available(iOS 18.0, *)
-@MainActor
-private final class MusicKitTransitionCatalogPlaybackController: AppleMusicCatalogPlaybackControlling {
-    private let player: ApplicationMusicPlayer
-    private let mediaPlayerFallback: MediaPlayerCatalogPlaybackController
-    private var isUsingMediaPlayerFallback = false
-
-    var usesSystemTransitionCrossfade: Bool { true }
-
-    init(player: ApplicationMusicPlayer = .shared) {
-        self.player = player
-        self.mediaPlayerFallback = MediaPlayerCatalogPlaybackController()
-    }
-
-    func preconnect() {
-        _ = player
-    }
-
-    func play(
-        songID: String,
-        song: Song?,
-        startTime: TimeInterval,
-        duration: TimeInterval,
-        volumeAutomationEnabled: Bool,
-        setsInitialVolumeToMax: Bool,
-        fadeOutDuration: TimeInterval,
-        transitionCrossfadeEnabled: Bool
-    ) async throws {
-        guard let song else { throw AppError.appleMusicSongUnavailable }
-        isUsingMediaPlayerFallback = false
-
-        let boundedStartTime = max(0, startTime)
-        let boundedDuration = max(0, duration)
-        let boundedFade = min(boundedDuration, max(0, fadeOutDuration))
-
-        player.stop()
-        player.transition = transitionCrossfadeEnabled && boundedFade > 0
-            ? .crossfade(duration: boundedFade)
-            : .none
-        let entry = MusicPlayer.Queue.Entry(
-            song,
-            startTime: boundedStartTime,
-            endTime: boundedStartTime + boundedDuration
-        )
-        player.queue = ApplicationMusicPlayer.Queue([entry])
-        try await player.prepareToPlay()
-        try await player.play()
-    }
-
-    func play(
-        mediaItem: MPMediaItem,
-        startTime: TimeInterval,
-        duration: TimeInterval,
-        volumeAutomationEnabled: Bool,
-        setsInitialVolumeToMax: Bool,
-        fadeOutDuration: TimeInterval
-    ) async throws {
-        player.stop()
-        player.transition = .none
-        isUsingMediaPlayerFallback = true
-        try await mediaPlayerFallback.play(
-            mediaItem: mediaItem,
-            startTime: startTime,
-            duration: duration,
-            volumeAutomationEnabled: volumeAutomationEnabled,
-            setsInitialVolumeToMax: setsInitialVolumeToMax,
-            fadeOutDuration: fadeOutDuration
-        )
-    }
-
-    func setVolume(_ volume: Float) {
-        if isUsingMediaPlayerFallback {
-            mediaPlayerFallback.setVolume(volume)
-        }
-    }
-
-    func restoreVolume() {
-        if isUsingMediaPlayerFallback {
-            mediaPlayerFallback.restoreVolume()
-        }
-    }
-
-    func discardPendingRestore() {
-        if isUsingMediaPlayerFallback {
-            mediaPlayerFallback.discardPendingRestore()
-        }
-    }
-
-    func stop(restoresVolume: Bool = true) {
-        if isUsingMediaPlayerFallback {
-            mediaPlayerFallback.stop(restoresVolume: restoresVolume)
-            isUsingMediaPlayerFallback = false
-        } else {
-            player.stop()
-            player.transition = .none
-        }
-    }
-}
-
 struct PlaybackFadeSchedule: Equatable {
     var sustainDuration: TimeInterval
     var fadeDuration: TimeInterval
@@ -939,7 +830,6 @@ final class CuePlaybackEngine: NSObject, ObservableObject {
     private var lastStartDate: Date?
     private var lastStartedCueID: UUID?
     private var sourceBackedVolumeAutomationEnabledForCurrentCue = false
-    private var appleMusicTransitionCrossfadeExperimentEnabled = false
 
     init(
         audioAssetService: AudioAssetService,
@@ -948,17 +838,6 @@ final class CuePlaybackEngine: NSObject, ObservableObject {
         self.audioAssetService = audioAssetService
         self.musicCatalogService = musicCatalogService
         self.catalogPlaybackController = MediaPlayerCatalogPlaybackController()
-    }
-
-    func setAppleMusicTransitionCrossfadeExperimentEnabled(_ isEnabled: Bool) {
-        let wantsExperiment = isEnabled
-        let needsControllerSwap = catalogPlaybackController.usesSystemTransitionCrossfade != wantsExperiment
-        appleMusicTransitionCrossfadeExperimentEnabled = wantsExperiment
-        guard needsControllerSwap else { return }
-        stop()
-        catalogPlaybackController = Self.makeCatalogPlaybackController(
-            appleMusicTransitionCrossfadeExperimentEnabled: wantsExperiment
-        )
     }
 
     func play(
@@ -1385,29 +1264,20 @@ final class CuePlaybackEngine: NSObject, ObservableObject {
         setsInitialVolumeToMax: Bool,
         sessionID: UUID
     ) async throws {
-        let song: Song? = if catalogPlaybackController.usesSystemTransitionCrossfade {
-            try await musicCatalogService.song(for: source.songID)
-        } else {
-            nil
-        }
         try await catalogPlaybackController.play(
             songID: source.songID,
-            song: song,
             startTime: startTime,
-            duration: catalogPlaybackController.usesSystemTransitionCrossfade
-                ? duration
-                : catalogPlaybackDurationIncludingTailGuard(for: duration),
+            duration: catalogPlaybackDurationIncludingTailGuard(for: duration),
             volumeAutomationEnabled: fadeOutVolumeAutomationEnabled,
             setsInitialVolumeToMax: setsInitialVolumeToMax,
-            fadeOutDuration: fadeOut,
-            transitionCrossfadeEnabled: fadeOutVolumeAutomationEnabled && catalogPlaybackController.usesSystemTransitionCrossfade
+            fadeOutDuration: fadeOut
         )
         guard playbackSessionID == sessionID else { return }
         startProgressTracking(duration: duration, sessionID: sessionID)
         scheduleCatalogStop(
             duration: duration,
             fadeOut: fadeOut,
-            fadeOutVolumeAutomationEnabled: fadeOutVolumeAutomationEnabled && !catalogPlaybackController.usesSystemTransitionCrossfade,
+            fadeOutVolumeAutomationEnabled: fadeOutVolumeAutomationEnabled,
             sessionID: sessionID
         )
     }
@@ -1552,17 +1422,6 @@ final class CuePlaybackEngine: NSObject, ObservableObject {
         }
         guard playbackSessionID == sessionID, !Task.isCancelled else { return }
         catalogPlaybackController.setVolume(0)
-    }
-}
-
-private extension CuePlaybackEngine {
-    static func makeCatalogPlaybackController(
-        appleMusicTransitionCrossfadeExperimentEnabled: Bool
-    ) -> any AppleMusicCatalogPlaybackControlling {
-        if appleMusicTransitionCrossfadeExperimentEnabled, #available(iOS 18.0, *) {
-            return MusicKitTransitionCatalogPlaybackController()
-        }
-        return MediaPlayerCatalogPlaybackController()
     }
 }
 

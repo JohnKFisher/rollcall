@@ -454,6 +454,12 @@ final class GameDayHaptics {
 }
 
 @MainActor
+struct PlayerSongsToCustomClipsResult: Equatable {
+    var copiedCount: Int
+    var skippedCount: Int
+}
+
+@MainActor
 final class AppModel: ObservableObject {
     private enum RatingRequestPolicy {
         static let sessionThreshold = 10
@@ -556,9 +562,6 @@ final class AppModel: ObservableObject {
         self.state.appVersion = AppMetadata.appVersion
         self.state.schemaVersion = max(self.state.schemaVersion, AppState.empty.schemaVersion)
         normalizeRatingRequestPolicyState()
-        self.playbackEngine.setAppleMusicTransitionCrossfadeExperimentEnabled(
-            FeatureFlags(environment: .current, experimental: self.state.experimental).appleMusicTransitionCrossfadeEnabled
-        )
         self.readinessService.onPathStatusChange = { [weak self] in
             self?.scheduleReadinessRefresh()
         }
@@ -978,6 +981,48 @@ final class AppModel: ObservableObject {
         return copy.id
     }
 
+    @discardableResult
+    func duplicateSelectedTeamPlayerSongsToCustomClips() -> PlayerSongsToCustomClipsResult {
+        guard let teamIndex else {
+            return PlayerSongsToCustomClipsResult(copiedCount: 0, skippedCount: 0)
+        }
+
+        let team = state.teams[teamIndex]
+        let teamID = team.id
+        var copies: [SongClip] = []
+        var skippedCount = 0
+
+        for player in team.players {
+            guard let sourceClip = team.songClip(for: player) else {
+                skippedCount += 1
+                continue
+            }
+
+            var copy = sourceClip.customClipCopy()
+            let sourceTitle = sourceClip.displayName ?? sourceClip.playbackCue.label
+            copy.displayName = "\(player.displayName) - \(sourceTitle)"
+            copies.append(copy)
+        }
+
+        guard !copies.isEmpty else {
+            return PlayerSongsToCustomClipsResult(copiedCount: 0, skippedCount: skippedCount)
+        }
+
+        state.teams[teamIndex].teamClips.append(contentsOf: copies)
+        state.teams[teamIndex].modifiedAt = .now
+        persist()
+
+        for copy in copies {
+            scheduleTeamClipPreparation(
+                teamID: teamID,
+                teamClipID: copy.id,
+                trigger: .assignmentSaved
+            )
+        }
+
+        return PlayerSongsToCustomClipsResult(copiedCount: copies.count, skippedCount: skippedCount)
+    }
+
     func deleteCustomClip(_ clipID: UUID) {
         guard let teamIndex,
               let clipIndex = state.teams[teamIndex].teamClips.firstIndex(where: { $0.id == clipID }) else {
@@ -1236,17 +1281,6 @@ final class AppModel: ObservableObject {
         var updated = player
         updated.customAnnouncerRelativePath = nil
         updatePlayer(updated)
-    }
-
-    func makeLocalCopy(for player: Player) async {
-        await busy {
-            guard self.featureFlags.appleMusicLocalCopyEnabled else { throw AppError.featureDisabled }
-            guard let cue = player.cue, case .appleMusic(let source) = cue.source, let previewURL = source.previewURL else { throw AppError.missingPreview }
-            let local = try await self.audioAssetService.importRemotePreview(from: previewURL, displayName: "\(source.artistName) - \(source.title)", hiddenOrigin: HiddenOriginNote(importedAt: .now, originSummary: "appleMusicPreview:\(source.songID)"))
-            var updated = player
-            updated.cue = .localDefault(source: local)
-            self.updatePlayer(updated)
-        }
     }
 
     func play(player: Player) async {
@@ -1736,34 +1770,8 @@ final class AppModel: ObservableObject {
         lastError = "Built-in Voice has been removed from Roll Call. Use Announcement Cue recordings instead."
     }
 
-    func enableExperimentalCopies() {
-        state.experimental.appleMusicLocalCopyEnabled = true
-        state.experimental.acknowledgedAt = .now
-        persist()
-    }
-
     func setShowExperimentalFeatures(_ isEnabled: Bool) {
         state.experimental.showExperimentalFeatures = isEnabled
-        playbackEngine.setAppleMusicTransitionCrossfadeExperimentEnabled(featureFlags.appleMusicTransitionCrossfadeEnabled)
-        persist()
-    }
-
-    func setUnlockPremiumForTesting(_ isEnabled: Bool) {
-        state.experimental.unlockPremiumForTesting = isEnabled
-        persist()
-    }
-
-    func setAppleMusicLocalCopyEnabled(_ isEnabled: Bool) {
-        state.experimental.appleMusicLocalCopyEnabled = isEnabled
-        if isEnabled, state.experimental.acknowledgedAt == nil {
-            state.experimental.acknowledgedAt = .now
-        }
-        persist()
-    }
-
-    func setAppleMusicTransitionCrossfadeEnabled(_ isEnabled: Bool) {
-        state.experimental.appleMusicTransitionCrossfadeEnabled = isEnabled
-        playbackEngine.setAppleMusicTransitionCrossfadeExperimentEnabled(featureFlags.appleMusicTransitionCrossfadeEnabled)
         persist()
     }
 

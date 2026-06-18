@@ -390,6 +390,69 @@ final class SongClipGenerationTests: XCTestCase {
     }
 
     @MainActor
+    func testDeveloperToolDuplicatesPlayerSongsToCustomClips() throws {
+        let generatedPath = "GeneratedClips/alex-ready.m4a"
+        var alexClip = SongClip(cue: RollCallTestFixtures.localCue(relativePath: "original-local.m4a"))
+        alexClip.generatedAsset = GeneratedClipAsset(
+            relativePath: generatedPath,
+            status: .ready,
+            renderedSelection: alexClip.requestedSelection,
+            generationKey: alexClip.generationKey,
+            generatedAt: RollCallTestFixtures.now
+        )
+        alexClip.readinessInputs.playback = .localClipReady
+
+        var alex = RollCallTestFixtures.player(
+            id: RollCallTestFixtures.alexID,
+            name: "Alex Morgan",
+            number: "7"
+        )
+        alex.songAssignment = .privateClip(alexClip)
+
+        var jordan = RollCallTestFixtures.player(
+            id: RollCallTestFixtures.jordanID,
+            name: "Jordan Lee",
+            number: "4"
+        )
+        let jordanClip = SongClip(
+            cue: RollCallTestFixtures.appleMusicCue(
+                songID: "catalog-jordan",
+                title: "Thunderstruck",
+                artistName: "AC/DC"
+            )
+        )
+        jordan.songAssignment = .privateClip(jordanClip)
+
+        let casey = RollCallTestFixtures.player(
+            id: RollCallTestFixtures.caseyID,
+            name: "Casey Morgan",
+            number: "9"
+        )
+
+        try writeState(
+            RollCallTestFixtures.appState(
+                team: RollCallTestFixtures.team(players: [alex, jordan, casey])
+            )
+        )
+        let model = AppModel()
+
+        let result = model.duplicateSelectedTeamPlayerSongsToCustomClips()
+
+        XCTAssertEqual(result.copiedCount, 2)
+        XCTAssertEqual(result.skippedCount, 1)
+        let clips = try XCTUnwrap(model.selectedTeam?.teamClips)
+        XCTAssertEqual(clips.count, 2)
+        XCTAssertEqual(clips.map(\.displayName), ["Alex Morgan - Alex Walkup", "Jordan Lee - Thunderstruck"])
+        XCTAssertEqual(clips[0].sourceLineageClipID, alexClip.id)
+        XCTAssertEqual(clips[0].generatedAsset.relativePath, generatedPath)
+        XCTAssertEqual(clips[0].pauseAfterAnnouncer, 0)
+        XCTAssertEqual(clips[1].sourceLineageClipID, jordanClip.id)
+        XCTAssertEqual(clips[1].pauseAfterAnnouncer, 0)
+        XCTAssertEqual(model.selectedTeam?.players.count, 3)
+        XCTAssertEqual(model.selectedTeam?.players.first?.songAssignment?.privateClip?.id, alexClip.id)
+    }
+
+    @MainActor
     func testRetimingReadyLocalClipCopyDoesNotReuseOriginalGeneratedAsset() throws {
         var sourceClip = SongClip(cue: RollCallTestFixtures.localCue(relativePath: "original-local.m4a"))
         sourceClip.generatedAsset = GeneratedClipAsset(

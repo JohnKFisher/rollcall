@@ -284,7 +284,6 @@ struct RootView: View {
     @ObservedObject private var playbackEngine: CuePlaybackEngine
     @State private var newTeamName = ""
     @State private var playerEditorRoute: PlayerEditorRoute?
-    @State private var showExperimentalWarning = false
     @State private var packageImportPresented = false
     @State private var csvImportPresented = false
     @State private var selectedTab: RootTab = .players
@@ -340,7 +339,6 @@ struct RootView: View {
             || appModel.lastError != nil
             || appModel.pendingPackageImport != nil
             || appModel.pendingRosterImport != nil
-            || showExperimentalWarning
             || packageImportPresented
             || csvImportPresented
             || playerEditorRoute != nil
@@ -393,7 +391,7 @@ struct RootView: View {
         if appModel.pendingPackageImport != nil || appModel.pendingRosterImport != nil {
             return "Blocked by import flow"
         }
-        if showExperimentalWarning || packageImportPresented || csvImportPresented || playerEditorRoute != nil || showLineupEditor || showRenameTeamAlert || showRemoveTeamConfirmation || packageSharePresented || whatsNewPresentation != nil || teamPlaylistPreview != nil {
+        if packageImportPresented || csvImportPresented || playerEditorRoute != nil || showLineupEditor || showRenameTeamAlert || showRemoveTeamConfirmation || packageSharePresented || whatsNewPresentation != nil || teamPlaylistPreview != nil {
             return "Blocked by another sheet or modal"
         }
         return "Eligible now"
@@ -599,15 +597,6 @@ struct RootView: View {
 
     private var rootAlertContent: some View {
         rootBaseContent
-            .alert("Experimental Apple Music Local Copies", isPresented: $showExperimentalWarning) {
-                Button("Enable") {
-                    appModel.setShowExperimentalFeatures(true)
-                    appModel.enableExperimentalCopies()
-                }
-                Button("Cancel", role: .cancel) {}
-            } message: {
-                Text("This feature is off by default. It attempts to turn Apple Music preview media into a regular local file. It may fail, and it is intentionally separate from the normal Apple Music path.")
-            }
             .alert("Roll Call", isPresented: errorBinding) {
                 Button("OK") { appModel.lastError = nil }
             } message: {
@@ -1274,7 +1263,7 @@ struct RootView: View {
                     }
 
                     Text(clip.displayName ?? clip.playbackCue.rosterDisplayTitle)
-                        .font(.headline.weight(.bold))
+                        .font(.subheadline.weight(.bold))
                         .foregroundStyle(Color(uiColor: .label))
                         .lineLimit(2)
                         .minimumScaleFactor(0.74)
@@ -1864,7 +1853,6 @@ struct RootView: View {
                             NavigationLink {
                                 DeveloperToolsView(
                                     appModel: appModel,
-                                    showExperimentalWarning: $showExperimentalWarning,
                                     ratingRequestStatus: automaticRatingRequestDebugStatus,
                                     onTestAutomaticRatingPrompt: requestNativeInAppRatingPrompt,
                                     onShowRatingRequestSheet: presentManualRatingRequestSheet,
@@ -6640,13 +6628,16 @@ private struct RecoveryCenterView: View {
 
 private struct DeveloperToolsView: View {
     @ObservedObject var appModel: AppModel
-    @Binding var showExperimentalWarning: Bool
     let ratingRequestStatus: String
     let onTestAutomaticRatingPrompt: () -> Void
     let onShowRatingRequestSheet: () -> Void
     let onEmailSupport: () -> Void
     let onOpenReviewPage: () -> Void
     @State private var showGeneratedClipCleanupConfirmation = false
+    @State private var showDuplicatePlayerSongsConfirmation = false
+    @State private var duplicatePlayerSongsResultText: String?
+    @State private var isInspectingGeneratedClips = false
+    @State private var generatedClipLastInspectedAt: Date?
 
     private var flags: FeatureFlags {
         appModel.featureFlags
@@ -6679,11 +6670,6 @@ private struct DeveloperToolsView: View {
                             detail: "Allows unfinished or provisional tools to appear for trusted testing.",
                             isEnabled: flags.showExperimentalFeatures
                         )
-                        FlagStatusRow(
-                            title: "Premium Testing Unlock",
-                            detail: "Reserved for purchase-related testing. Roll Call does not currently sell premium features.",
-                            isEnabled: flags.unlockPremiumForTesting
-                        )
                     }
 
                     Section("Runtime Testing Flags") {
@@ -6698,62 +6684,6 @@ private struct DeveloperToolsView: View {
                             )
                         }
                         .disabled(flags.isDebugBuild)
-
-                        Toggle(isOn: Binding(
-                            get: { appModel.state.experimental.unlockPremiumForTesting },
-                            set: { appModel.setUnlockPremiumForTesting($0) }
-                        )) {
-                            SettingsRowLabel(
-                                title: "Unlock Premium for Testing",
-                                detail: flags.isDebugBuild ? "Debug builds force this on for future purchase testing." : "Allows trusted internal testers to exercise future premium-only paths.",
-                                systemImage: "key.fill"
-                            )
-                        }
-                        .disabled(flags.isDebugBuild)
-
-                        Toggle(isOn: Binding(
-                            get: { appModel.state.experimental.appleMusicLocalCopyEnabled },
-                            set: { isEnabled in
-                                if isEnabled {
-                                    showExperimentalWarning = true
-                                } else {
-                                    appModel.setAppleMusicLocalCopyEnabled(false)
-                                }
-                            }
-                        )) {
-                            SettingsRowLabel(
-                                title: "Apple Music Local Copies",
-                                detail: "Shows the Make Local Copy action for Apple Music cues. This remains experimental and outside the primary product path.",
-                                systemImage: "doc.on.doc"
-                            )
-                        }
-                        .disabled(!flags.showExperimentalFeatures)
-
-                        Toggle(isOn: Binding(
-                            get: { appModel.state.experimental.appleMusicTransitionCrossfadeEnabled },
-                            set: { appModel.setAppleMusicTransitionCrossfadeEnabled($0) }
-                        )) {
-                            SettingsRowLabel(
-                                title: "Apple Music Transition Crossfade",
-                                detail: "iOS 18+ only. Tests MusicKit ApplicationMusicPlayer transition crossfade for subscribed Apple Music cues instead of Roll Call's current volume automation path.",
-                                systemImage: "waveform.path"
-                            )
-                        }
-                        .disabled(!flags.showExperimentalFeatures)
-                    }
-
-                    if flags.musicRenderProbeAvailable {
-                        Section("Music Probe") {
-                            NavigationLink {
-                                MusicRenderProbeView(appModel: appModel)
-                            } label: {
-                                SettingsRowLabel(
-                                    title: "Music Render Probe",
-                                    detail: "Manually assign device-library, Apple Music, and local control samples, then test which paths can really render through public APIs.",
-                                    systemImage: "waveform.and.magnifyingglass"
-                                )
-                            }
-                        }
                     }
 
                     Section("Diagnostics") {
@@ -6794,9 +6724,42 @@ private struct DeveloperToolsView: View {
                             .foregroundStyle(.secondary)
                     }
 
+                    Section("Custom Clip Utilities") {
+                        Button("Duplicate Player Songs to Custom Clips") {
+                            showDuplicatePlayerSongsConfirmation = true
+                        }
+                        .disabled(selectedTeamPlayerSongCount == 0)
+
+                        if let duplicatePlayerSongsResultText {
+                            Label(duplicatePlayerSongsResultText, systemImage: "checkmark.circle")
+                                .font(.footnote)
+                                .foregroundStyle(.secondary)
+                        } else {
+                            Text("Creates independent Custom Clip copies for Player Songs on the selected team. Players without songs are skipped.")
+                                .font(.footnote)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+
                     Section("Generated Clip Storage") {
                         Button("Inspect Generated Clips") {
-                            Task { await appModel.refreshGeneratedClipCleanupReport() }
+                            inspectGeneratedClips()
+                        }
+                        .disabled(isInspectingGeneratedClips)
+
+                        if isInspectingGeneratedClips {
+                            HStack {
+                                ProgressView()
+                                Text("Inspecting generated clips...")
+                                    .foregroundStyle(.secondary)
+                            }
+                        } else if let generatedClipLastInspectedAt {
+                            Label(
+                                "Last inspected \(generatedClipLastInspectedAt.formatted(date: .omitted, time: .shortened))",
+                                systemImage: "clock"
+                            )
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
                         }
 
                         if let report = appModel.generatedClipCleanupReport {
@@ -6845,6 +6808,18 @@ private struct DeveloperToolsView: View {
         .accentWashBackground()
         .navigationTitle("Developer Tools")
         .confirmationDialog(
+            "Duplicate Player Songs to Custom Clips?",
+            isPresented: $showDuplicatePlayerSongsConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button("Duplicate \(selectedTeamPlayerSongCount) \(selectedTeamPlayerSongCount == 1 ? "Clip" : "Clips")") {
+                duplicatePlayerSongsToCustomClips()
+            }
+            Button("Cancel", role: .cancel) { }
+        } message: {
+            Text("Roll Call will create independent Custom Clip copies for Player Songs on the selected team. Existing Player Songs will not be changed.")
+        }
+        .confirmationDialog(
             "Remove Unreferenced Generated Clips?",
             isPresented: $showGeneratedClipCleanupConfirmation,
             titleVisibility: .visible
@@ -6857,6 +6832,34 @@ private struct DeveloperToolsView: View {
             if let report = appModel.generatedClipCleanupReport {
                 Text("Roll Call will remove \(report.orphanedFileCount) files using \(ByteCountFormatter.string(fromByteCount: report.orphanedByteCount, countStyle: .file)). This cannot be undone.")
             }
+        }
+    }
+
+    private var selectedTeamPlayerSongCount: Int {
+        guard let team = appModel.selectedTeam else { return 0 }
+        return team.players.filter { team.songClip(for: $0) != nil }.count
+    }
+
+    private func duplicatePlayerSongsToCustomClips() {
+        let result = appModel.duplicateSelectedTeamPlayerSongsToCustomClips()
+        if result.copiedCount == 0 {
+            duplicatePlayerSongsResultText = result.skippedCount == 0
+                ? "No selected team found."
+                : "No Player Songs found to duplicate."
+        } else if result.skippedCount == 0 {
+            duplicatePlayerSongsResultText = "Created \(result.copiedCount) Custom \(result.copiedCount == 1 ? "Clip" : "Clips")."
+        } else {
+            duplicatePlayerSongsResultText = "Created \(result.copiedCount) Custom \(result.copiedCount == 1 ? "Clip" : "Clips"); skipped \(result.skippedCount) \(result.skippedCount == 1 ? "player" : "players") without songs."
+        }
+    }
+
+    private func inspectGeneratedClips() {
+        guard !isInspectingGeneratedClips else { return }
+        isInspectingGeneratedClips = true
+        Task { @MainActor in
+            await appModel.refreshGeneratedClipCleanupReport()
+            generatedClipLastInspectedAt = .now
+            isInspectingGeneratedClips = false
         }
     }
 }
@@ -7422,28 +7425,6 @@ private struct PlayerEditorSheet: View {
                     PlayerEditorSectionHeader("Announcement Cue")
                 }
                 .playerEditorListRow()
-
-                if let cue = player.cue,
-                   appModel.featureFlags.appleMusicLocalCopyEnabled,
-                   case .appleMusic = cue.source {
-                    Section {
-                        Button {
-                            appModel.updatePlayer(player)
-                            let currentPlayer = player
-                            Task {
-                                await appModel.makeLocalCopy(for: currentPlayer)
-                                await MainActor.run { refreshPlayerFromModel() }
-                            }
-                        } label: {
-                            Label("Make Local Copy", systemImage: "doc.on.doc")
-                        }
-                        .rollCallButtonStyle(.secondary)
-                        .rollCallCard(.utility)
-                    } header: {
-                        PlayerEditorSectionHeader("Experimental")
-                    }
-                    .playerEditorListRow()
-                }
 
                 Section {
                     Button(role: .destructive) {

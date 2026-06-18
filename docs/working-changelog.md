@@ -63,6 +63,11 @@ Internal notes for building public-facing changelogs. Keep entries understandabl
 - Roll Call 1.2 now preserves each player's song choice in a richer model that separates the original song, selected timing, local preparation state, device readiness, and export portability. Existing teams and older `.rollcall` files migrate automatically when opened. [needs review]
 
 ### Internal / Maintenance
+- Developer Tools can now duplicate the selected team's Player Songs into independent Custom Clips for faster review setup.
+- Generated Clip Storage in Developer Tools now shows visible progress and a last-inspected time when checking generated clip storage.
+- Removed the Music Render Probe entry from Developer Tools now that Phase 0 findings are captured.
+- Removed failed Apple Music Local Copies and Apple Music Transition Crossfade experiments from Developer Tools while keeping the existing release fading and generated-clip paths in place.
+- Removed the legacy premium-unlock testing flag and Developer Tools controls now that Roll Call's product policy is all-features-free.
 - Checked-in app version metadata now reads `1.2` build `71` for the fade-audit fixes and continued hands-on review.
 - Checked-in app version metadata now reads `1.2` build `70` after the icon refresh for continued hands-on review.
 - Checked-in app version metadata now reads `1.2` build `69` for post-plan hands-on issue review.
@@ -72,4 +77,3 @@ Internal notes for building public-facing changelogs. Keep entries understandabl
 - Added a one-at-a-time song preparation queue with deterministic stale-result protection, bounded retries, Low Power pauses, live-use throttling, and generated `.m4a` storage. iOS does not expose a supported API for apps to request Apple Music offline downloads, so Roll Call does not attempt or imply that behavior.
 - Added the Phase 1 cue-revamp model and saved-state migration foundation while keeping the current playback and editing paths working through the existing cue recipe.
 - Checked-in app version metadata now reads `1.2` build `66` for the current `release/1.2` cue-revamp baseline.
-- `release/1.2` now includes an internal-only `Music Render Probe` in Developer Tools for manually testing which device-library and Apple Music cases can really render to local clips through public APIs, plus a redacted summary export for the findings note.
