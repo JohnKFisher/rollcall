@@ -360,6 +360,7 @@ struct SongClipPreparationRequest: Equatable, Identifiable {
 enum PackageClipTransferState: String, Codable, Equatable {
     case localClipIncluded
     case sourceReferenceOnly
+    case needsAppleMusicCheck
     case needsAppleMusic
     case stillPreparing
     case needsRepair
@@ -412,7 +413,7 @@ struct PackageImportAudit: Identifiable, Equatable {
         PackageTransferSummary(
             localClipIncludedCount: items.filter { $0.state == .localClipIncluded }.count,
             sourceReferenceOnlyCount: items.filter { $0.state == .sourceReferenceOnly }.count,
-            needsAppleMusicCount: items.filter { $0.state == .needsAppleMusic }.count,
+            needsAppleMusicCount: items.filter { $0.state == .needsAppleMusic || $0.state == .needsAppleMusicCheck }.count,
             stillPreparingCount: items.filter { $0.state == .stillPreparing }.count,
             needsRepairCount: items.filter { $0.state == .needsRepair }.count
         )

@@ -132,7 +132,8 @@ final class PackageServiceTests: XCTestCase {
         let result = try service.importWithAudit(
             packageURL: packageURL,
             audioAssetService: AudioAssetService(),
-            musicAuthorizationStatus: .denied
+            musicAuthorizationStatus: .denied,
+            appleMusicPlaybackCapability: .unknown
         )
 
         guard let clip = result.manifest.team.players.first?.songAssignment?.privateClip else {
@@ -213,7 +214,8 @@ final class PackageServiceTests: XCTestCase {
         let result = try service.importWithAudit(
             packageURL: packageURL,
             audioAssetService: AudioAssetService(),
-            musicAuthorizationStatus: .denied
+            musicAuthorizationStatus: .denied,
+            appleMusicPlaybackCapability: .unknown
         )
 
         XCTAssertEqual(preview.summary.localClipIncludedCount, 1)
@@ -247,7 +249,8 @@ final class PackageServiceTests: XCTestCase {
         let result = try service.importWithAudit(
             packageURL: packageURL,
             audioAssetService: AudioAssetService(),
-            musicAuthorizationStatus: .denied
+            musicAuthorizationStatus: .denied,
+            appleMusicPlaybackCapability: .unknown
         )
 
         guard case .appleMusic(let source)? = result.manifest.team.players.first?
@@ -256,6 +259,62 @@ final class PackageServiceTests: XCTestCase {
         }
         XCTAssertEqual(source.songID, "catalog.keep.me")
         XCTAssertEqual(result.audit.items.first?.state, .needsAppleMusic)
+    }
+
+    func testAppleMusicAssignmentReportsCheckNeededBeforeMusicAuthorization() throws {
+        let player = RollCallTestFixtures.player(
+            id: RollCallTestFixtures.alexID,
+            name: "Alex Ramirez",
+            number: "12",
+            cue: RollCallTestFixtures.appleMusicCue(
+                songID: "catalog.check.me",
+                title: "Check Me",
+                artistName: "Test Artist"
+            )
+        )
+        let team = RollCallTestFixtures.team(players: [player], battingOrder: [player.id])
+        let packageURL = try service.export(
+            team: team,
+            state: RollCallTestFixtures.appState(team: team)
+        )
+
+        let result = try service.importWithAudit(
+            packageURL: packageURL,
+            audioAssetService: AudioAssetService(),
+            musicAuthorizationStatus: .notDetermined,
+            appleMusicPlaybackCapability: .unknown
+        )
+
+        XCTAssertEqual(result.audit.items.first?.state, .needsAppleMusicCheck)
+        XCTAssertEqual(result.audit.summary.needsAppleMusicCount, 1)
+    }
+
+    func testAppleMusicAssignmentReportsReadyWhenPlaybackCapabilityIsConfirmed() throws {
+        let player = RollCallTestFixtures.player(
+            id: RollCallTestFixtures.alexID,
+            name: "Alex Ramirez",
+            number: "12",
+            cue: RollCallTestFixtures.appleMusicCue(
+                songID: "catalog.ready.here",
+                title: "Ready Here",
+                artistName: "Test Artist"
+            )
+        )
+        let team = RollCallTestFixtures.team(players: [player], battingOrder: [player.id])
+        let packageURL = try service.export(
+            team: team,
+            state: RollCallTestFixtures.appState(team: team)
+        )
+
+        let result = try service.importWithAudit(
+            packageURL: packageURL,
+            audioAssetService: AudioAssetService(),
+            musicAuthorizationStatus: .authorized,
+            appleMusicPlaybackCapability: .fullSong
+        )
+
+        XCTAssertEqual(result.audit.items.first?.state, .sourceReferenceOnly)
+        XCTAssertEqual(result.audit.summary.sourceReferenceOnlyCount, 1)
     }
 
     private func writePackageDirectory(name: String, manifest: TeamPackageManifest) throws -> URL {

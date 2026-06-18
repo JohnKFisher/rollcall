@@ -1,4 +1,5 @@
 import AVFoundation
+import UIKit
 import XCTest
 @testable import RollCall
 
@@ -960,5 +961,78 @@ final class SongClipGenerationTests: XCTestCase {
             code: 1,
             userInfo: [NSLocalizedDescriptionKey: "Timed out waiting for song clip preparation."]
         )
+    }
+}
+
+final class TeamAccentThemeContrastTests: XCTestCase {
+    func testGoldOnFillUsesDarkForegroundInDarkMode() {
+        let traits = UITraitCollection(userInterfaceStyle: .dark)
+        let foreground = TeamAccentPreset.gold.theme.uiColor(.onFill).resolvedColor(with: traits)
+
+        XCTAssertTrue(foreground.rollCallTestMatches(.black, traits: traits))
+    }
+
+    func testOnFillChoosesHigherContrastForegroundForEveryAccent() {
+        for style in [UIUserInterfaceStyle.light, .dark] {
+            let traits = UITraitCollection(userInterfaceStyle: style)
+
+            for preset in TeamAccentPreset.allCases {
+                let theme = preset.theme
+                let fill = theme.uiColor(.fill).resolvedColor(with: traits)
+                let foreground = theme.uiColor(.onFill).resolvedColor(with: traits)
+                let blackContrast = UIColor.rollCallTestContrastRatio(between: .black, and: fill)
+                let whiteContrast = UIColor.rollCallTestContrastRatio(between: .white, and: fill)
+                let chosenContrast = UIColor.rollCallTestContrastRatio(between: foreground, and: fill)
+
+                XCTAssertEqual(
+                    chosenContrast,
+                    max(blackContrast, whiteContrast),
+                    accuracy: 0.001,
+                    "\(preset.title) should use the higher-contrast on-fill color in \(style == .dark ? "dark" : "light") mode."
+                )
+            }
+        }
+    }
+}
+
+private extension UIColor {
+    func rollCallTestMatches(_ expected: UIColor, traits: UITraitCollection) -> Bool {
+        let lhs = rollCallTestSRGBComponents
+        let rhs = expected.resolvedColor(with: traits).rollCallTestSRGBComponents
+        return abs(lhs.red - rhs.red) < 0.001
+            && abs(lhs.green - rhs.green) < 0.001
+            && abs(lhs.blue - rhs.blue) < 0.001
+    }
+
+    static func rollCallTestContrastRatio(between foreground: UIColor, and background: UIColor) -> CGFloat {
+        let foregroundLuminance = foreground.rollCallTestRelativeLuminance
+        let backgroundLuminance = background.rollCallTestRelativeLuminance
+        return (max(foregroundLuminance, backgroundLuminance) + 0.05) / (min(foregroundLuminance, backgroundLuminance) + 0.05)
+    }
+
+    var rollCallTestRelativeLuminance: CGFloat {
+        let components = rollCallTestSRGBComponents
+        return 0.2126 * UIColor.rollCallTestLinearComponent(components.red)
+            + 0.7152 * UIColor.rollCallTestLinearComponent(components.green)
+            + 0.0722 * UIColor.rollCallTestLinearComponent(components.blue)
+    }
+
+    var rollCallTestSRGBComponents: (red: CGFloat, green: CGFloat, blue: CGFloat) {
+        var red: CGFloat = 0
+        var green: CGFloat = 0
+        var blue: CGFloat = 0
+        var alpha: CGFloat = 0
+
+        guard getRed(&red, green: &green, blue: &blue, alpha: &alpha) else {
+            return (0, 0, 0)
+        }
+
+        return (red, green, blue)
+    }
+
+    static func rollCallTestLinearComponent(_ value: CGFloat) -> CGFloat {
+        value <= 0.03928
+            ? value / 12.92
+            : pow((value + 0.055) / 1.055, 2.4)
     }
 }

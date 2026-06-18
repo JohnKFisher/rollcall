@@ -17,6 +17,7 @@ Internal notes for building public-facing changelogs. Keep entries understandabl
 
 - Refreshed the app icon and `.rollcall` team file icons so exported packages match the latest Roll Call artwork with a full-bleed file icon treatment; the app icon now builds from the Icon Composer source so its dark and tinted variants are included. [public candidate] [needs review]
 - Team export now previews how many clips will travel as local audio, remain Apple Music links, are still preparing, or need repair before creating the package. [public candidate] [needs review]
+- Imported Apple Music-linked songs now check this device's Music access automatically when possible. The import check shows Apple Music as ready, unavailable, or still needing the user's permission instead of asking everyone to verify manually. [public candidate] [needs review]
 - Player Songs and Custom Clips can be copied into each other through `Use Existing Clip`; every copy is independent, so later edits and deletion never silently change the source. [public candidate] [needs review]
 - The Clips page now separates built-in Sound Effects from ordered Custom Clips, keeps live tiles playback-only, and places adding, editing, reordering, and deletion behind an explicit Edit action. [public candidate] [needs review]
 - The Clips page now shows the five built-in Sound Effects in a compact row with sound-specific icons and highlights the active playing clip with the same live blue treatment used on Game Day. [needs review]
@@ -36,6 +37,7 @@ Internal notes for building public-facing changelogs. Keep entries understandabl
 
 ### Fixed
 
+- Filled accent buttons now choose a readable black or white foreground from the selected team color, so light accents like Gold stay legible in dark mode. [needs review]
 - Source-backed Apple Music and Music Library fades now line up with generated local clips: the fade ends at the selected clip endpoint instead of drifting into the stop-safety tail. [needs review]
 - The welcome screen's `Let's Get Started` button is readable in both light and dark mode.
 - Music Library songs now preview through the exact selected library item, preserving arbitrary start times for cloud-backed library songs instead of relying on partial asset URLs or mismatched catalog playback.

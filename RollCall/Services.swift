@@ -1859,14 +1859,16 @@ struct PackageService: Sendable {
         try importWithAudit(
             packageURL: packageURL,
             audioAssetService: audioAssetService,
-            musicAuthorizationStatus: MusicAuthorization.currentStatus
+            musicAuthorizationStatus: MusicAuthorization.currentStatus,
+            appleMusicPlaybackCapability: .unknown
         ).manifest
     }
 
     func importWithAudit(
         packageURL: URL,
         audioAssetService: AudioAssetService,
-        musicAuthorizationStatus: MusicAuthorization.Status
+        musicAuthorizationStatus: MusicAuthorization.Status,
+        appleMusicPlaybackCapability: AppleMusicPlaybackCapability
     ) throws -> ImportResult {
         let extractedDirectory = try extractedDirectoryIfNeeded(for: packageURL)
         defer {
@@ -1888,9 +1890,47 @@ struct PackageService: Sendable {
         }
         let audit = importAudit(
             for: manifest.team,
-            musicAuthorizationStatus: musicAuthorizationStatus
+            musicAuthorizationStatus: musicAuthorizationStatus,
+            appleMusicPlaybackCapability: appleMusicPlaybackCapability
         )
         return ImportResult(manifest: manifest, audit: audit)
+    }
+
+    func importAudit(
+        for team: Team,
+        musicAuthorizationStatus: MusicAuthorization.Status,
+        appleMusicPlaybackCapability: AppleMusicPlaybackCapability
+    ) -> PackageImportAudit {
+        var items: [PackageImportAudit.Item] = []
+
+        for player in team.players {
+            guard let clip = team.songClip(for: player) else { continue }
+            items.append(
+                auditItem(
+                    clip: clip,
+                    title: player.displayName,
+                    destination: .player(player.id),
+                    musicAuthorizationStatus: musicAuthorizationStatus,
+                    appleMusicPlaybackCapability: appleMusicPlaybackCapability
+                )
+            )
+        }
+        for clip in team.teamClips {
+            items.append(
+                auditItem(
+                    clip: clip,
+                    title: clip.displayName ?? clip.playbackCue.label,
+                    destination: .teamClip(clip.id),
+                    musicAuthorizationStatus: musicAuthorizationStatus,
+                    appleMusicPlaybackCapability: appleMusicPlaybackCapability
+                )
+            )
+        }
+        return PackageImportAudit(
+            teamID: team.id,
+            teamName: team.name,
+            items: items
+        )
     }
 
     func preview(packageURL: URL) throws -> TeamPackageManifest {
@@ -2469,45 +2509,12 @@ struct PackageService: Sendable {
         }
     }
 
-    private func importAudit(
-        for team: Team,
-        musicAuthorizationStatus: MusicAuthorization.Status
-    ) -> PackageImportAudit {
-        var items: [PackageImportAudit.Item] = []
-
-        for player in team.players {
-            guard let clip = team.songClip(for: player) else { continue }
-            items.append(
-                auditItem(
-                    clip: clip,
-                    title: player.displayName,
-                    destination: .player(player.id),
-                    musicAuthorizationStatus: musicAuthorizationStatus
-                )
-            )
-        }
-        for clip in team.teamClips {
-            items.append(
-                auditItem(
-                    clip: clip,
-                    title: clip.displayName ?? clip.playbackCue.label,
-                    destination: .teamClip(clip.id),
-                    musicAuthorizationStatus: musicAuthorizationStatus
-                )
-            )
-        }
-        return PackageImportAudit(
-            teamID: team.id,
-            teamName: team.name,
-            items: items
-        )
-    }
-
     private func auditItem(
         clip: SongClip,
         title: String,
         destination: PackageImportAudit.Item.Destination,
-        musicAuthorizationStatus: MusicAuthorization.Status
+        musicAuthorizationStatus: MusicAuthorization.Status,
+        appleMusicPlaybackCapability: AppleMusicPlaybackCapability
     ) -> PackageImportAudit.Item {
         let state: PackageClipTransferState
         let detail: String
@@ -2525,12 +2532,18 @@ struct PackageService: Sendable {
                 state = .localClipIncluded
                 detail = "This built-in Roll Call clip is ready on this device."
             case .appleMusic:
-                if musicAuthorizationStatus == .authorized {
+                if musicAuthorizationStatus == .notDetermined {
+                    state = .needsAppleMusicCheck
+                    detail = "The song choice was preserved. Tap the marker to allow Music access and check Apple Music on this device."
+                } else if musicAuthorizationStatus == .authorized && appleMusicPlaybackCapability == .fullSong {
                     state = .sourceReferenceOnly
-                    detail = "The Apple Music link was preserved. Roll Call will verify playback on this device."
+                    detail = "Apple Music playback access is confirmed on this device. The saved song link is still device-dependent."
+                } else if musicAuthorizationStatus == .authorized {
+                    state = .needsAppleMusic
+                    detail = "The song choice was preserved, but this device does not have an active Apple Music playback subscription available to Roll Call."
                 } else {
                     state = .needsAppleMusic
-                    detail = "The song choice was preserved, but Apple Music access is needed here."
+                    detail = "The song choice was preserved, but Music access is not available to Roll Call on this device."
                 }
             case .localAudio:
                 state = .needsRepair

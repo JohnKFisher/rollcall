@@ -1934,10 +1934,15 @@ final class AppModel: ObservableObject {
             }
             _ = try self.packageService.preview(packageURL: url)
             try await self.createBackupBeforeRiskyOperation(reason: "Automatic backup before package import")
+            let musicAuthorizationStatus = MusicAuthorization.currentStatus
+            let appleMusicPlaybackCapability = await self.appleMusicPlaybackCapabilityForAudit(
+                musicAuthorizationStatus: musicAuthorizationStatus
+            )
             let importResult = try self.packageService.importWithAudit(
                 packageURL: url,
                 audioAssetService: self.audioAssetService,
-                musicAuthorizationStatus: MusicAuthorization.currentStatus
+                musicAuthorizationStatus: musicAuthorizationStatus,
+                appleMusicPlaybackCapability: appleMusicPlaybackCapability
             )
             var imported = importResult.manifest.team
             imported.id = UUID()
@@ -2029,6 +2034,34 @@ final class AppModel: ObservableObject {
         refreshReadiness()
         scheduleAllSongClipPreparation(trigger: .authorizationChanged)
         return status
+    }
+
+    func checkAppleMusicForCompletedPackageImport() async {
+        guard let audit = completedPackageImportAudit,
+              let team = state.teams.first(where: { $0.id == audit.teamID }) else {
+            return
+        }
+        let status: MusicAuthorization.Status
+        if MusicAuthorization.currentStatus == .notDetermined {
+            status = await requestAppleMusicAccess()
+        } else {
+            status = MusicAuthorization.currentStatus
+        }
+        let capability = await appleMusicPlaybackCapabilityForAudit(musicAuthorizationStatus: status)
+        completedPackageImportAudit = packageService.importAudit(
+            for: team,
+            musicAuthorizationStatus: status,
+            appleMusicPlaybackCapability: capability
+        )
+    }
+
+    private func appleMusicPlaybackCapabilityForAudit(
+        musicAuthorizationStatus: MusicAuthorization.Status
+    ) async -> AppleMusicPlaybackCapability {
+        guard musicAuthorizationStatus == .authorized else { return .unknown }
+        let capability = await musicCatalogService.playbackCapability()
+        appleMusicPlaybackCapability = capability
+        return capability
     }
 
     func createBackup(reason: String) {

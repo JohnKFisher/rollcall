@@ -27,75 +27,66 @@ struct TeamAccentTheme: Equatable {
         _ tone: TeamAccentThemeTone = .primary,
         surface: RollCallSurfaceVariant = .standard
     ) -> UIColor {
-        let uiColor: UIColor
+        if tone == .onFill {
+            return UIColor { traits in
+                let fillColor = self.uiColor(.fill, surface: surface).resolvedColor(with: traits)
+                return UIColor.rollCallReadableForeground(over: fillColor)
+            }
+        }
+
+        let resolvedColor: UIColor
 
         switch (preset, tone) {
         case (.rollCallOrange, .primary), (.rollCallOrange, .fill), (.rollCallOrange, .subtle):
-            uiColor = .systemOrange
-        case (.rollCallOrange, .onFill):
-            uiColor = .white
+            resolvedColor = .systemOrange
 
         case (.red, .primary), (.red, .fill), (.red, .subtle):
-            uiColor = .systemRed
-        case (.red, .onFill):
-            uiColor = .white
+            resolvedColor = .systemRed
 
         case (.gold, .primary):
-            uiColor = UIColor { traits in
+            resolvedColor = UIColor { traits in
                 traits.userInterfaceStyle == .dark
                     ? .systemYellow
                     : UIColor(red: 0.58, green: 0.38, blue: 0.00, alpha: 1.00)
             }
         case (.gold, .fill), (.gold, .subtle):
-            uiColor = .systemYellow
-        case (.gold, .onFill):
-            uiColor = .black
+            resolvedColor = .systemYellow
 
         case (.green, .primary), (.green, .fill), (.green, .subtle):
-            uiColor = .systemGreen
-        case (.green, .onFill):
-            uiColor = .white
+            resolvedColor = .systemGreen
 
         case (.blue, .primary), (.blue, .fill), (.blue, .subtle):
-            uiColor = .systemBlue
-        case (.blue, .onFill):
-            uiColor = .white
+            resolvedColor = .systemBlue
 
         case (.purple, .primary), (.purple, .fill), (.purple, .subtle):
-            uiColor = .systemPurple
-        case (.purple, .onFill):
-            uiColor = .white
+            resolvedColor = .systemPurple
 
         case (.gray, .primary), (.gray, .subtle):
-            uiColor = UIColor { traits in
+            resolvedColor = UIColor { traits in
                 traits.userInterfaceStyle == .dark ? .systemGray2 : .systemGray
             }
         case (.gray, .fill):
-            uiColor = UIColor { traits in
+            resolvedColor = UIColor { traits in
                 traits.userInterfaceStyle == .dark ? .systemGray3 : .systemGray
             }
-        case (.gray, .onFill):
-            uiColor = .white
 
         case (.black, .primary), (.black, .fill):
-            uiColor = UIColor { traits in
+            resolvedColor = UIColor { traits in
                 traits.userInterfaceStyle == .dark
                     ? .systemGray2
                     : UIColor(red: 0.06, green: 0.06, blue: 0.07, alpha: 1.00)
             }
         case (.black, .subtle):
-            uiColor = UIColor { traits in
+            resolvedColor = UIColor { traits in
                 traits.userInterfaceStyle == .dark
                     ? .systemGray3
                     : UIColor(red: 0.06, green: 0.06, blue: 0.07, alpha: 1.00)
             }
-        case (.black, .onFill):
-            uiColor = UIColor { traits in
-                traits.userInterfaceStyle == .dark ? .black : .white
-            }
+        case (_, .onFill):
+            preconditionFailure("onFill is resolved before accent fill colors are switched.")
         }
 
-        return uiColor
+        return resolvedColor
     }
 
     func color(
@@ -104,6 +95,46 @@ struct TeamAccentTheme: Equatable {
     ) -> Color {
         let color = Color(uiColor: uiColor(tone, surface: surface))
         return color
+    }
+}
+
+private extension UIColor {
+    static func rollCallReadableForeground(over background: UIColor) -> UIColor {
+        contrastRatio(between: .black, and: background) >= contrastRatio(between: .white, and: background)
+            ? .black
+            : .white
+    }
+
+    static func contrastRatio(between foreground: UIColor, and background: UIColor) -> CGFloat {
+        let foregroundLuminance = foreground.rollCallRelativeLuminance
+        let backgroundLuminance = background.rollCallRelativeLuminance
+        return (max(foregroundLuminance, backgroundLuminance) + 0.05) / (min(foregroundLuminance, backgroundLuminance) + 0.05)
+    }
+
+    var rollCallRelativeLuminance: CGFloat {
+        let components = rollCallSRGBComponents
+        return 0.2126 * UIColor.rollCallLinearComponent(components.red)
+            + 0.7152 * UIColor.rollCallLinearComponent(components.green)
+            + 0.0722 * UIColor.rollCallLinearComponent(components.blue)
+    }
+
+    var rollCallSRGBComponents: (red: CGFloat, green: CGFloat, blue: CGFloat) {
+        var red: CGFloat = 0
+        var green: CGFloat = 0
+        var blue: CGFloat = 0
+        var alpha: CGFloat = 0
+
+        guard getRed(&red, green: &green, blue: &blue, alpha: &alpha) else {
+            return (0, 0, 0)
+        }
+
+        return (red, green, blue)
+    }
+
+    static func rollCallLinearComponent(_ value: CGFloat) -> CGFloat {
+        value <= 0.03928
+            ? value / 12.92
+            : pow((value + 0.055) / 1.055, 2.4)
     }
 }
 

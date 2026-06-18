@@ -671,6 +671,9 @@ struct RootView: View {
             .sheet(item: Binding(get: { appModel.completedPackageImportAudit }, set: { appModel.completedPackageImportAudit = $0 })) { audit in
                 PackageImportAuditSheet(
                     audit: audit,
+                    onAppleMusicCheck: {
+                        Task { await appModel.checkAppleMusicForCompletedPackageImport() }
+                    },
                     onRepair: { item in
                         openImportedRepair(item, audit: audit)
                     },
@@ -1511,7 +1514,8 @@ struct RootView: View {
                                 SettingsRowLabel(
                                     title: "Create Team",
                                     detail: "Add a new team, then choose it below.",
-                                    systemImage: "plus"
+                                    systemImage: "plus",
+                                    style: .filledAction
                                 )
                             }
                             .rollCallButtonStyle(.primary)
@@ -1638,7 +1642,8 @@ struct RootView: View {
                                 SettingsRowLabel(
                                     title: "Export Selected Team",
                                     detail: "Create the latest portable team package.",
-                                    systemImage: "shippingbox.fill"
+                                    systemImage: "shippingbox.fill",
+                                    style: .filledAction
                                 )
                             }
                             .rollCallButtonStyle(.primary)
@@ -2274,7 +2279,8 @@ private struct OnboardingRootView: View {
                     SettingsRowLabel(
                         title: "Create Team",
                         detail: "Save this team and continue setup.",
-                        systemImage: "plus"
+                        systemImage: "plus",
+                        style: .filledAction
                     )
                 }
                 .rollCallButtonStyle(.primary)
@@ -4618,17 +4624,46 @@ private struct SettingsRowLabel: View {
     let title: String
     let detail: String
     let systemImage: String
+    var style: Style = .standard
+
+    enum Style {
+        case standard
+        case filledAction
+    }
+
+    @Environment(\.rollCallTeamAccentTheme) private var teamAccentTheme
+
+    private var actionForeground: Color? {
+        switch style {
+        case .standard:
+            return nil
+        case .filledAction:
+            return teamAccentTheme.color(.onFill)
+        }
+    }
+
+    private var titleForeground: Color {
+        actionForeground ?? Color(uiColor: .label)
+    }
+
+    private var detailForeground: Color {
+        actionForeground?.opacity(0.74) ?? Color(uiColor: .secondaryLabel)
+    }
 
     var body: some View {
         HStack(alignment: .center, spacing: RollCallSpacingTier.standard.value) {
-            SettingsIcon(systemImage: systemImage, role: .accent)
+            SettingsIcon(systemImage: systemImage, role: .accent, colorOverride: actionForeground)
             VStack(alignment: .leading, spacing: 4) {
                 Text(title)
-                    .rollCallText(.cardTitle)
+                    .font(.headline)
+                    .fontWeight(.semibold)
+                    .foregroundColor(titleForeground)
                     .lineLimit(2)
                     .fixedSize(horizontal: false, vertical: true)
                 Text(detail)
-                    .rollCallText(.helperText)
+                    .font(.footnote)
+                    .fontWeight(.medium)
+                    .foregroundColor(detailForeground)
                     .lineLimit(3)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -4641,11 +4676,15 @@ private struct SettingsRowLabel: View {
 private struct SettingsIcon: View {
     let systemImage: String
     let role: RollCallColorRole
+    var colorOverride: Color? = nil
 
     @Environment(\.rollCallTeamAccentTheme) private var teamAccentTheme
 
     private var color: Color {
-        role == .accent ? teamAccentTheme.color(.primary) : Color.rollCall(role)
+        if let colorOverride {
+            return colorOverride
+        }
+        return role == .accent ? teamAccentTheme.color(.primary) : Color.rollCall(role)
     }
 
     var body: some View {
@@ -4711,6 +4750,7 @@ private struct PackageExportPreviewSheet: View {
 
 private struct PackageImportAuditSheet: View {
     let audit: PackageImportAudit
+    let onAppleMusicCheck: () -> Void
     let onRepair: (PackageImportAudit.Item) -> Void
     let onDone: () -> Void
 
@@ -4732,9 +4772,19 @@ private struct PackageImportAuditSheet: View {
                                 Text(item.title)
                                     .rollCallText(.cardTitle)
                                 Spacer(minLength: 8)
-                                Text(item.state.packageLabel)
-                                    .font(.caption.weight(.semibold))
-                                    .foregroundStyle(item.state.packageColor)
+                                if item.state == .needsAppleMusicCheck {
+                                    Button(action: onAppleMusicCheck) {
+                                        Text(item.state.packageLabel)
+                                            .font(.caption.weight(.semibold))
+                                            .foregroundStyle(item.state.packageColor)
+                                    }
+                                    .buttonStyle(.plain)
+                                    .accessibilityHint("Checks Apple Music access for this imported team.")
+                                } else {
+                                    Text(item.state.packageLabel)
+                                        .font(.caption.weight(.semibold))
+                                        .foregroundStyle(item.state.packageColor)
+                                }
                             }
                             Text(item.detail)
                                 .rollCallText(.helperText)
@@ -4781,8 +4831,9 @@ private struct PackageTransferSummarySection: View {
 private extension PackageClipTransferState {
     var packageLabel: String {
         switch self {
-        case .localClipIncluded: return "Ready"
-        case .sourceReferenceOnly: return "Verify Here"
+        case .localClipIncluded: return "Local File Ready"
+        case .sourceReferenceOnly: return "Apple Music Ready"
+        case .needsAppleMusicCheck: return "Needs Apple Music"
         case .needsAppleMusic: return "Needs Apple Music"
         case .stillPreparing: return "Preparing"
         case .needsRepair: return "Needs Repair"
@@ -4791,8 +4842,8 @@ private extension PackageClipTransferState {
 
     var packageColor: Color {
         switch self {
-        case .localClipIncluded: return Color.rollCall(.ready)
-        case .sourceReferenceOnly, .stillPreparing: return Color.rollCall(.warning)
+        case .localClipIncluded, .sourceReferenceOnly: return Color.rollCall(.ready)
+        case .needsAppleMusicCheck, .stillPreparing: return Color.rollCall(.warning)
         case .needsAppleMusic, .needsRepair: return Color.rollCall(.destructive)
         }
     }

@@ -15,6 +15,7 @@ Status:
 - Support bundles now report aggregate generation, readiness, portability, retry, policy, storage, cleanup, and boolean playback-state diagnostics without audio, song metadata, roster names, filenames, or source/model identifiers.
 - The Phase 3 Music Library-first picker received a high-level physical-device check on 2026-06-14 and appeared to work. Broader device coverage and detailed audible edge-case verification remain part of final Phase 6 release verification.
 - `1.2` build `71` is the checked-in fade-audit build for hands-on issue review. It keeps original song, timing, and fade truth editable when generated clips exist and aligns source-backed fades with generated local clip fade timing.
+- Filled accent buttons now choose a readable black or white foreground from the selected team color, so light accents like Gold remain legible in dark mode.
 - `1.2` build `70` was the checked-in post-icon-refresh build for hands-on issue review. The app target now compiles the Icon Composer `AppIcon.icon` package directly, including its dark and tinted app-icon variants, while the `.rollcall` document icons remain generated from the same artwork.
 - `1.2` build `69` was the checked-in post-plan build for hands-on issue review.
 - The Setup Guide audio step now uses the same Music Library, Apple Music search, file import, and draft `Make Your Clip` waveform editor as Player Editor. The old onboarding-only trim controls have been removed, while the crowd-cheer shortcut remains available for getting to Game Day quickly.
