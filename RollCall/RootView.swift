@@ -3558,8 +3558,7 @@ private struct CustomClipsManagerSheet: View {
     @State private var renamingClip: SongClip?
     @State private var renameText = ""
     @State private var deletingClip: SongClip?
-    @State private var sourcePlayerClip: SongClip?
-    @State private var copySourceForEditor: SongClip?
+    @State private var showExistingClipPicker = false
     @State private var notice: String?
     @State private var editMode: EditMode = .active
 
@@ -3615,20 +3614,12 @@ private struct CustomClipsManagerSheet: View {
                     } label: {
                         Label("Import Audio or Video", systemImage: "square.and.arrow.down")
                     }
-                    Menu {
-                        ForEach(team?.players ?? []) { player in
-                            if let clip = team?.songClip(for: player) {
-                                Button("\(player.displayName) — \(clip.playbackCue.rosterDisplayTitle)") {
-                                    sourcePlayerClip = clip
-                                    newClipName = "\(player.displayName) — \(clip.playbackCue.rosterDisplayTitle)"
-                                    copySourceForEditor = clip
-                                }
-                            }
-                        }
+                    Button {
+                        showExistingClipPicker = true
                     } label: {
                         Label("Use Existing Clip", systemImage: "doc.on.doc")
                     }
-                    .disabled(team?.players.contains(where: { team?.songClip(for: $0) != nil }) != true)
+                    .disabled(existingClipSourceCount == 0)
                 }
 
                 if let notice {
@@ -3670,13 +3661,8 @@ private struct CustomClipsManagerSheet: View {
                     }
                 }
             }
-            .sheet(item: $copySourceForEditor) { clip in
-                NavigationStack {
-                    SongClipEditorView(appModel: appModel, initialCue: clip.editingCue) { cue in
-                        pendingNewCue = cue
-                        copySourceForEditor = nil
-                    }
-                }
+            .sheet(isPresented: $showExistingClipPicker) {
+                ExistingClipPickerSheet(appModel: appModel, destination: .customClip)
             }
             .fileImporter(
                 isPresented: $showFileImporter,
@@ -3698,14 +3684,12 @@ private struct CustomClipsManagerSheet: View {
                 set: {
                     if !$0 {
                         pendingNewCue = nil
-                        sourcePlayerClip = nil
                     }
                 }
             )) {
                 TextField("Clip name", text: $newClipName)
                 Button("Cancel", role: .cancel) {
                     pendingNewCue = nil
-                    sourcePlayerClip = nil
                 }
                 Button("Save") {
                     savePendingCue()
@@ -3786,34 +3770,49 @@ private struct CustomClipsManagerSheet: View {
 
     private func savePendingCue() {
         guard let cue = pendingNewCue else { return }
-        if let sourcePlayerClip {
-            _ = appModel.saveCustomClipCopy(from: sourcePlayerClip, editedCue: cue, named: newClipName)
-        } else {
-            _ = appModel.saveCustomClip(cue: cue, named: newClipName)
-        }
+        _ = appModel.saveCustomClip(cue: cue, named: newClipName)
         notice = "Custom Clip saved."
         pendingNewCue = nil
-        sourcePlayerClip = nil
+    }
+
+    private var existingClipSourceCount: Int {
+        guard let team else { return 0 }
+        let playerSongs = team.players.filter { team.songClip(for: $0) != nil }.count
+        return playerSongs + team.teamClips.count
     }
 }
 
 private struct ExistingClipPickerSheet: View {
+    enum Destination {
+        case player(UUID)
+        case customClip
+    }
+
+    private struct Selection: Identifiable {
+        let clip: SongClip
+        let suggestedCustomClipName: String
+
+        var id: UUID { clip.id }
+    }
+
     @Environment(\.dismiss) private var dismiss
     @ObservedObject var appModel: AppModel
-    let playerID: UUID
-    @State private var selectedClip: SongClip?
+    let destination: Destination
+    @State private var selectedClip: Selection?
 
     var body: some View {
         NavigationStack {
             List {
                 if let team = appModel.selectedTeam {
                     Section("Player Songs") {
-                        ForEach(team.players.filter { $0.id != playerID }) { player in
+                        ForEach(team.players.filter { shouldIncludePlayer($0, in: team) }) { player in
                             if let clip = team.songClip(for: player) {
+                                let title = player.displayName
                                 existingClipButton(
                                     clip: clip,
-                                    title: player.displayName,
-                                    subtitle: clip.playbackCue.rosterDisplayTitle
+                                    title: title,
+                                    subtitle: clip.playbackCue.rosterDisplayTitle,
+                                    suggestedCustomClipName: "\(title) - \(clip.playbackCue.rosterDisplayTitle)"
                                 )
                             }
                         }
@@ -3821,10 +3820,12 @@ private struct ExistingClipPickerSheet: View {
 
                     Section("Custom Clips") {
                         ForEach(team.teamClips) { clip in
+                            let title = clip.displayName ?? clip.playbackCue.rosterDisplayTitle
                             existingClipButton(
                                 clip: clip,
-                                title: clip.displayName ?? clip.playbackCue.rosterDisplayTitle,
-                                subtitle: clip.playbackCue.rosterDisplayTitle
+                                title: title,
+                                subtitle: clip.playbackCue.rosterDisplayTitle,
+                                suggestedCustomClipName: title
                             )
                         }
                     }
@@ -3847,8 +3848,8 @@ private struct ExistingClipPickerSheet: View {
             }
             .sheet(item: $selectedClip) { clip in
                 NavigationStack {
-                    SongClipEditorView(appModel: appModel, initialCue: clip.editingCue) { cue in
-                        appModel.savePlayerSongCopy(from: clip, editedCue: cue, to: playerID)
+                    SongClipEditorView(appModel: appModel, initialCue: clip.clip.editingCue) { cue in
+                        saveSelectedClip(clip, editedCue: cue)
                         selectedClip = nil
                         dismiss()
                     }
@@ -3859,13 +3860,42 @@ private struct ExistingClipPickerSheet: View {
 
     private var sourceCount: Int {
         guard let team = appModel.selectedTeam else { return 0 }
-        return team.players.filter { $0.id != playerID && team.songClip(for: $0) != nil }.count
-            + team.teamClips.count
+        let playerSongs = team.players.filter {
+            shouldIncludePlayer($0, in: team) && team.songClip(for: $0) != nil
+        }.count
+        return playerSongs + team.teamClips.count
     }
 
-    private func existingClipButton(clip: SongClip, title: String, subtitle: String) -> some View {
+    private func shouldIncludePlayer(_ player: Player, in team: Team) -> Bool {
+        switch destination {
+        case .player(let playerID):
+            return player.id != playerID
+        case .customClip:
+            return true
+        }
+    }
+
+    private func saveSelectedClip(_ selection: Selection, editedCue: Cue) {
+        switch destination {
+        case .player(let playerID):
+            appModel.savePlayerSongCopy(from: selection.clip, editedCue: editedCue, to: playerID)
+        case .customClip:
+            _ = appModel.saveCustomClipCopy(
+                from: selection.clip,
+                editedCue: editedCue,
+                named: selection.suggestedCustomClipName
+            )
+        }
+    }
+
+    private func existingClipButton(
+        clip: SongClip,
+        title: String,
+        subtitle: String,
+        suggestedCustomClipName: String
+    ) -> some View {
         Button {
-            selectedClip = clip
+            selectedClip = Selection(clip: clip, suggestedCustomClipName: suggestedCustomClipName)
         } label: {
             VStack(alignment: .leading, spacing: 4) {
                 Text(title)
@@ -6359,6 +6389,7 @@ private struct RecoveryCenterView: View {
                 Button("Create Backup") {
                     appModel.createBackup(reason: "Manual backup")
                 }
+                .rollCallButtonStyle(.secondary)
             }
 
             Section("Available Backups") {
@@ -6376,7 +6407,7 @@ private struct RecoveryCenterView: View {
                             Button("Restore Backup") {
                                 backupPendingRestore = snapshot
                             }
-                            .buttonStyle(.bordered)
+                            .rollCallButtonStyle(.secondary)
                         }
                         .padding(.vertical, 4)
                     }
@@ -6457,8 +6488,7 @@ private struct RecoveryCenterView: View {
                     Button("Restore") {
                         handleRestore(item)
                     }
-                    .buttonStyle(.borderedProminent)
-                    .controlSize(.small)
+                    .rollCallButtonStyle(.primary)
                 }
             }
 
@@ -7460,21 +7490,21 @@ private struct PlayerEditorSheet: View {
                     importedURL: mode == .files ? pendingImportedSongURL : nil,
                     onSave: { cue in
                         appModel.saveSongCue(cue, to: player.id)
-                        player.cue = cue
+                        player.updatePrivateSongClip(with: cue)
                     }
                 )
             }
             .sheet(isPresented: $showExistingClipPicker, onDismiss: {
                 refreshPlayerFromModel()
             }) {
-                ExistingClipPickerSheet(appModel: appModel, playerID: player.id)
+                ExistingClipPickerSheet(appModel: appModel, destination: .player(player.id))
             }
             .sheet(isPresented: $showAdvancedTrim) {
-                if player.cue != nil {
+                if editableCue != nil {
                     AdvancedTrimSheet(
                         cue: Binding(
-                            get: { player.cue! },
-                            set: { player.cue = $0 }
+                            get: { editableCue! },
+                            set: { player.updatePrivateSongClip(with: $0) }
                         ),
                         cueTimeLimit: cueTimeLimit,
                         cueDurationLimit: cueDurationLimit
@@ -7507,7 +7537,7 @@ private struct PlayerEditorSheet: View {
     }
 
     private var cueTimeLimit: Double {
-        guard let cue = player.cue else { return 30 }
+        guard let cue = editableCue else { return 30 }
         return appModel.cueTimelineLength(for: cue)
     }
 
@@ -7519,6 +7549,10 @@ private struct PlayerEditorSheet: View {
         effectiveSongClip?.playbackCue
     }
 
+    private var editableCue: Cue? {
+        player.songAssignment?.privateClip?.editingCue
+    }
+
     private var existingClipSourceCount: Int {
         guard let team = appModel.selectedTeam else { return 0 }
         let otherPlayerSongs = team.players.filter { $0.id != player.id && team.songClip(for: $0) != nil }.count
@@ -7526,7 +7560,7 @@ private struct PlayerEditorSheet: View {
     }
 
     private var cueDurationLimit: Double {
-        guard let cue = player.cue else { return 30 }
+        guard let cue = editableCue else { return 30 }
         return appModel.cueDurationLimit(for: cue)
     }
 
@@ -7757,7 +7791,7 @@ private struct PlayerEditorSheet: View {
 
     private func refreshPlayerFromModel(enableStartTrimForCueReplacing previousCueID: UUID?) {
         player = appModel.selectedTeam?.players.first(where: { $0.id == player.id }) ?? player
-        isStartTrimEditingEnabled = player.cue?.id != nil && player.cue?.id != previousCueID
+        isStartTrimEditingEnabled = editableCue?.id != nil && editableCue?.id != previousCueID
         normalizeTrimModeForCurrentCue()
     }
 
@@ -7822,7 +7856,7 @@ private struct PlayerEditorSheet: View {
             }
 
             Button {
-                guard let cue = player.cue else { return }
+                guard let cue = editableCue else { return }
                 Task { await appModel.previewCue(cue) }
             } label: {
                 Label("Preview Clip", systemImage: "play.fill")
@@ -7894,39 +7928,39 @@ private struct PlayerEditorSheet: View {
     }
 
     private func normalizeTrimModeForCurrentCue() {
-        guard let cue = player.cue, case .appleMusic = cue.source else { return }
+        guard let cue = editableCue, case .appleMusic = cue.source else { return }
         let beginningCue = appModel.chooseStartAtBeginning(for: cue)
         trimMode = abs(beginningCue.startTime - cue.startTime) < 0.01 ? .startAtBeginning : .suggestedHook
     }
 
     private func applyTrimSuggestion(mode: TrimSuggestionMode) {
-        guard let cue = player.cue, case .appleMusic = cue.source else { return }
+        guard let cue = editableCue, case .appleMusic = cue.source else { return }
         switch mode {
         case .suggestedHook:
-            player.cue = appModel.chooseSuggestedHook(for: cue)
+            player.updatePrivateSongClip(with: appModel.chooseSuggestedHook(for: cue))
         case .startAtBeginning:
-            player.cue = appModel.chooseStartAtBeginning(for: cue)
+            player.updatePrivateSongClip(with: appModel.chooseStartAtBeginning(for: cue))
         }
     }
 
     private func updateCueStart(progress: Double) {
-        guard var cue = player.cue else { return }
+        guard var cue = editableCue else { return }
         let maxStart = max(0, cueTimeLimit - cue.duration)
         cue.startTime = min(max(0, progress * cueTimeLimit), maxStart)
-        player.cue = cue
+        player.updatePrivateSongClip(with: cue)
     }
 
     private func updateCueDuration(_ duration: Double) {
-        guard var cue = player.cue else { return }
+        guard var cue = editableCue else { return }
         cue.duration = min(duration, cueDurationLimit)
         cue.duration = min(cue.duration, cueTimeLimit - cue.startTime)
         cue.duration = max(0.5, cue.duration)
-        player.cue = cue
+        player.updatePrivateSongClip(with: cue)
     }
 
     private func scheduleLiveScrubPreview() {
         liveScrubTask?.cancel()
-        guard let cue = player.cue else { return }
+        guard let cue = editableCue else { return }
         liveScrubTask = Task {
             try? await Task.sleep(for: .milliseconds(120))
             guard !Task.isCancelled else { return }
@@ -8571,7 +8605,7 @@ private struct AdvancedTrimSheet: View {
                     nudgeRow(title: "Fade", value: cue.fadeOutDuration) { delta in
                         cue.fadeOutDuration = min(max(0.1, cue.fadeOutDuration + delta), 3.0)
                     }
-                    Text("Fade timing only affects Apple Music full-song playback when you have an active Apple Music subscription and Volume Automation is enabled in Settings.")
+                    Text("Fade timing is baked into generated local clips. For source-backed Apple Music or Music Library songs, it applies when Volume Automation is enabled in Settings.")
                         .rollCallText(.helperText)
                 }
             }

@@ -219,7 +219,7 @@ Game Day never fails. The user might get a smaller cue than they expected, but n
 
 ### Volume Automation
 
-Off by default. When enabled, Roll Call adjusts iOS playback volume to maximum at cue start, then ramps it down during the fade-out window for a clean Apple-Music-friendly fade. Off-by-default is intentional — many coaches want to control volume themselves and find auto-changes surprising. Live readiness flags Volume Automation as "needs attention" only if the user has indicated they care.
+Off by default. When enabled, source-backed Apple Music and Music Library songs use the current device volume as their starting point, then ramp down during the selected fade-out window. Local, generated, built-in, and Announcement Cue files play at their encoded volume because generated local clips already bake in their fade envelope.
 
 ---
 

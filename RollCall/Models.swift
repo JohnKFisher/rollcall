@@ -373,6 +373,24 @@ struct Player: Codable, Equatable, Identifiable {
         try container.encodeIfPresent(customAnnouncerRelativePath, forKey: .customAnnouncerRelativePath)
         try container.encodeIfPresent(generatedBuiltInAnnouncerRelativePath, forKey: .generatedBuiltInAnnouncerRelativePath)
     }
+
+    mutating func updatePrivateSongClip(with editedCue: Cue) {
+        guard case .privateClip(let previousClip)? = songAssignment else {
+            songAssignment = .privateClip(SongClip(cue: editedCue))
+            return
+        }
+
+        var updatedClip = SongClip(cue: editedCue)
+        updatedClip.id = previousClip.id
+        updatedClip.sourceLineageClipID = previousClip.sourceLineageClipID
+        if updatedClip.generationKey == previousClip.generationKey {
+            updatedClip.generatedAsset = previousClip.generatedAsset
+            updatedClip.readinessInputs = previousClip.readinessInputs
+            updatedClip.portabilityInputs = previousClip.portabilityInputs
+            updatedClip.retryMetadata = previousClip.retryMetadata
+        }
+        songAssignment = .privateClip(updatedClip)
+    }
 }
 
 struct PlayerEditorDraftState: Equatable {

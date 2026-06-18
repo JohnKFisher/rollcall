@@ -880,6 +880,40 @@ private final class MusicKitTransitionCatalogPlaybackController: AppleMusicCatal
     }
 }
 
+struct PlaybackFadeSchedule: Equatable {
+    var sustainDuration: TimeInterval
+    var fadeDuration: TimeInterval
+    var postFadeStopDelay: TimeInterval
+    var stopDelay: TimeInterval
+
+    static func sourceBacked(
+        selectedDuration: TimeInterval,
+        tailGuard: TimeInterval,
+        fadeOut: TimeInterval,
+        volumeAutomationEnabled: Bool
+    ) -> PlaybackFadeSchedule {
+        let boundedDuration = selectedDuration.isFinite ? max(0, selectedDuration) : 0
+        let boundedTailGuard = tailGuard.isFinite ? max(0, tailGuard) : 0
+        let stopDelay = boundedDuration + boundedTailGuard
+        guard volumeAutomationEnabled else {
+            return PlaybackFadeSchedule(
+                sustainDuration: stopDelay,
+                fadeDuration: 0,
+                postFadeStopDelay: 0,
+                stopDelay: stopDelay
+            )
+        }
+        let boundedFade = fadeOut.isFinite ? max(0, fadeOut) : 0
+        let fadeDuration = min(boundedDuration, boundedFade)
+        return PlaybackFadeSchedule(
+            sustainDuration: max(0, boundedDuration - fadeDuration),
+            fadeDuration: fadeDuration,
+            postFadeStopDelay: boundedTailGuard,
+            stopDelay: stopDelay
+        )
+    }
+}
+
 @MainActor
 final class CuePlaybackEngine: NSObject, ObservableObject {
     @Published private(set) var activeCueID: UUID?
@@ -1410,44 +1444,50 @@ final class CuePlaybackEngine: NSObject, ObservableObject {
     }
 
     private func scheduleRemoteStop(duration: TimeInterval, fadeOut: TimeInterval, fadeOutVolumeAutomationEnabled: Bool, sessionID: UUID) {
-        let stopDelay = playbackStopDelayIncludingTailGuard(for: duration)
-        let fadeDuration = effectiveFadeDuration(
-            playbackDuration: stopDelay,
+        let schedule = PlaybackFadeSchedule.sourceBacked(
+            selectedDuration: duration,
+            tailGuard: primaryCueTailGuard,
             fadeOut: fadeOut,
-            fadeOutVolumeAutomationEnabled: fadeOutVolumeAutomationEnabled
+            volumeAutomationEnabled: fadeOutVolumeAutomationEnabled
         )
-        let sustainDuration = max(0, stopDelay - fadeDuration)
         stopTask = Task { [weak self] in
-            if sustainDuration > 0 {
-                try? await Task.sleep(for: .seconds(sustainDuration))
+            if schedule.sustainDuration > 0 {
+                try? await Task.sleep(for: .seconds(schedule.sustainDuration))
             }
             guard let self, !Task.isCancelled, self.playbackSessionID == sessionID else { return }
-            if fadeDuration > 0 {
-                await self.fadeRemote(duration: fadeDuration, sessionID: sessionID)
-            } else {
-                self.stopIfCurrent(sessionID: sessionID)
+            if schedule.fadeDuration > 0 {
+                await self.fadeRemote(duration: schedule.fadeDuration, sessionID: sessionID)
+                guard !Task.isCancelled, self.playbackSessionID == sessionID else { return }
+                if schedule.postFadeStopDelay > 0 {
+                    try? await Task.sleep(for: .seconds(schedule.postFadeStopDelay))
+                    guard !Task.isCancelled, self.playbackSessionID == sessionID else { return }
+                }
             }
+            self.stopIfCurrent(sessionID: sessionID)
         }
     }
 
     private func scheduleCatalogStop(duration: TimeInterval, fadeOut: TimeInterval, fadeOutVolumeAutomationEnabled: Bool, sessionID: UUID) {
-        let stopDelay = playbackStopDelayIncludingTailGuard(for: duration)
-        let fadeDuration = effectiveFadeDuration(
-            playbackDuration: stopDelay,
+        let schedule = PlaybackFadeSchedule.sourceBacked(
+            selectedDuration: duration,
+            tailGuard: primaryCueTailGuard,
             fadeOut: fadeOut,
-            fadeOutVolumeAutomationEnabled: fadeOutVolumeAutomationEnabled
+            volumeAutomationEnabled: fadeOutVolumeAutomationEnabled
         )
-        let sustainDuration = max(0, stopDelay - fadeDuration)
         stopTask = Task { [weak self] in
-            if sustainDuration > 0 {
-                try? await Task.sleep(for: .seconds(sustainDuration))
+            if schedule.sustainDuration > 0 {
+                try? await Task.sleep(for: .seconds(schedule.sustainDuration))
             }
             guard let self, !Task.isCancelled, self.playbackSessionID == sessionID else { return }
-            if fadeDuration > 0 {
-                await self.fadeCatalog(duration: fadeDuration, sessionID: sessionID)
-            } else {
-                self.stopIfCurrent(sessionID: sessionID)
+            if schedule.fadeDuration > 0 {
+                await self.fadeCatalog(duration: schedule.fadeDuration, sessionID: sessionID)
+                guard !Task.isCancelled, self.playbackSessionID == sessionID else { return }
+                if schedule.postFadeStopDelay > 0 {
+                    try? await Task.sleep(for: .seconds(schedule.postFadeStopDelay))
+                    guard !Task.isCancelled, self.playbackSessionID == sessionID else { return }
+                }
             }
+            self.stopIfCurrent(sessionID: sessionID)
         }
     }
 
@@ -1493,17 +1533,6 @@ final class CuePlaybackEngine: NSObject, ObservableObject {
         }
     }
 
-    private func effectiveFadeDuration(
-        playbackDuration: TimeInterval,
-        fadeOut: TimeInterval,
-        fadeOutVolumeAutomationEnabled: Bool
-    ) -> TimeInterval {
-        guard fadeOutVolumeAutomationEnabled else { return 0 }
-        let boundedPlayback = max(0, playbackDuration)
-        let boundedFade = max(0, fadeOut)
-        return min(boundedPlayback, boundedFade)
-    }
-
     private func fadeRemote(duration: TimeInterval, sessionID: UUID) async {
         guard let player = remotePlayer else { return }
         for step in stride(from: 8, through: 1, by: -1) {
@@ -1511,7 +1540,8 @@ final class CuePlaybackEngine: NSObject, ObservableObject {
             player.volume = Float(step) / 8
             try? await Task.sleep(for: .seconds(duration / 8))
         }
-        stopIfCurrent(sessionID: sessionID)
+        guard playbackSessionID == sessionID, !Task.isCancelled else { return }
+        player.volume = 0
     }
 
     private func fadeCatalog(duration: TimeInterval, sessionID: UUID) async {
@@ -1522,16 +1552,6 @@ final class CuePlaybackEngine: NSObject, ObservableObject {
         }
         guard playbackSessionID == sessionID, !Task.isCancelled else { return }
         catalogPlaybackController.setVolume(0)
-        catalogPlaybackController.stop(restoresVolume: false)
-        activeCueID = nil
-        activeCueProgress = nil
-        progressTask?.cancel()
-        progressTask = nil
-        sourceBackedVolumeAutomationEnabledForCurrentCue = false
-        try? await Task.sleep(for: .seconds(0.25))
-        guard playbackSessionID == sessionID, !Task.isCancelled else { return }
-        catalogPlaybackController.restoreVolume()
-        stopTask = nil
     }
 }
 

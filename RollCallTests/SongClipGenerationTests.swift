@@ -83,6 +83,26 @@ final class SongClipGenerationTests: XCTestCase {
         XCTAssertEqual(clip.playbackCue.fadeOutDuration, clip.requestedSelection.fadeOutDuration)
     }
 
+    func testPlaybackRejectsGeneratedAssetAfterFadeOnlyChanges() {
+        var clip = SongClip(cue: RollCallTestFixtures.localCue(relativePath: "original.caf"))
+        clip.generatedAsset = GeneratedClipAsset(
+            relativePath: "GeneratedClips/stale-fade.m4a",
+            status: .ready,
+            renderedSelection: clip.requestedSelection,
+            generationKey: clip.generationKey,
+            generatedAt: RollCallTestFixtures.now
+        )
+
+        clip.requestedSelection.fadeOutDuration += 0.5
+
+        XCTAssertFalse(clip.hasCurrentGeneratedAsset)
+        guard case .localAudio(let source) = clip.playbackCue.source else {
+            return XCTFail("Expected original source playback while fade regeneration is pending.")
+        }
+        XCTAssertEqual(source.relativePath, "original.caf")
+        XCTAssertEqual(clip.playbackCue.fadeOutDuration, clip.requestedSelection.fadeOutDuration)
+    }
+
     func testPublicAPICannotRequestAppleMusicOfflineDownload() {
         XCTAssertFalse(SongClipGenerationService.canRequestAppleMusicOfflineDownload)
         XCTAssertFalse(SongClipPolicy.current.autoDownloadEligibleSongsEnabled)
@@ -300,6 +320,218 @@ final class SongClipGenerationTests: XCTestCase {
         XCTAssertEqual(playerClip.pauseAfterAnnouncer, 0.2)
     }
 
+    @MainActor
+    func testCopyingPlayerSongToCustomClipDoesNotAlterOriginalLocalClip() throws {
+        let alex = RollCallTestFixtures.player(
+            id: RollCallTestFixtures.alexID,
+            name: "Alex Morgan",
+            number: "7",
+            cue: RollCallTestFixtures.localCue()
+        )
+        try writeState(RollCallTestFixtures.appState(team: RollCallTestFixtures.team(players: [alex])))
+        let model = AppModel()
+        let sourceClip = try XCTUnwrap(model.selectedTeam?.songClip(for: alex))
+
+        var editedCue = sourceClip.editingCue
+        editedCue.startTime = 2
+        editedCue.duration = 5
+        let customClipID = try XCTUnwrap(
+            model.saveCustomClipCopy(from: sourceClip, editedCue: editedCue, named: "Hype")
+        )
+
+        let copiedClip = try XCTUnwrap(model.selectedTeam?.teamClips.first { $0.id == customClipID })
+        let refreshedPlayerClip = try XCTUnwrap(model.selectedTeam?.songClip(for: alex))
+        XCTAssertNotEqual(copiedClip.id, sourceClip.id)
+        XCTAssertEqual(copiedClip.sourceLineageClipID, sourceClip.id)
+        XCTAssertEqual(copiedClip.requestedSelection.startTime, 2)
+        XCTAssertEqual(copiedClip.requestedSelection.duration, 5)
+        XCTAssertNil(copiedClip.generatedAsset.relativePath)
+        XCTAssertNotEqual(copiedClip.generationKey, sourceClip.generationKey)
+        XCTAssertEqual(refreshedPlayerClip.requestedSelection.startTime, 0)
+        XCTAssertEqual(refreshedPlayerClip.requestedSelection.duration, 8)
+    }
+
+    @MainActor
+    func testCopyingReadyLocalClipPreservesEditableSourceWithoutChangingOriginal() throws {
+        let generatedPath = "GeneratedClips/alex-ready.m4a"
+        var sourceClip = SongClip(cue: RollCallTestFixtures.localCue(relativePath: "original-local.m4a"))
+        sourceClip.generatedAsset = GeneratedClipAsset(
+            relativePath: generatedPath,
+            status: .ready,
+            renderedSelection: sourceClip.requestedSelection,
+            generationKey: sourceClip.generationKey,
+            generatedAt: RollCallTestFixtures.now
+        )
+        sourceClip.readinessInputs.playback = .localClipReady
+        var alex = RollCallTestFixtures.player(
+            id: RollCallTestFixtures.alexID,
+            name: "Alex Morgan",
+            number: "7"
+        )
+        alex.songAssignment = .privateClip(sourceClip)
+        try writeState(RollCallTestFixtures.appState(team: RollCallTestFixtures.team(players: [alex])))
+        let model = AppModel()
+        let loadedSource = try XCTUnwrap(model.selectedTeam?.songClip(for: alex))
+
+        let customClipID = try XCTUnwrap(
+            model.saveCustomClipCopy(from: loadedSource, editedCue: loadedSource.editingCue, named: "Ready Copy")
+        )
+
+        let copiedClip = try XCTUnwrap(model.selectedTeam?.teamClips.first { $0.id == customClipID })
+        XCTAssertEqual(copiedClip.generatedAsset.relativePath, generatedPath)
+        XCTAssertEqual(copiedClip.playbackCue.startTime, 0)
+        XCTAssertEqual(copiedClip.editingCue.startTime, loadedSource.editingCue.startTime)
+        guard case .localAudio(let editableSource) = copiedClip.editingCue.source else {
+            return XCTFail("Expected editing to use the original local source.")
+        }
+        XCTAssertEqual(editableSource.relativePath, "original-local.m4a")
+        XCTAssertEqual(model.selectedTeam?.songClip(for: alex)?.requestedSelection, sourceClip.requestedSelection)
+    }
+
+    @MainActor
+    func testRetimingReadyLocalClipCopyDoesNotReuseOriginalGeneratedAsset() throws {
+        var sourceClip = SongClip(cue: RollCallTestFixtures.localCue(relativePath: "original-local.m4a"))
+        sourceClip.generatedAsset = GeneratedClipAsset(
+            relativePath: "GeneratedClips/original-ready.m4a",
+            status: .ready,
+            renderedSelection: sourceClip.requestedSelection,
+            generationKey: sourceClip.generationKey,
+            generatedAt: RollCallTestFixtures.now
+        )
+        sourceClip.readinessInputs.playback = .localClipReady
+        var alex = RollCallTestFixtures.player(
+            id: RollCallTestFixtures.alexID,
+            name: "Alex Morgan",
+            number: "7"
+        )
+        alex.songAssignment = .privateClip(sourceClip)
+        try writeState(RollCallTestFixtures.appState(team: RollCallTestFixtures.team(players: [alex])))
+        let model = AppModel()
+        let loadedSource = try XCTUnwrap(model.selectedTeam?.songClip(for: alex))
+
+        var editedCue = loadedSource.editingCue
+        editedCue.startTime = 3
+        let customClipID = try XCTUnwrap(
+            model.saveCustomClipCopy(from: loadedSource, editedCue: editedCue, named: "Retimed Copy")
+        )
+
+        let copiedClip = try XCTUnwrap(model.selectedTeam?.teamClips.first { $0.id == customClipID })
+        XCTAssertEqual(copiedClip.requestedSelection.startTime, 3)
+        XCTAssertNil(copiedClip.generatedAsset.relativePath)
+        XCTAssertNotEqual(copiedClip.generationKey, sourceClip.generationKey)
+        XCTAssertEqual(model.selectedTeam?.songClip(for: alex)?.requestedSelection.startTime, 0)
+        XCTAssertEqual(
+            model.selectedTeam?.songClip(for: alex)?.generatedAsset.relativePath,
+            "GeneratedClips/original-ready.m4a"
+        )
+    }
+
+    @MainActor
+    func testRefadingReadyLocalClipCopyDoesNotReuseOriginalGeneratedAsset() throws {
+        var sourceClip = SongClip(cue: RollCallTestFixtures.localCue(relativePath: "original-local.m4a"))
+        sourceClip.generatedAsset = GeneratedClipAsset(
+            relativePath: "GeneratedClips/original-ready-fade.m4a",
+            status: .ready,
+            renderedSelection: sourceClip.requestedSelection,
+            generationKey: sourceClip.generationKey,
+            generatedAt: RollCallTestFixtures.now
+        )
+        sourceClip.readinessInputs.playback = .localClipReady
+        var alex = RollCallTestFixtures.player(
+            id: RollCallTestFixtures.alexID,
+            name: "Alex Morgan",
+            number: "7"
+        )
+        alex.songAssignment = .privateClip(sourceClip)
+        try writeState(RollCallTestFixtures.appState(team: RollCallTestFixtures.team(players: [alex])))
+        let model = AppModel()
+        let loadedSource = try XCTUnwrap(model.selectedTeam?.songClip(for: alex))
+
+        var editedCue = loadedSource.editingCue
+        editedCue.fadeOutDuration += 0.5
+        let customClipID = try XCTUnwrap(
+            model.saveCustomClipCopy(from: loadedSource, editedCue: editedCue, named: "Refaded Copy")
+        )
+
+        let copiedClip = try XCTUnwrap(model.selectedTeam?.teamClips.first { $0.id == customClipID })
+        XCTAssertEqual(copiedClip.requestedSelection.fadeOutDuration, sourceClip.requestedSelection.fadeOutDuration + 0.5)
+        XCTAssertNil(copiedClip.generatedAsset.relativePath)
+        XCTAssertNotEqual(copiedClip.generationKey, sourceClip.generationKey)
+        XCTAssertEqual(
+            model.selectedTeam?.songClip(for: alex)?.generatedAsset.relativePath,
+            "GeneratedClips/original-ready-fade.m4a"
+        )
+    }
+
+    func testPlayerEditorStyleFadeEditPreservesOriginalSourceAndInvalidatesGeneratedAsset() {
+        var sourceClip = SongClip(cue: RollCallTestFixtures.localCue(relativePath: "original-local.m4a"))
+        sourceClip.generatedAsset = GeneratedClipAsset(
+            relativePath: "GeneratedClips/player-ready.m4a",
+            status: .ready,
+            renderedSelection: sourceClip.requestedSelection,
+            generationKey: sourceClip.generationKey,
+            generatedAt: RollCallTestFixtures.now
+        )
+        sourceClip.readinessInputs.playback = .localClipReady
+        var player = RollCallTestFixtures.player(
+            id: RollCallTestFixtures.alexID,
+            name: "Alex Morgan",
+            number: "7"
+        )
+        player.songAssignment = .privateClip(sourceClip)
+
+        var editedCue = sourceClip.editingCue
+        editedCue.fadeOutDuration += 0.5
+        player.updatePrivateSongClip(with: editedCue)
+
+        let editedClip = player.songAssignment?.privateClip
+        XCTAssertEqual(editedClip?.id, sourceClip.id)
+        XCTAssertEqual(editedClip?.requestedSelection.fadeOutDuration, sourceClip.requestedSelection.fadeOutDuration + 0.5)
+        XCTAssertNil(editedClip?.generatedAsset.relativePath)
+        guard case .localAudio(let editableSource)? = editedClip?.editingCue.source else {
+            return XCTFail("Expected editing to stay attached to the original local source.")
+        }
+        XCTAssertEqual(editableSource.relativePath, "original-local.m4a")
+    }
+
+    @MainActor
+    func testDuplicatingTeamPreservesReadyClipOriginalSource() throws {
+        var sourceClip = SongClip(cue: RollCallTestFixtures.localCue(relativePath: "original-local.m4a"))
+        sourceClip.generatedAsset = GeneratedClipAsset(
+            relativePath: "GeneratedClips/team-ready.m4a",
+            status: .ready,
+            renderedSelection: sourceClip.requestedSelection,
+            generationKey: sourceClip.generationKey,
+            generatedAt: RollCallTestFixtures.now
+        )
+        sourceClip.readinessInputs.playback = .localClipReady
+        var alex = RollCallTestFixtures.player(
+            id: RollCallTestFixtures.alexID,
+            name: "Alex Morgan",
+            number: "7"
+        )
+        alex.songAssignment = .privateClip(sourceClip)
+        try writeState(RollCallTestFixtures.appState(team: RollCallTestFixtures.team(players: [alex])))
+        let model = AppModel()
+
+        model.duplicateTeam()
+
+        let duplicatedTeam = try XCTUnwrap(model.state.teams.first { $0.name.hasSuffix(" Copy") })
+        let duplicatedPlayer = try XCTUnwrap(duplicatedTeam.players.first)
+        let duplicatedClip = try XCTUnwrap(duplicatedPlayer.songAssignment?.privateClip)
+        XCTAssertNotEqual(duplicatedClip.id, sourceClip.id)
+        XCTAssertEqual(duplicatedClip.sourceLineageClipID, sourceClip.id)
+        XCTAssertEqual(duplicatedClip.generatedAsset.relativePath, "GeneratedClips/team-ready.m4a")
+        guard case .localAudio(let editableSource) = duplicatedClip.editingCue.source else {
+            return XCTFail("Expected duplicated clip editing to use the original local source.")
+        }
+        XCTAssertEqual(editableSource.relativePath, "original-local.m4a")
+        guard case .localAudio(let playbackSource) = duplicatedClip.playbackCue.source else {
+            return XCTFail("Expected duplicated clip playback to use the ready generated file.")
+        }
+        XCTAssertEqual(playbackSource.relativePath, "GeneratedClips/team-ready.m4a")
+    }
+
     func testRuntimeVolumeAutomationAppliesOnlyToSourceBackedAppleMusic() {
         let localSource = RollCallTestFixtures.localCue().source
         let builtInSource = CueSource.builtInClip(
@@ -310,11 +542,72 @@ final class SongClipGenerationTests: XCTestCase {
             title: "Song",
             artistName: "Artist"
         ).source
+        var libraryCue = RollCallTestFixtures.appleMusicCue(
+            songID: "library-123",
+            title: "Library Song",
+            artistName: "Artist"
+        )
+        if case .appleMusic(var source) = libraryCue.source {
+            source.libraryPersistentID = 123
+            libraryCue.source = .appleMusic(source)
+        }
+        var generatedLibraryClip = SongClip(cue: libraryCue)
+        generatedLibraryClip.generatedAsset = GeneratedClipAsset(
+            relativePath: "GeneratedClips/library-ready.m4a",
+            status: .ready,
+            renderedSelection: generatedLibraryClip.requestedSelection,
+            generationKey: generatedLibraryClip.generationKey,
+            generatedAt: RollCallTestFixtures.now
+        )
 
         XCTAssertFalse(localSource.runtimeVolumeAutomationEnabled(whenSettingEnabled: true))
         XCTAssertFalse(builtInSource.runtimeVolumeAutomationEnabled(whenSettingEnabled: true))
         XCTAssertTrue(appleMusicSource.runtimeVolumeAutomationEnabled(whenSettingEnabled: true))
+        XCTAssertTrue(libraryCue.source.runtimeVolumeAutomationEnabled(whenSettingEnabled: true))
+        XCTAssertFalse(generatedLibraryClip.playbackCue.source.runtimeVolumeAutomationEnabled(whenSettingEnabled: true))
         XCTAssertFalse(appleMusicSource.runtimeVolumeAutomationEnabled(whenSettingEnabled: false))
+    }
+
+    func testSourceBackedFadeScheduleEndsFadeAtSelectedDuration() {
+        let schedule = PlaybackFadeSchedule.sourceBacked(
+            selectedDuration: 12,
+            tailGuard: 0.75,
+            fadeOut: 2,
+            volumeAutomationEnabled: true
+        )
+
+        XCTAssertEqual(schedule.sustainDuration, 10)
+        XCTAssertEqual(schedule.fadeDuration, 2)
+        XCTAssertEqual(schedule.postFadeStopDelay, 0.75)
+        XCTAssertEqual(schedule.stopDelay, 12.75)
+    }
+
+    func testSourceBackedFadeScheduleUsesTailOnlyWhenAutomationIsOff() {
+        let schedule = PlaybackFadeSchedule.sourceBacked(
+            selectedDuration: 12,
+            tailGuard: 0.75,
+            fadeOut: 2,
+            volumeAutomationEnabled: false
+        )
+
+        XCTAssertEqual(schedule.sustainDuration, 12.75)
+        XCTAssertEqual(schedule.fadeDuration, 0)
+        XCTAssertEqual(schedule.postFadeStopDelay, 0)
+        XCTAssertEqual(schedule.stopDelay, 12.75)
+    }
+
+    func testSourceBackedFadeScheduleClampsFadeToSelectedDuration() {
+        let schedule = PlaybackFadeSchedule.sourceBacked(
+            selectedDuration: 1.5,
+            tailGuard: 0.75,
+            fadeOut: 4,
+            volumeAutomationEnabled: true
+        )
+
+        XCTAssertEqual(schedule.sustainDuration, 0)
+        XCTAssertEqual(schedule.fadeDuration, 1.5)
+        XCTAssertEqual(schedule.postFadeStopDelay, 0.75)
+        XCTAssertEqual(schedule.stopDelay, 2.25)
     }
 
     func testMissingLocalSourceFailsPermanentlyWithoutCreatingAsset() async {

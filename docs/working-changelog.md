@@ -36,6 +36,7 @@ Internal notes for building public-facing changelogs. Keep entries understandabl
 
 ### Fixed
 
+- Source-backed Apple Music and Music Library fades now line up with generated local clips: the fade ends at the selected clip endpoint instead of drifting into the stop-safety tail. [needs review]
 - The welcome screen's `Let's Get Started` button is readable in both light and dark mode.
 - Music Library songs now preview through the exact selected library item, preserving arbitrary start times for cloud-backed library songs instead of relying on partial asset URLs or mismatched catalog playback.
 - Apple Music-based Custom Clips no longer keep bouncing back to `Preparing` after Roll Call has already settled them as source-backed or unavailable on this device. [needs review]
@@ -52,6 +53,7 @@ Internal notes for building public-facing changelogs. Keep entries understandabl
 
 ### Reliability / Data Safety
 
+- Editing, copying, or duplicating a song with a prepared local clip now keeps the original song and timing as the editable source, and changing fade timing no longer reuses an older baked clip while the new version prepares. [needs review]
 - Importing a team no longer drops an identifiable song choice or rejects the entire team just because one local audio file is missing. Roll Call preserves the assignment, marks it for repair, and keeps the rest of the team usable. [public candidate] [needs review]
 - Roll Call now automatically removes only generated clips it can prove are unused. It retains clips referenced by active teams, Custom Clips, player assignments, Recently Deleted, and readable backups, and skips cleanup whenever preparation or storage state is uncertain. [needs review]
 - Deleted Custom Clips stay in Recently Deleted for 60 days and restore to their original team and saved position when possible. Player Songs copied from them remain unchanged. [public candidate] [needs review]
@@ -59,6 +61,7 @@ Internal notes for building public-facing changelogs. Keep entries understandabl
 - Roll Call 1.2 now preserves each player's song choice in a richer model that separates the original song, selected timing, local preparation state, device readiness, and export portability. Existing teams and older `.rollcall` files migrate automatically when opened. [needs review]
 
 ### Internal / Maintenance
+- Checked-in app version metadata now reads `1.2` build `71` for the fade-audit fixes and continued hands-on review.
 - Checked-in app version metadata now reads `1.2` build `70` after the icon refresh for continued hands-on review.
 - Checked-in app version metadata now reads `1.2` build `69` for post-plan hands-on issue review.
 - Checked-in app version metadata now reads `1.2` build `68` for the completed Phase 5 implementation and automated Phase 6 verification pass.

@@ -740,10 +740,7 @@ final class AppModel: ObservableObject {
             let oldID = player.id
             player.id = UUID()
             playerIDMap[oldID] = player.id
-            if var cue = player.cue {
-                cue.id = UUID()
-                player.cue = cue
-            }
+            player.songAssignment = duplicatedSongAssignment(from: player.songAssignment)
             return player
         }
         let duplicatedOrder = originalBattingOrder.compactMap { playerIDMap[$0] }
@@ -763,6 +760,18 @@ final class AppModel: ObservableObject {
         state.selectedTeamID = team.id
         normalizeLineup(for: state.teams.count - 1)
         persist()
+    }
+
+    private func duplicatedSongAssignment(from assignment: SongAssignment?) -> SongAssignment? {
+        switch assignment {
+        case .privateClip(var clip):
+            let sourceClipID = clip.id
+            clip.id = UUID()
+            clip.sourceLineageClipID = clip.sourceLineageClipID ?? sourceClipID
+            return .privateClip(clip)
+        case .sharedTeamClip, nil:
+            return assignment
+        }
     }
 
     func renameSelectedTeam(to name: String) {

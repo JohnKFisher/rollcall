@@ -4,7 +4,7 @@ Use this file as a concise project status snapshot for the current version, what
 
 ## Roll Call
 
-Current version: `1.2` (build `70`)
+Current version: `1.2` (build `71`)
 
 Status:
 - Custom Clips now replace the unfinished shared Team Clips model. Player Songs and team-specific Custom Clips are independent after copying, so editing or deleting one never silently changes the other.
@@ -14,7 +14,8 @@ Status:
 - Phase 6 implementation and automated verification are complete: conservative cleanup, non-Release inspection/manual cleanup, redacted diagnostics, package/migration/cleanup regression coverage, Debug launch, and Debug/Release builds pass. Final field confidence still requires the planned physical-device Music Library, Apple Music playback, AirDrop/package, and audible repair checks.
 - Support bundles now report aggregate generation, readiness, portability, retry, policy, storage, cleanup, and boolean playback-state diagnostics without audio, song metadata, roster names, filenames, or source/model identifiers.
 - The Phase 3 Music Library-first picker received a high-level physical-device check on 2026-06-14 and appeared to work. Broader device coverage and detailed audible edge-case verification remain part of final Phase 6 release verification.
-- `1.2` build `70` is the checked-in post-icon-refresh build for hands-on issue review. The app target now compiles the Icon Composer `AppIcon.icon` package directly, including its dark and tinted app-icon variants, while the `.rollcall` document icons remain generated from the same artwork.
+- `1.2` build `71` is the checked-in fade-audit build for hands-on issue review. It keeps original song, timing, and fade truth editable when generated clips exist and aligns source-backed fades with generated local clip fade timing.
+- `1.2` build `70` was the checked-in post-icon-refresh build for hands-on issue review. The app target now compiles the Icon Composer `AppIcon.icon` package directly, including its dark and tinted app-icon variants, while the `.rollcall` document icons remain generated from the same artwork.
 - `1.2` build `69` was the checked-in post-plan build for hands-on issue review.
 - The Setup Guide audio step now uses the same Music Library, Apple Music search, file import, and draft `Make Your Clip` waveform editor as Player Editor. The old onboarding-only trim controls have been removed, while the crowd-cheer shortcut remains available for getting to Game Day quickly.
 - Generated clips are now considered current only when their stored generation key matches the saved source and timing. After an edit, Roll Call uses the updated source-backed selection until preparation finishes and does not advertise or export the older render as the edited clip.
@@ -141,9 +142,9 @@ What works now:
 - Apple Music full-song playback now forces the current cue trim start when replaying catalog songs, to avoid stale start-position behavior on reused selections
 - Game Day playback now gives local, preview, and catalog song cues a short tail guard before app-driven stop/fade cleanup, and Announcement Cues are sequenced from actual playback completion instead of a fixed duration sleep.
 - Game Day playback cleanup now belongs to the cue session that scheduled it, so an older fade-out or preview task cannot stop a newer batter cue after quick Next/play actions.
-- Cue fade-out timing now runs before app-driven stop cleanup for local audio and preview-based Apple Music playback, with the short tail guard preserving the audible end of the cue.
+- Cue fade-out timing is baked into generated local clips. Source-backed Apple Music and Music Library playback use Volume Automation when the setting is enabled, now ending the fade at the selected clip endpoint while keeping the stop tail guard for cleanup safety.
 - Settings now includes a `Volume Automation` switch so Roll Call can either manage cue volume for fades or leave playback volume untouched; Game Day hides the low-volume warning while this automation is enabled.
-- Advanced Trim now notes that Fade Out timing is only used when `Volume Automation` is enabled in Settings.
+- Advanced Trim now distinguishes baked generated fades from source-backed Apple Music and Music Library fades that depend on `Volume Automation`.
 - Settings now includes a default-on `Always Use Dark Live Screens` switch. Setup screens always follow the device appearance; `Game Day`, `Clips`, and the Game Day lineup sheet render dark when the device is dark or the setting is on, otherwise they render in normal Light Mode. App pages share a reusable system-background gradient using the selected team's protected accent tint, with a slightly stronger wash on live screens and Roll Call orange as the no-team fallback.
 - Settings now includes a default-off `Keep Screen Awake` switch. When enabled, Roll Call prevents auto-lock only while the app is active on `Game Day` or `Clips`, then restores normal auto-lock when leaving those live-use surfaces or when the app is no longer active.
 - Settings now includes a default-off `Show Lineup Progress Hints` switch. When enabled, Roll Call shows a brief subtle lineup-flow animation only after explicit `Next` and `On Deck` lineup advances, and iOS `Reduce Motion` suppresses the effect automatically.
