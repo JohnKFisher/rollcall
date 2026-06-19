@@ -4,7 +4,7 @@ Use this file as a concise decision log for project-specific architectural, beha
 
 ## 2026-06-18
 
-- Approved: Game Day and Clips support a quiet live-surface-only horizontal swipe shortcut, with Game Day swiping left to Clips and Clips swiping right to Game Day. The gesture is deliberate, disabled while modal/edit/import/prompt flows are active, preserves playback and screen state, uses only a light haptic on successful swipes, and remains separate from full-tab swipe navigation.
+- Approved: Game Day and Clips support a quiet live-surface-only horizontal swipe shortcut, with Game Day swiping left to Clips and Clips swiping right to Game Day. The gesture is deliberate, disabled while modal/edit/import/prompt flows are active, preserves playback and screen state, gives a small horizontal nudge only after clear swipe intent, uses a light haptic on successful swipes, and remains separate from full-tab swipe navigation.
   Rationale: coaches need fast movement between the two live surfaces without accidentally entering setup/admin areas or interrupting active audio.
   Status: approved
 

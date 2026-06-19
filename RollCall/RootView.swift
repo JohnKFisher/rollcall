@@ -302,6 +302,8 @@ struct RootView: View {
     @State private var customClipRepairPrompt: SongClip?
     @State private var customClipManagerInitialClipID: UUID?
     @State private var liveSurfaceSwipeCooldownActive = false
+    @State private var liveSurfaceSwipeOffset: CGFloat = 0
+    @State private var liveSurfaceSwipeSuppressesControls = false
 
     init(appModel: AppModel) {
         self.appModel = appModel
@@ -358,6 +360,12 @@ struct RootView: View {
         return !hasBlockingWhatsNewPresentation
             && !showTeamClips
             && customClipRepairPrompt == nil
+    }
+
+    private var liveSurfaceSwipeGesture: some Gesture {
+        DragGesture(minimumDistance: 24)
+            .onChanged(handleLiveSurfaceSwipeChange)
+            .onEnded(handleLiveSurfaceSwipeEnd)
     }
 
     private var canPresentAutomaticWhatsNew: Bool {
@@ -478,7 +486,29 @@ struct RootView: View {
         }
     }
 
-    private func handleLiveSurfaceSwipe(_ value: DragGesture.Value) {
+    private func handleLiveSurfaceSwipeChange(_ value: DragGesture.Value) {
+        guard isLiveSurfaceSwipeAvailable else { return }
+
+        let horizontalDistance = value.translation.width
+        let verticalDistance = abs(value.translation.height)
+        guard isValidLiveSurfaceSwipeDirection(horizontalDistance) else {
+            resetLiveSurfaceSwipeFeedback()
+            return
+        }
+        guard abs(horizontalDistance) >= 28,
+              abs(horizontalDistance) > verticalDistance * 1.8
+        else {
+            resetLiveSurfaceSwipeFeedback()
+            return
+        }
+
+        let cappedOffset = min(abs(horizontalDistance) * 0.12, 14)
+        liveSurfaceSwipeOffset = horizontalDistance < 0 ? -cappedOffset : cappedOffset
+        liveSurfaceSwipeSuppressesControls = true
+    }
+
+    private func handleLiveSurfaceSwipeEnd(_ value: DragGesture.Value) {
+        defer { resetLiveSurfaceSwipeFeedback(animated: true) }
         guard isLiveSurfaceSwipeAvailable else { return }
 
         let horizontalDistance = value.translation.width
@@ -486,14 +516,19 @@ struct RootView: View {
         let isDeliberateHorizontalSwipe = abs(horizontalDistance) >= 80
             && abs(horizontalDistance) > verticalDistance * 1.4
         guard isDeliberateHorizontalSwipe else { return }
+        guard isValidLiveSurfaceSwipeDirection(horizontalDistance) else { return }
 
+        completeLiveSurfaceSwipe(to: horizontalDistance < 0 ? .generalClips : .gameDay)
+    }
+
+    private func isValidLiveSurfaceSwipeDirection(_ horizontalDistance: CGFloat) -> Bool {
         switch (selectedTab, horizontalDistance) {
         case (.gameDay, ..<0):
-            completeLiveSurfaceSwipe(to: .generalClips)
+            return true
         case (.generalClips, 0...):
-            completeLiveSurfaceSwipe(to: .gameDay)
+            return true
         default:
-            return
+            return false
         }
     }
 
@@ -508,6 +543,18 @@ struct RootView: View {
         Task { @MainActor in
             try? await Task.sleep(nanoseconds: 400_000_000)
             liveSurfaceSwipeCooldownActive = false
+        }
+    }
+
+    private func resetLiveSurfaceSwipeFeedback(animated: Bool = false) {
+        let reset = {
+            liveSurfaceSwipeOffset = 0
+            liveSurfaceSwipeSuppressesControls = false
+        }
+        if animated {
+            withAnimation(.easeOut(duration: 0.14), reset)
+        } else {
+            reset()
         }
     }
 
@@ -845,11 +892,17 @@ struct RootView: View {
     private var mainTabs: some View {
         TabView(selection: $selectedTab) {
             gameDayTab
+                .offset(x: selectedTab == .gameDay ? liveSurfaceSwipeOffset : 0)
+                .allowsHitTesting(!(selectedTab == .gameDay && liveSurfaceSwipeSuppressesControls))
+                .simultaneousGesture(liveSurfaceSwipeGesture)
                 .teamAccentScope(selectedTeamAccentTheme)
                 .tag(RootTab.gameDay)
                 .tabItem { Label("Game Day", systemImage: "play.rectangle.fill") }
 
             generalClipsTab
+                .offset(x: selectedTab == .generalClips ? liveSurfaceSwipeOffset : 0)
+                .allowsHitTesting(!(selectedTab == .generalClips && liveSurfaceSwipeSuppressesControls))
+                .simultaneousGesture(liveSurfaceSwipeGesture)
                 .teamAccentScope(selectedTeamAccentTheme)
                 .tag(RootTab.generalClips)
                 .tabItem { Label("Clips", systemImage: "music.note.list") }
@@ -876,10 +929,6 @@ struct RootView: View {
         }
         .teamAccentScope(selectedTeamAccentTheme)
         .background(TabBarAccentUpdater(theme: selectedTeamAccentTheme).frame(width: 0, height: 0))
-        .simultaneousGesture(
-            DragGesture(minimumDistance: 20)
-                .onEnded(handleLiveSurfaceSwipe)
-        )
         .onAppear { applyTabBarAccent(selectedTeamAccentTheme) }
         .onChange(of: selectedTeamAccentTheme) { _, theme in
             applyTabBarAccent(theme)
