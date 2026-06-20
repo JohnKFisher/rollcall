@@ -426,7 +426,6 @@ struct RootView: View {
     @State private var showTeamClips = false
     @State private var customClipRepairPrompt: SongClip?
     @State private var customClipManagerInitialClipID: UUID?
-    @State private var liveSurfaceSwipeCooldownActive = false
     @State private var liveSurfaceSwipeOffset: CGFloat = 0
 
     init(appModel: AppModel) {
@@ -480,7 +479,6 @@ struct RootView: View {
 
     private var isLiveSurfaceSwipeAvailable: Bool {
         guard selectedTab == .gameDay || selectedTab == .generalClips else { return false }
-        guard !liveSurfaceSwipeCooldownActive else { return false }
         return !hasBlockingWhatsNewPresentation
             && !showTeamClips
             && customClipRepairPrompt == nil
@@ -664,15 +662,9 @@ struct RootView: View {
 
     private func completeLiveSurfaceSwipe(to tab: RootTab) {
         guard selectedTab != tab else { return }
-        liveSurfaceSwipeCooldownActive = true
         selectedTab = tab
         if appModel.state.settings.hapticsEnabled {
             UIImpactFeedbackGenerator(style: .light).impactOccurred()
-        }
-
-        Task { @MainActor in
-            try? await Task.sleep(nanoseconds: 400_000_000)
-            liveSurfaceSwipeCooldownActive = false
         }
     }
 
@@ -1232,16 +1224,6 @@ struct RootView: View {
                         if appModel.selectedTeamBuiltInClips.isEmpty && appModel.selectedTeamCustomClips.isEmpty {
                             ClipsEmptyStateCard(surface: clipsSurface)
                         } else {
-                            HStack {
-                                Spacer()
-                                Button("Edit") {
-                                    appModel.stopPlayback()
-                                    customClipManagerInitialClipID = nil
-                                    showTeamClips = true
-                                }
-                                .buttonStyle(.bordered)
-                            }
-
                             Text("Sound Effects")
                                 .rollCallText(.sectionTitle, surface: clipsSurface)
 
@@ -1284,6 +1266,16 @@ struct RootView: View {
                                         }
                                     }
                                 }
+                            }
+
+                            HStack {
+                                Spacer()
+                                Button("Edit") {
+                                    appModel.stopPlayback()
+                                    customClipManagerInitialClipID = nil
+                                    showTeamClips = true
+                                }
+                                .buttonStyle(.bordered)
                             }
                         }
                     }
@@ -1841,11 +1833,35 @@ struct RootView: View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: RollCallSpacingTier.large.value) {
+                    SettingsSectionGroup(title: "Roll Call") {
+                        NavigationLink {
+                            aboutRollCallScreen
+                        } label: {
+                            SettingsNavigationLabel(
+                                title: "About Roll Call",
+                                detail: "Version, feedback, release notes, and credits.",
+                                systemImage: "baseball.fill"
+                            )
+                        }
+                        .buttonStyle(.plain)
+                    }
+
                     SettingsSectionGroup(
-                        title: "Team Package",
-                        helperText: "Share the selected team or add a new team from a .rollcall package."
+                        title: "Team & Setup",
+                        helperText: "Export, share, import, or reopen guided setup for teams."
                     ) {
                         VStack(spacing: RollCallSpacingTier.standard.value) {
+                            Button {
+                                appModel.beginSetupGuide()
+                            } label: {
+                                SettingsRowLabel(
+                                    title: "Open Setup Guide",
+                                    detail: "Launch onboarding again without changing existing teams.",
+                                    systemImage: "sparkles"
+                                )
+                            }
+                            .rollCallButtonStyle(.secondary)
+
                             Button {
                                 appModel.prepareSelectedTeamExport()
                             } label: {
@@ -1887,24 +1903,8 @@ struct RootView: View {
                     }
 
                     SettingsSectionGroup(
-                        title: "Setup Guide",
-                        helperText: "Open the guided setup again for a new team, an imported package, or the current roster."
-                    ) {
-                        Button {
-                            appModel.beginSetupGuide()
-                        } label: {
-                            SettingsRowLabel(
-                                title: "Open Setup Guide",
-                                detail: "Launch onboarding again without changing existing teams.",
-                                systemImage: "sparkles"
-                            )
-                        }
-                        .rollCallButtonStyle(.secondary)
-                    }
-
-                    SettingsSectionGroup(
-                        title: "Music",
-                        helperText: "Keep song selection clear for coaches and families."
+                        title: "Music & Playback",
+                        helperText: "Keep songs clear for coaches and playback predictable during live use."
                     ) {
                         Toggle(isOn: Binding(
                             get: { appModel.state.settings.explicitAppleMusicSearchFilteringEnabled },
@@ -1914,6 +1914,18 @@ struct RootView: View {
                                 title: "Hide Explicit Apple Music Results",
                                 detail: "Filters explicit songs from Apple Music search. Music Library songs may still need confirmation.",
                                 systemImage: "music.note.list"
+                            )
+                        }
+                        .tint(selectedTeamAccentTheme.color(.primary))
+
+                        Toggle(isOn: Binding(
+                            get: { appModel.state.settings.fadeOutVolumeAutomationEnabled },
+                            set: { appModel.setFadeOutVolumeAutomationEnabled($0) }
+                        )) {
+                            SettingsRowLabel(
+                                title: "Volume Automation",
+                                detail: "Fade Apple Music down at end of song clip, then restore your previous volume.",
+                                systemImage: "speaker.wave.2.fill"
                             )
                         }
                         .tint(selectedTeamAccentTheme.color(.primary))
@@ -1970,18 +1982,6 @@ struct RootView: View {
                             )
                         }
                         .tint(selectedTeamAccentTheme.color(.primary))
-
-                        Toggle(isOn: Binding(
-                            get: { appModel.state.settings.fadeOutVolumeAutomationEnabled },
-                            set: { appModel.setFadeOutVolumeAutomationEnabled($0) }
-                        )) {
-                            SettingsRowLabel(
-                                title: "Volume Automation",
-                                detail: "Fade Apple Music down at end of song clip, then restore your previous volume",
-                                systemImage: "speaker.wave.2.fill"
-                            )
-                        }
-                        .tint(selectedTeamAccentTheme.color(.primary))
                     }
 
                     SettingsSectionGroup(
@@ -1998,89 +1998,6 @@ struct RootView: View {
                             )
                         }
                         .buttonStyle(.plain)
-                    }
-
-                    SettingsSectionGroup(title: "About") {
-                        VStack(alignment: .leading, spacing: RollCallSpacingTier.standard.value) {
-                            HStack(alignment: .center, spacing: RollCallSpacingTier.standard.value) {
-                                SettingsIcon(systemImage: "baseball.fill", role: .accent)
-                                VStack(alignment: .leading, spacing: 4) {
-                                    Text("Roll Call")
-                                        .rollCallText(.cardTitle)
-                                    Text("Game day cues for local teams.")
-                                        .rollCallText(.helperText)
-                                }
-                                Spacer()
-                                StatusChip(
-                                    text: "v\(AppMetadata.appVersion) (\(AppMetadata.buildNumber))",
-                                    role: .neutral,
-                                    emphasis: .subdued
-                                )
-                                StatusChip(
-                                    text: BuildEnvironment.current.rawValue,
-                                    role: .neutral,
-                                    emphasis: .subdued
-                                )
-                            }
-
-                            Text("© 2026 Sidelark Labs; John Kenneth Fisher")
-                                .rollCallText(.helperText)
-
-                            Divider()
-
-                            Link(destination: URL(string: "https://sidelarklabs.com/rollcall/")!) {
-                                SettingsRowLabel(
-                                    title: "Roll Call Website",
-                                    detail: "sidelarklabs.com/rollcall",
-                                    systemImage: "link"
-                                )
-                            }
-                            .buttonStyle(.plain)
-
-                            Link(destination: feedbackEmailURL) {
-                                SettingsRowLabel(
-                                    title: "Email Feedback",
-                                    detail: "Send feedback to the developer with bugs and suggestions so we can smooth any rough edges.",
-                                    systemImage: "envelope.fill"
-                                )
-                            }
-                            .buttonStyle(.plain)
-
-                            Button {
-                                whatsNewPresentation = .manual
-                            } label: {
-                                SettingsRowLabel(
-                                    title: "What's New",
-                                    detail: "See the latest Roll Call update notes.",
-                                    systemImage: "sparkles"
-                                )
-                            }
-                            .buttonStyle(.plain)
-
-                            if appModel.hasEarnedRatingRequest {
-                                Button {
-                                    presentManualRatingRequestSheet()
-                                } label: {
-                                    SettingsRowLabel(
-                                        title: "Rate Roll Call",
-                                        detail: "If Roll Call has been helpful, leave a quick rating.",
-                                        systemImage: "star.bubble.fill"
-                                    )
-                                }
-                                .buttonStyle(.plain)
-                            }
-
-                            NavigationLink {
-                                AttributionsView()
-                            } label: {
-                                SettingsNavigationLabel(
-                                    title: "Attributions & Licenses",
-                                    detail: "Credits for bundled clips and third-party software.",
-                                    systemImage: "doc.text.fill"
-                                )
-                            }
-                            .buttonStyle(.plain)
-                        }
                     }
 
                     if appModel.featureFlags.showDeveloperSettings {
@@ -2131,6 +2048,105 @@ struct RootView: View {
                 onEmailSupport: requestRatingSupportEmail
             )
         }
+    }
+
+    private var aboutRollCallScreen: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: RollCallSpacingTier.large.value) {
+                SettingsSectionGroup(title: "Roll Call") {
+                    VStack(alignment: .leading, spacing: RollCallSpacingTier.standard.value) {
+                        HStack(alignment: .center, spacing: RollCallSpacingTier.standard.value) {
+                            SettingsIcon(systemImage: "baseball.fill", role: .accent)
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text("Roll Call")
+                                    .rollCallText(.cardTitle)
+                                Text("Game day cues for local teams.")
+                                    .rollCallText(.helperText)
+                            }
+                            Spacer()
+                            StatusChip(
+                                text: "v\(AppMetadata.appVersion) (\(AppMetadata.buildNumber))",
+                                role: .neutral,
+                                emphasis: .subdued
+                            )
+                            StatusChip(
+                                text: BuildEnvironment.current.rawValue,
+                                role: .neutral,
+                                emphasis: .subdued
+                            )
+                        }
+
+                        Text("© 2026 Sidelark Labs; John Kenneth Fisher")
+                            .rollCallText(.helperText)
+                    }
+                }
+
+                SettingsSectionGroup(title: "Support") {
+                    VStack(alignment: .leading, spacing: RollCallSpacingTier.standard.value) {
+                        Link(destination: URL(string: "https://sidelarklabs.com/rollcall/")!) {
+                            SettingsRowLabel(
+                                title: "Roll Call Website",
+                                detail: "sidelarklabs.com/rollcall",
+                                systemImage: "link"
+                            )
+                        }
+                        .buttonStyle(.plain)
+
+                        Link(destination: feedbackEmailURL) {
+                            SettingsRowLabel(
+                                title: "Email Feedback",
+                                detail: "Send feedback to the developer with bugs and suggestions so we can smooth any rough edges.",
+                                systemImage: "envelope.fill"
+                            )
+                        }
+                        .buttonStyle(.plain)
+
+                        Button {
+                            whatsNewPresentation = .manual
+                        } label: {
+                            SettingsRowLabel(
+                                title: "What's New",
+                                detail: "See the latest Roll Call update notes.",
+                                systemImage: "sparkles"
+                            )
+                        }
+                        .buttonStyle(.plain)
+
+                        if appModel.hasEarnedRatingRequest {
+                            Button {
+                                presentManualRatingRequestSheet()
+                            } label: {
+                                SettingsRowLabel(
+                                    title: "Rate Roll Call",
+                                    detail: "If Roll Call has been helpful, leave a quick rating.",
+                                    systemImage: "star.bubble.fill"
+                                )
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                }
+
+                SettingsSectionGroup(title: "Credits") {
+                    NavigationLink {
+                        AttributionsView()
+                    } label: {
+                        SettingsNavigationLabel(
+                            title: "Attributions & Licenses",
+                            detail: "Credits for bundled clips and third-party software.",
+                            systemImage: "doc.text.fill"
+                        )
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .padding(.horizontal, 16)
+            .padding(.top, RollCallSpacingTier.tight.value)
+            .padding(.bottom, RollCallSpacingTier.large.value)
+        }
+        .accentWashBackground()
+        .navigationTitle("About Roll Call")
+        .navigationBarTitleDisplayMode(.inline)
     }
 
     private func playerAudioReadinessChecks(from checks: [ReadinessCheck]) -> [ReadinessCheck] {

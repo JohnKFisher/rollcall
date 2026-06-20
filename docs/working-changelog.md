@@ -25,6 +25,8 @@ Internal notes for building public-facing changelogs. Keep entries understandabl
 - The Clips page now shows the five built-in Sound Effects in a compact row with sound-specific icons and highlights the active playing clip with the same live blue treatment used on Game Day. [needs review]
 - Custom Clip tiles now use a denser three-wide layout that better matches the Game Day player grid, without separate visible play buttons. [needs review]
 - The Custom Clips edit sheet now opens with reorder handles visible immediately, matching the lineup editor. [needs review]
+- The Clips page now keeps the Edit button at the bottom right after the Custom Clips area, closer to the team-specific clips it manages. [needs review]
+- Settings now starts with a separate About Roll Call screen for version, feedback, release notes, and credits, groups team sharing and guided setup together, and keeps Volume Automation with Music & Playback instead of mixing it into Game Day preferences. [needs review]
 - Custom Clip preparation can now continue carefully while Clips or Game Day is open, but waits for live playback to be idle so tap-to-play sounds stay responsive. [needs review]
 - The active-team picker now shows each team in its own team color, with a matching highlight around the current team. [needs review]
 - Onboarding now uses the same Music Library-first song choices and waveform clip editor as Player setup, so selecting, trimming, previewing, and saving a first walk-up song works consistently throughout Roll Call. [public candidate] [needs review]
