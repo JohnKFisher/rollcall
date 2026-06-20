@@ -2,6 +2,8 @@
 
 Internal notes for building public-facing changelogs. Keep entries understandable to non-technical users, but not fully polished. This has been cleared to be ready for the 1.2 development run.
 
+Entries under `Superseded / Do Not Use For Public 1.2 Notes` are historical process notes only. Do not include them in the public 1.2 changelog unless they are rewritten to describe the final shipped behavior.
+
 ## Unreleased
 
 ### Added
@@ -9,7 +11,6 @@ Internal notes for building public-facing changelogs. Keep entries understandabl
 - Added a Music setting that hides explicit Apple Music search results by default and asks for confirmation before using explicit songs from the Music Library. [public candidate] [needs review]
 - Added Custom Clips to the live Clips page for quick team-specific song cues that are not tied to a player announcement. [public candidate] [needs review]
 - Added an import check that explains which Player Songs and Custom Clips arrived ready, which still depend on Apple Music, and which saved choices need repair on this device. [public candidate] [needs review]
-- Added a Music Library-first song picker with Recently Added, Artists, Albums, Songs, Library search, explicit Apple Music search, and an optional Files fallback. [public candidate] [needs review]
 - Added a focused clip editor with a draggable song window, clip-length choices up to 20 seconds, preview, advanced start/fade controls, and a simple saved readiness result. [public candidate] [needs review]
 - The clip editor now starts analyzing readable audio as soon as a song is selected, reuses the result when the editor opens, and fills in a real waveform without blocking interaction. Songs that do not expose readable audio show a clearly regular placeholder pattern instead of pretending Roll Call can inspect them. [public candidate] [needs review]
 - Clip preview now shows a moving playhead across the selected waveform window and removes it as soon as preview playback stops. [public candidate] [needs review]
@@ -63,7 +64,7 @@ Internal notes for building public-facing changelogs. Keep entries understandabl
 - Importing a team no longer drops an identifiable song choice or rejects the entire team just because one local audio file is missing. Roll Call preserves the assignment, marks it for repair, and keeps the rest of the team usable. [public candidate] [needs review]
 - Roll Call now automatically removes only generated clips it can prove are unused. It retains clips referenced by active teams, Custom Clips, player assignments, Recently Deleted, and readable backups, and skips cleanup whenever preparation or storage state is uncertain. [needs review]
 - Deleted Custom Clips stay in Recently Deleted for 60 days and restore to their original team and saved position when possible. Player Songs copied from them remain unchanged. [public candidate] [needs review]
-- Roll Call can now prepare a local playback clip when the selected song exposes a readable file, while keeping Apple Music-linked songs working through their original source when no readable file is available. Preparation pauses during live-use screens and never replaces a working local clip with a failed retry. [needs review]
+- Roll Call can now prepare a local playback clip when the selected song exposes a readable file, while keeping Apple Music-linked songs working through their original source when no readable file is available. Preparation waits for live playback to be idle during Game Day and Clips, and never replaces a working local clip with a failed retry. [needs review]
 - Roll Call 1.2 now preserves each player's song choice in a richer model that separates the original song, selected timing, local preparation state, device readiness, and export portability. Existing teams and older `.rollcall` files migrate automatically when opened. [needs review]
 
 ### Internal / Maintenance
@@ -81,3 +82,9 @@ Internal notes for building public-facing changelogs. Keep entries understandabl
 - Added a one-at-a-time song preparation queue with deterministic stale-result protection, bounded retries, Low Power pauses, live-use throttling, and generated `.m4a` storage. iOS does not expose a supported API for apps to request Apple Music offline downloads, so Roll Call does not attempt or imply that behavior.
 - Added the Phase 1 cue-revamp model and saved-state migration foundation while keeping the current playback and editing paths working through the existing cue recipe.
 - Checked-in app version metadata now reads `1.2` build `66` for the current `release/1.2` cue-revamp baseline.
+
+### Superseded / Do Not Use For Public 1.2 Notes
+
+- Superseded by the native Music library picker: Added a Music Library-first song picker with Recently Added, Artists, Albums, Songs, Library search, explicit Apple Music search, and an optional Files fallback. The final 1.2 behavior is that song selection opens Apple's familiar Music library picker by default, with Apple Music catalog search and file import as separate choices that feed the same editor.
+- Superseded by team-specific Custom Clips: early 1.2 work used shared Team Clips and shared/private assignment language. The final 1.2 behavior is independent Player Songs and team-specific Custom Clips; copying between them creates independent clips, and editing or deleting one does not silently change the other.
+- Superseded by the readable-local-only policy: early Apple Music local-copy, transition-crossfade, auto-download, or broad Apple Music localization experiments should not be described as shipped 1.2 features. The final 1.2 behavior is that Roll Call generates a local clip only when public APIs expose readable audio, keeps Apple Music-linked songs source-backed when needed, and does not request or control Apple Music offline downloads.
