@@ -268,6 +268,7 @@ struct MusicSearchResult: Identifiable, Hashable {
     var artworkURL: URL? = nil
     var isCatalogBacked: Bool = true
     var libraryPersistentID: UInt64? = nil
+    var isExplicit: Bool? = nil
 }
 
 struct ResolvedTeamPlaylistSongs {
@@ -344,7 +345,8 @@ struct MusicCatalogService: Sendable {
             duration: resolvedDuration,
             previewURL: song.previewAssets?.first?.url ?? result.previewURL,
             artworkURL: song.artwork?.url(width: 120, height: 120) ?? result.artworkURL,
-            isCatalogBacked: true
+            isCatalogBacked: true,
+            isExplicit: song.contentRating == .explicit
         )
     }
 
@@ -466,7 +468,8 @@ struct MusicCatalogService: Sendable {
                 duration: $0.duration,
                 previewURL: $0.previewAssets?.first?.url,
                 artworkURL: $0.artwork?.url(width: 120, height: 120),
-                isCatalogBacked: true
+                isCatalogBacked: true,
+                isExplicit: $0.contentRating == .explicit
             )
         }
     }
@@ -496,7 +499,8 @@ struct MusicCatalogService: Sendable {
                 duration: item.trackTimeMillis.map { TimeInterval($0) / 1000 },
                 previewURL: previewURL,
                 artworkURL: item.artworkURL,
-                isCatalogBacked: false
+                isCatalogBacked: false,
+                isExplicit: item.isExplicit
             )
         }
     }
@@ -540,6 +544,7 @@ private struct ITunesTrack: Decodable {
     let previewURL: URL?
     let trackTimeMillis: Int?
     let artworkURL: URL?
+    let trackExplicitness: String?
 
     enum CodingKeys: String, CodingKey {
         case trackID = "trackId"
@@ -548,6 +553,12 @@ private struct ITunesTrack: Decodable {
         case previewURL = "previewUrl"
         case trackTimeMillis
         case artworkURL = "artworkUrl100"
+        case trackExplicitness
+    }
+
+    var isExplicit: Bool? {
+        guard let trackExplicitness else { return nil }
+        return trackExplicitness == "explicit"
     }
 }
 

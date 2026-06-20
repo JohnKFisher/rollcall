@@ -2,6 +2,12 @@
 
 Use this file as a concise decision log for project-specific architectural, behavioral, tooling, and scope decisions.
 
+## 2026-06-19
+
+- Approved: explicit music filtering is selection-time only. Roll Call hides explicit Apple Music search results by default and confirms explicit Music Library selections after pick because the native library picker cannot be pre-filtered. The filter does not alter saved cues, playlist creation, or imported files.
+  Rationale: coaches need a safer default while preserving existing team setup and avoiding unsupported control over Apple's Music Library picker.
+  Status: approved
+
 ## 2026-06-18
 
 - Approved: Game Day and Clips support a quiet live-surface-only horizontal swipe shortcut, with Game Day swiping left to Clips and Clips swiping right to Game Day. The gesture is deliberate, disabled while modal/edit/import/prompt flows are active, preserves playback and screen state, gives a small horizontal nudge only after clear swipe intent, uses a light haptic on successful swipes, and remains separate from full-tab swipe navigation.

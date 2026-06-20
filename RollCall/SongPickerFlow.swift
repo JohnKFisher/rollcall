@@ -32,6 +32,8 @@ struct SongPickerFlow: View {
     @State private var savedDraftID: UUID?
     @State private var showPermissionPrimer = false
     @State private var pickerError: String?
+    @State private var pendingExplicitLibraryItem: MPMediaItem?
+    @State private var showExplicitLibraryConfirmation = false
 
     var body: some View {
         NavigationStack {
@@ -98,6 +100,18 @@ struct SongPickerFlow: View {
         } message: {
             Text(pickerError ?? "")
         }
+        .alert("This Song Is Labeled Explicit", isPresented: $showExplicitLibraryConfirmation) {
+            Button("Choose Another Song", role: .cancel) {
+                pendingExplicitLibraryItem = nil
+            }
+            Button("Use Song") {
+                guard let item = pendingExplicitLibraryItem else { return }
+                pendingExplicitLibraryItem = nil
+                openEditorForLibrarySelection(item)
+            }
+        } message: {
+            Text("Roll Call hides explicit songs from Apple Music search, but songs already in your Music Library may still appear. You can turn this off in Settings > Music.\n\nUse this song anyway?")
+        }
     }
 
     @ViewBuilder
@@ -127,6 +141,17 @@ struct SongPickerFlow: View {
     }
 
     private func handleLibrarySelection(_ item: MPMediaItem) {
+        if appModel.state.settings.explicitAppleMusicSearchFilteringEnabled,
+           item.isExplicitItem {
+            pendingExplicitLibraryItem = item
+            showExplicitLibraryConfirmation = true
+            return
+        }
+
+        openEditorForLibrarySelection(item)
+    }
+
+    private func openEditorForLibrarySelection(_ item: MPMediaItem) {
         let title = item.title?.nonempty ?? "Untitled Song"
         let artistName = item.artist?.nonempty ?? "Unknown Artist"
 
@@ -140,7 +165,8 @@ struct SongPickerFlow: View {
                     previewURL: nil,
                     artworkURL: nil,
                     isCatalogBacked: true,
-                    libraryPersistentID: item.persistentID
+                    libraryPersistentID: item.persistentID,
+                    isExplicit: item.isExplicitItem
                 )
             )
             return
@@ -240,8 +266,30 @@ private struct AppleMusicCatalogPicker: View {
     @State private var isSearching = false
     @State private var searchError: String?
 
+    private var isExplicitFilteringEnabled: Bool {
+        appModel.state.settings.explicitAppleMusicSearchFilteringEnabled
+    }
+
+    private var visibleResults: [MusicSearchResult] {
+        isExplicitFilteringEnabled
+            ? results.filter { $0.isExplicit != true }
+            : results
+    }
+
+    private var hiddenExplicitResultsInCurrentSearch: Bool {
+        isExplicitFilteringEnabled && results.contains { $0.isExplicit == true }
+    }
+
     var body: some View {
         List {
+            if isExplicitFilteringEnabled {
+                Section {
+                    Text("Explicit songs are hidden from Apple Music search. You can change this in Settings > Music.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
+            }
+
             if searchTerm.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                 Section("Recent Songs") {
                     if appModel.recentAppleMusicSelections.isEmpty {
@@ -259,7 +307,9 @@ private struct AppleMusicCatalogPicker: View {
                                     artistName: recent.artistName,
                                     duration: recent.duration,
                                     previewURL: recent.previewURL,
-                                    isCatalogBacked: recent.isCatalogBacked ?? true
+                                    isCatalogBacked: recent.isCatalogBacked ?? true,
+                                    libraryPersistentID: recent.libraryPersistentID,
+                                    isExplicit: recent.isExplicit
                                 )
                             )
                         }
@@ -279,10 +329,18 @@ private struct AppleMusicCatalogPicker: View {
                             systemImage: "exclamationmark.triangle",
                             description: Text(searchError)
                         )
-                    } else if results.isEmpty {
-                        ContentUnavailableView.search(text: searchTerm)
+                    } else if visibleResults.isEmpty {
+                        if hiddenExplicitResultsInCurrentSearch {
+                            ContentUnavailableView(
+                                "No Visible Songs Found",
+                                systemImage: "magnifyingglass",
+                                description: Text("Try a different search or turn off explicit filtering in Settings > Music.")
+                            )
+                        } else {
+                            ContentUnavailableView.search(text: searchTerm)
+                        }
                     } else {
-                        ForEach(results) { result in
+                        ForEach(visibleResults) { result in
                             catalogRow(result)
                         }
                     }
@@ -322,6 +380,11 @@ private struct AppleMusicCatalogPicker: View {
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
+                    if !isExplicitFilteringEnabled, result.isExplicit == true {
+                        Text("Explicit")
+                            .font(.caption2.weight(.semibold))
+                            .foregroundStyle(.secondary)
+                    }
                 }
                 Spacer()
                 Image(systemName: "chevron.right")

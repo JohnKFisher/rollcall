@@ -1195,7 +1195,8 @@ final class AppModel: ObservableObject {
                     duration: source.duration,
                     previewURL: source.previewURL,
                     isCatalogBacked: source.isCatalogBacked ?? true,
-                    libraryPersistentID: source.libraryPersistentID
+                    libraryPersistentID: source.libraryPersistentID,
+                    isExplicit: source.isExplicit
                 )
             )
         }
@@ -1658,6 +1659,11 @@ final class AppModel: ObservableObject {
 
     func setShowLineupProgressHints(_ isEnabled: Bool) {
         state.settings.showLineupProgressHints = isEnabled
+        persist()
+    }
+
+    func setExplicitAppleMusicSearchFilteringEnabled(_ isEnabled: Bool) {
+        state.settings.explicitAppleMusicSearchFilteringEnabled = isEnabled
         persist()
     }
 
@@ -3526,7 +3532,10 @@ final class AppModel: ObservableObject {
     }
 
     var recentAppleMusicSelections: [RecentAppleMusicSelection] {
-        Array(state.recentAppleMusicSelections.prefix(8))
+        let selections = state.settings.explicitAppleMusicSearchFilteringEnabled
+            ? state.recentAppleMusicSelections.filter { $0.isExplicit != true }
+            : state.recentAppleMusicSelections
+        return Array(selections.prefix(8))
     }
 
     private func configurePlaybackAudioSession() throws {
@@ -3536,7 +3545,7 @@ final class AppModel: ObservableObject {
     }
 
     private func makeDefaultAppleMusicCue(for result: MusicSearchResult) -> Cue {
-        var cue = Cue.appleDefault(source: AppleMusicSource(songID: result.songID, title: result.title, artistName: result.artistName, duration: result.duration, previewURL: result.previewURL, isCatalogBacked: result.isCatalogBacked, libraryPersistentID: result.libraryPersistentID))
+        var cue = Cue.appleDefault(source: AppleMusicSource(songID: result.songID, title: result.title, artistName: result.artistName, duration: result.duration, previewURL: result.previewURL, isCatalogBacked: result.isCatalogBacked, libraryPersistentID: result.libraryPersistentID, isExplicit: result.isExplicit))
         cue.duration = min(max(state.trimDefaults.preferredLength, 6), cueDurationLimit(for: cue))
         return cue
     }
@@ -3555,6 +3564,7 @@ final class AppModel: ObservableObject {
             previewURL: result.previewURL,
             isCatalogBacked: result.isCatalogBacked,
             libraryPersistentID: result.libraryPersistentID,
+            isExplicit: result.isExplicit,
             selectedAt: .now
         )
         state.recentAppleMusicSelections.removeAll { $0.songID == selection.songID }

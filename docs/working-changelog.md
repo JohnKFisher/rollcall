@@ -6,6 +6,7 @@ Internal notes for building public-facing changelogs. Keep entries understandabl
 
 ### Added
 
+- Added a Music setting that hides explicit Apple Music search results by default and asks for confirmation before using explicit songs from the Music Library. [public candidate] [needs review]
 - Added Custom Clips to the live Clips page for quick team-specific song cues that are not tied to a player announcement. [public candidate] [needs review]
 - Added an import check that explains which Player Songs and Custom Clips arrived ready, which still depend on Apple Music, and which saved choices need repair on this device. [public candidate] [needs review]
 - Added a Music Library-first song picker with Recently Added, Artists, Albums, Songs, Library search, explicit Apple Music search, and an optional Files fallback. [public candidate] [needs review]

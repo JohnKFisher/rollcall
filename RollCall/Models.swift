@@ -62,6 +62,7 @@ struct AppleMusicSource: Codable, Equatable, Identifiable {
     var previewURL: URL?
     var isCatalogBacked: Bool? = nil
     var libraryPersistentID: UInt64? = nil
+    var isExplicit: Bool? = nil
 }
 
 struct RecentAppleMusicSelection: Codable, Equatable, Identifiable {
@@ -73,6 +74,7 @@ struct RecentAppleMusicSelection: Codable, Equatable, Identifiable {
     var previewURL: URL?
     var isCatalogBacked: Bool? = nil
     var libraryPersistentID: UInt64? = nil
+    var isExplicit: Bool? = nil
     var selectedAt: Date
 }
 
@@ -472,13 +474,15 @@ struct AppSettings: Codable, Equatable {
     var alwaysUseDarkLiveMode: Bool
     var keepScreenAwakeDuringLiveUse: Bool
     var showLineupProgressHints: Bool
+    var explicitAppleMusicSearchFilteringEnabled: Bool
 
     static let `default` = AppSettings(
         hapticsEnabled: true,
         fadeOutVolumeAutomationEnabled: false,
         alwaysUseDarkLiveMode: true,
         keepScreenAwakeDuringLiveUse: false,
-        showLineupProgressHints: false
+        showLineupProgressHints: false,
+        explicitAppleMusicSearchFilteringEnabled: true
     )
 
     enum CodingKeys: String, CodingKey {
@@ -487,6 +491,7 @@ struct AppSettings: Codable, Equatable {
         case alwaysUseDarkLiveMode
         case keepScreenAwakeDuringLiveUse
         case showLineupProgressHints
+        case explicitAppleMusicSearchFilteringEnabled
     }
 
     init(
@@ -494,13 +499,15 @@ struct AppSettings: Codable, Equatable {
         fadeOutVolumeAutomationEnabled: Bool,
         alwaysUseDarkLiveMode: Bool,
         keepScreenAwakeDuringLiveUse: Bool,
-        showLineupProgressHints: Bool
+        showLineupProgressHints: Bool,
+        explicitAppleMusicSearchFilteringEnabled: Bool
     ) {
         self.hapticsEnabled = hapticsEnabled
         self.fadeOutVolumeAutomationEnabled = fadeOutVolumeAutomationEnabled
         self.alwaysUseDarkLiveMode = alwaysUseDarkLiveMode
         self.keepScreenAwakeDuringLiveUse = keepScreenAwakeDuringLiveUse
         self.showLineupProgressHints = showLineupProgressHints
+        self.explicitAppleMusicSearchFilteringEnabled = explicitAppleMusicSearchFilteringEnabled
     }
 
     init(from decoder: Decoder) throws {
@@ -510,6 +517,7 @@ struct AppSettings: Codable, Equatable {
         alwaysUseDarkLiveMode = try container.decodeIfPresent(Bool.self, forKey: .alwaysUseDarkLiveMode) ?? true
         keepScreenAwakeDuringLiveUse = try container.decodeIfPresent(Bool.self, forKey: .keepScreenAwakeDuringLiveUse) ?? false
         showLineupProgressHints = try container.decodeIfPresent(Bool.self, forKey: .showLineupProgressHints) ?? false
+        explicitAppleMusicSearchFilteringEnabled = try container.decodeIfPresent(Bool.self, forKey: .explicitAppleMusicSearchFilteringEnabled) ?? true
     }
 }
 

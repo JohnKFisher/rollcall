@@ -273,6 +273,131 @@ fileprivate enum RatingRequestPresentation: String, Identifiable {
     var id: String { rawValue }
 }
 
+private struct LiveSurfaceSwipeGestureInstaller: UIViewRepresentable {
+    var isEnabled: Bool
+    var selectedTab: RootTab
+    var onChanged: (CGFloat) -> Void
+    var onEnded: (CGFloat, CGFloat) -> Void
+    var onCancelled: () -> Void
+
+    func makeUIView(context: Context) -> InstallerView {
+        let view = InstallerView()
+        view.coordinator = context.coordinator
+        return view
+    }
+
+    func updateUIView(_ uiView: InstallerView, context: Context) {
+        context.coordinator.isEnabled = isEnabled
+        context.coordinator.selectedTab = selectedTab
+        context.coordinator.onChanged = onChanged
+        context.coordinator.onEnded = onEnded
+        context.coordinator.onCancelled = onCancelled
+        uiView.coordinator = context.coordinator
+        uiView.installIfPossible()
+    }
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(
+            isEnabled: isEnabled,
+            selectedTab: selectedTab,
+            onChanged: onChanged,
+            onEnded: onEnded,
+            onCancelled: onCancelled
+        )
+    }
+
+    final class InstallerView: UIView {
+        weak var coordinator: Coordinator?
+
+        override func didMoveToWindow() {
+            super.didMoveToWindow()
+            installIfPossible()
+        }
+
+        func installIfPossible() {
+            guard let window, let coordinator else { return }
+            coordinator.install(on: window)
+        }
+    }
+
+    final class Coordinator: NSObject, UIGestureRecognizerDelegate {
+        var isEnabled: Bool
+        var selectedTab: RootTab
+        var onChanged: (CGFloat) -> Void
+        var onEnded: (CGFloat, CGFloat) -> Void
+        var onCancelled: () -> Void
+
+        private weak var installedView: UIView?
+        private lazy var panRecognizer: UIPanGestureRecognizer = {
+            let recognizer = UIPanGestureRecognizer(target: self, action: #selector(handlePan(_:)))
+            recognizer.cancelsTouchesInView = true
+            recognizer.delaysTouchesBegan = false
+            recognizer.delaysTouchesEnded = false
+            recognizer.delegate = self
+            return recognizer
+        }()
+
+        init(
+            isEnabled: Bool,
+            selectedTab: RootTab,
+            onChanged: @escaping (CGFloat) -> Void,
+            onEnded: @escaping (CGFloat, CGFloat) -> Void,
+            onCancelled: @escaping () -> Void
+        ) {
+            self.isEnabled = isEnabled
+            self.selectedTab = selectedTab
+            self.onChanged = onChanged
+            self.onEnded = onEnded
+            self.onCancelled = onCancelled
+        }
+
+        func install(on view: UIView) {
+            guard installedView !== view else { return }
+            if let installedView {
+                installedView.removeGestureRecognizer(panRecognizer)
+            }
+            installedView = view
+            view.addGestureRecognizer(panRecognizer)
+        }
+
+        func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
+            guard isEnabled, let pan = gestureRecognizer as? UIPanGestureRecognizer else { return false }
+            let velocity = pan.velocity(in: gestureRecognizer.view)
+            let horizontalVelocity = velocity.x
+            let verticalVelocity = abs(velocity.y)
+            guard abs(horizontalVelocity) > verticalVelocity * 1.25 else { return false }
+            return isValidSwipeDirection(horizontalVelocity)
+        }
+
+        func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer) -> Bool {
+            otherGestureRecognizer.view is UIScrollView
+        }
+
+        @objc private func handlePan(_ recognizer: UIPanGestureRecognizer) {
+            let translation = recognizer.translation(in: recognizer.view)
+            switch recognizer.state {
+            case .began, .changed:
+                onChanged(translation.x)
+            case .ended:
+                onEnded(translation.x, abs(translation.y))
+            case .cancelled, .failed:
+                onCancelled()
+            default:
+                break
+            }
+        }
+
+        private func isValidSwipeDirection(_ horizontalDistance: CGFloat) -> Bool {
+            switch (selectedTab, horizontalDistance) {
+            case (.gameDay, ..<0), (.generalClips, 0...):
+                return true
+            default:
+                return false
+            }
+        }
+    }
+}
+
 struct RootView: View {
     private struct PlayerEditorRoute: Identifiable {
         let id: UUID
@@ -303,7 +428,6 @@ struct RootView: View {
     @State private var customClipManagerInitialClipID: UUID?
     @State private var liveSurfaceSwipeCooldownActive = false
     @State private var liveSurfaceSwipeOffset: CGFloat = 0
-    @State private var liveSurfaceSwipeSuppressesControls = false
 
     init(appModel: AppModel) {
         self.appModel = appModel
@@ -362,10 +486,23 @@ struct RootView: View {
             && customClipRepairPrompt == nil
     }
 
-    private var liveSurfaceSwipeGesture: some Gesture {
-        DragGesture(minimumDistance: 24)
-            .onChanged(handleLiveSurfaceSwipeChange)
-            .onEnded(handleLiveSurfaceSwipeEnd)
+    private var liveSurfaceSwipeInstaller: some View {
+        LiveSurfaceSwipeGestureInstaller(
+            isEnabled: isLiveSurfaceSwipeAvailable,
+            selectedTab: selectedTab,
+            onChanged: { horizontalDistance in
+                handleLiveSurfaceSwipeChange(horizontalDistance: horizontalDistance)
+            },
+            onEnded: { horizontalDistance, verticalDistance in
+                handleLiveSurfaceSwipeEnd(
+                    horizontalDistance: horizontalDistance,
+                    verticalDistance: verticalDistance
+                )
+            },
+            onCancelled: {
+                resetLiveSurfaceSwipeFeedback(animated: true)
+            }
+        )
     }
 
     private var canPresentAutomaticWhatsNew: Bool {
@@ -486,33 +623,26 @@ struct RootView: View {
         }
     }
 
-    private func handleLiveSurfaceSwipeChange(_ value: DragGesture.Value) {
+    private func handleLiveSurfaceSwipeChange(horizontalDistance: CGFloat) {
         guard isLiveSurfaceSwipeAvailable else { return }
 
-        let horizontalDistance = value.translation.width
-        let verticalDistance = abs(value.translation.height)
         guard isValidLiveSurfaceSwipeDirection(horizontalDistance) else {
             resetLiveSurfaceSwipeFeedback()
             return
         }
-        guard abs(horizontalDistance) >= 28,
-              abs(horizontalDistance) > verticalDistance * 1.8
-        else {
+        guard abs(horizontalDistance) >= 28 else {
             resetLiveSurfaceSwipeFeedback()
             return
         }
 
         let cappedOffset = min(abs(horizontalDistance) * 0.12, 14)
         liveSurfaceSwipeOffset = horizontalDistance < 0 ? -cappedOffset : cappedOffset
-        liveSurfaceSwipeSuppressesControls = true
     }
 
-    private func handleLiveSurfaceSwipeEnd(_ value: DragGesture.Value) {
+    private func handleLiveSurfaceSwipeEnd(horizontalDistance: CGFloat, verticalDistance: CGFloat) {
         defer { resetLiveSurfaceSwipeFeedback(animated: true) }
         guard isLiveSurfaceSwipeAvailable else { return }
 
-        let horizontalDistance = value.translation.width
-        let verticalDistance = abs(value.translation.height)
         let isDeliberateHorizontalSwipe = abs(horizontalDistance) >= 80
             && abs(horizontalDistance) > verticalDistance * 1.4
         guard isDeliberateHorizontalSwipe else { return }
@@ -549,7 +679,6 @@ struct RootView: View {
     private func resetLiveSurfaceSwipeFeedback(animated: Bool = false) {
         let reset = {
             liveSurfaceSwipeOffset = 0
-            liveSurfaceSwipeSuppressesControls = false
         }
         if animated {
             withAnimation(.easeOut(duration: 0.14), reset)
@@ -893,16 +1022,12 @@ struct RootView: View {
         TabView(selection: $selectedTab) {
             gameDayTab
                 .offset(x: selectedTab == .gameDay ? liveSurfaceSwipeOffset : 0)
-                .allowsHitTesting(!(selectedTab == .gameDay && liveSurfaceSwipeSuppressesControls))
-                .simultaneousGesture(liveSurfaceSwipeGesture)
                 .teamAccentScope(selectedTeamAccentTheme)
                 .tag(RootTab.gameDay)
                 .tabItem { Label("Game Day", systemImage: "play.rectangle.fill") }
 
             generalClipsTab
                 .offset(x: selectedTab == .generalClips ? liveSurfaceSwipeOffset : 0)
-                .allowsHitTesting(!(selectedTab == .generalClips && liveSurfaceSwipeSuppressesControls))
-                .simultaneousGesture(liveSurfaceSwipeGesture)
                 .teamAccentScope(selectedTeamAccentTheme)
                 .tag(RootTab.generalClips)
                 .tabItem { Label("Clips", systemImage: "music.note.list") }
@@ -929,6 +1054,7 @@ struct RootView: View {
         }
         .teamAccentScope(selectedTeamAccentTheme)
         .background(TabBarAccentUpdater(theme: selectedTeamAccentTheme).frame(width: 0, height: 0))
+        .background(liveSurfaceSwipeInstaller)
         .onAppear { applyTabBarAccent(selectedTeamAccentTheme) }
         .onChange(of: selectedTeamAccentTheme) { _, theme in
             applyTabBarAccent(theme)
@@ -1774,6 +1900,23 @@ struct RootView: View {
                             )
                         }
                         .rollCallButtonStyle(.secondary)
+                    }
+
+                    SettingsSectionGroup(
+                        title: "Music",
+                        helperText: "Keep song selection clear for coaches and families."
+                    ) {
+                        Toggle(isOn: Binding(
+                            get: { appModel.state.settings.explicitAppleMusicSearchFilteringEnabled },
+                            set: { appModel.setExplicitAppleMusicSearchFilteringEnabled($0) }
+                        )) {
+                            SettingsRowLabel(
+                                title: "Hide Explicit Apple Music Results",
+                                detail: "Filters explicit songs from Apple Music search. Music Library songs may still need confirmation.",
+                                systemImage: "music.note.list"
+                            )
+                        }
+                        .tint(selectedTeamAccentTheme.color(.primary))
                     }
 
                     SettingsSectionGroup(
@@ -8460,10 +8603,31 @@ private struct AppleMusicPickerSheet: View {
         searchTerm.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
+    private var isExplicitFilteringEnabled: Bool {
+        appModel.state.settings.explicitAppleMusicSearchFilteringEnabled
+    }
+
+    private var visibleResults: [MusicSearchResult] {
+        isExplicitFilteringEnabled
+            ? results.filter { $0.isExplicit != true }
+            : results
+    }
+
+    private var hiddenExplicitResultsInCurrentSearch: Bool {
+        isExplicitFilteringEnabled && results.contains { $0.isExplicit == true }
+    }
+
     var body: some View {
         NavigationStack {
             List {
                 capabilityBanner
+                if isExplicitFilteringEnabled {
+                    Section {
+                        Text("Explicit songs are hidden from Apple Music search. You can change this in Settings > Music.")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                    }
+                }
                 if showsRecents {
                     Section("Recent Songs") {
                         if appModel.recentAppleMusicSelections.isEmpty {
@@ -8475,6 +8639,7 @@ private struct AppleMusicPickerSheet: View {
                                     title: recent.title,
                                     artistName: recent.artistName,
                                     badge: recent.isCatalogBacked == false ? "Preview" : "Full Song",
+                                    isExplicit: recent.isExplicit == true && !isExplicitFilteringEnabled,
                                     onSelect: {
                                         onSelect(recent.asSearchResult)
                                     },
@@ -8496,12 +8661,16 @@ private struct AppleMusicPickerSheet: View {
                         } else if results.isEmpty, hasSearched {
                             Text(searchError ?? "No songs found. Try a different search.")
                                 .foregroundStyle(.secondary)
+                        } else if visibleResults.isEmpty, hasSearched, hiddenExplicitResultsInCurrentSearch {
+                            Text("No visible songs found. Try a different search or turn off explicit filtering in Settings > Music.")
+                                .foregroundStyle(.secondary)
                         } else {
-                            ForEach(results) { result in
+                            ForEach(visibleResults) { result in
                                 AppleMusicRow(
                                     title: result.title,
                                     artistName: result.artistName,
                                     badge: result.isCatalogBacked ? "Full Song" : "Preview",
+                                    isExplicit: result.isExplicit == true && !isExplicitFilteringEnabled,
                                     onSelect: {
                                         onSelect(result)
                                     },
@@ -8594,6 +8763,7 @@ private struct AppleMusicRow: View {
     let title: String
     let artistName: String
     let badge: String
+    let isExplicit: Bool
     let onSelect: () -> Void
     let onPreview: () -> Void
 
@@ -8609,6 +8779,11 @@ private struct AppleMusicRow: View {
                     Text(badge)
                         .font(.caption2.weight(.semibold))
                         .foregroundStyle(badge == "Full Song" ? .green : .orange)
+                    if isExplicit {
+                        Text("Explicit")
+                            .font(.caption2.weight(.semibold))
+                            .foregroundStyle(.secondary)
+                    }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .contentShape(Rectangle())
@@ -8763,7 +8938,7 @@ private struct AdvancedTrimSheet: View {
 
 private extension RecentAppleMusicSelection {
     var asSearchResult: MusicSearchResult {
-        MusicSearchResult(songID: songID, title: title, artistName: artistName, duration: duration, previewURL: previewURL, isCatalogBacked: isCatalogBacked ?? true, libraryPersistentID: libraryPersistentID)
+        MusicSearchResult(songID: songID, title: title, artistName: artistName, duration: duration, previewURL: previewURL, isCatalogBacked: isCatalogBacked ?? true, libraryPersistentID: libraryPersistentID, isExplicit: isExplicit)
     }
 }
 

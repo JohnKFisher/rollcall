@@ -24,6 +24,7 @@ final class AppStatePersistenceTests: XCTestCase {
 
         XCTAssertEqual(decoded.trimDefaults.preferredLength, 12)
         XCTAssertTrue(decoded.trimDefaults.hasAppliedTwelveSecondDefaultReset)
+        XCTAssertTrue(decoded.settings.explicitAppleMusicSearchFilteringEnabled)
     }
 
     func testSavedTrimLengthResetsToTwelveSecondsOnce() throws {
