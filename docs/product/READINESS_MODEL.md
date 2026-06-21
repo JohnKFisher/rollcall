@@ -3,306 +3,201 @@
 Status: Accepted Product Direction
 Confidence: High
 
+This document defines the product meaning of readiness. It should stay aligned with the visible Readiness tab, Player Editor song status, package preview/repair language, and Game Day fallback behavior.
+
 ---
 
 ## Purpose
 
-Readiness exists to answer one question:
+Readiness answers one question:
 
-> If the user presses Start Game right now, will this feel good in front of people?
+> If the user opens Game Day right now, will this feel good in front of people?
 
-Readiness is NOT:
-
-- completion percentage
-- setup progress
-- account completion
-- checklist score
-- “how much effort has the user invested”
-
-Readiness exists only to help users feel confident using Roll Call live.
-
----
+Readiness is not a completion percentage, account score, setup checklist, or measure of how much effort the user has invested. It exists to help coaches trust the live moment.
 
 ## Core Principle
 
-A player is ready as soon as they have something meaningful to play.
+A player is ready when they have their own meaningful playable audio. Built-in fallback keeps Game Day safe, but it does not count as player-specific readiness.
 
-Readiness should encourage.
-
-Readiness should never shame.
+Readiness should encourage. It should never shame, block, or turn setup into homework.
 
 ---
 
-# Player Readiness
+## Player Readiness
 
-Players have exactly three conceptual states.
+### Ready on Any Device
 
----
+Definition: Roll Call has a playable app-owned local clip for the selected song window, or another future portable source with the same reliability.
 
-## ✓ Ready
+Meaning:
+- The player should work in Game Day.
+- The clip is expected to travel in `.rollcall` team packages when export can include the media.
+- This is the strongest readiness state because it is not tied to the current device account.
 
-Definition:
+Tone: calm, confident, and positive.
 
-Player has playable audio.
+### Ready on This Device
 
-Examples:
+Definition: The player's song can play here from a source-backed route such as Apple Music, Music Library state, or preview-backed playback, but it is not currently portable as a Roll Call-owned local clip.
 
-- Apple Music song
-- Imported local audio
-- Intro + song
-- Any future supported playable media
+Meaning:
+- The player should work on this device in Game Day.
+- The song may require the same Music Library, Apple Music authorization, subscription state, network, or device-local availability after import on another device.
+- This is still a valid success state, not a failure.
 
-Outcome:
+Tone: honest and reassuring. Explain the device boundary when tapped; do not bury the caveat in warning language.
 
-This player will work during Game Day.
+### Preparing
 
-This is the success state.
+Definition: Roll Call is trying to prepare a more portable or more reliable clip for a saved source.
 
-UI goals:
+Meaning:
+- A previous playable route may still be used while preparation runs.
+- Preparation is one job at a time, preserves older working clips when regeneration fails, and is throttled around live Game Day and Clips use.
+- Low Power Mode may pause automatic preparation; explicit retry actions may bypass only that pause.
 
-- Positive
-- Calm
-- No warning language
+Tone: patient and non-alarming. Do not imply the coach must wait before using Game Day unless the player has no playable route.
 
-Examples:
+### Needs Apple Music
 
-✓ Ellie  
-✓ Julia
+Definition: The saved song depends on Apple Music or Music Library access that is not currently available.
 
----
+Meaning:
+- The user may need to grant Music access, sign in, enable subscription playback, restore library availability, or choose another source.
+- Existing song choice should be preserved so the user can repair it.
 
-## ★ Enhanced
+Tone: actionable, not blaming.
 
-Definition:
+### Needs Repair
 
-Player is already Ready and also has an announcer intro.
+Definition: Roll Call cannot currently read or play the saved source.
 
-Examples:
+Meaning:
+- The user should choose the song again or import a replacement before relying on that player's own walkup.
+- Game Day fallback still protects the live moment.
+- Import should preserve the unavailable item and route the user toward repair instead of silently deleting the setup.
 
-"Now batting, number 17, Ellie..."
-
-Outcome:
-
-This player feels more exciting and more stadium-like.
-
-This should feel like an enhancement.
-
-NOT a requirement.
-
-UI goals:
-
-- Celebratory
-- Discovery-oriented
-- Encourage usage
-
-Examples:
-
-★ Ellie  
-★ Emma
+Tone: clear and practical. This is a repair state, not a data-loss state.
 
 ---
 
-## ○ Optional Upgrades
+## Enhancements
 
-Definition:
+### Enhanced
 
-Everything else.
+Definition: A player who is already ready also has an Announcement Cue, such as "Now batting, number 17, Ellie."
+
+Meaning:
+- The player feels more stadium-like.
+- This is a celebratory upgrade, never a requirement.
+
+Announcer intros are important but non-obvious. Reveal them after the user has had a success; do not force them during onboarding.
+
+### Optional Upgrades
+
+Definition: Everything that can make the team feel cooler without changing whether Game Day works.
 
 Examples:
-
 - Player photo
-- Team colors
-- Presentation styles
-- Theme packs
-- Extra polish
-- Optional presentation polish
+- Team color
+- Future themes or presentation styles
+- Extra visual polish
 
-Outcome:
-
-Makes things cooler.
-
-Never affects readiness.
-
-UI goals:
-
-- Never imply incompleteness
-- Never imply failure
-
-Examples:
-
-○ Team logo missing  
-○ No player photo
-
-These should not reduce confidence.
+Optional upgrades must never reduce confidence or imply that a player is incomplete.
 
 ---
 
-# Explicitly Rejected Models
-
-The following approaches are intentionally rejected.
-
----
-
-## Percent Complete
-
-Rejected:
-
-❌ Setup 64%
-
-Reason:
-
-Creates guilt.
-
-Users begin optimizing completion instead of preparing for Game Day.
-
----
-
-## Multi-Level Completion Scores
-
-Rejected:
-
-Bronze
-Silver
-Gold
-Platinum
-
-Reason:
-
-Turns setup into homework.
-
----
-
-## Missing Features = Error State
-
-Rejected:
-
-❌ Player incomplete
-
-Reason:
-
-Player may already work perfectly.
-
----
-
-# Team Readiness
+## Team Readiness
 
 Team readiness should answer:
 
 > Can I confidently run Game Day?
 
-NOT:
+Team readiness should not answer:
 
 > How complete is my setup?
 
----
+### Ready for Game Day
 
-## Team Status States
+Definition: Every present player has player-specific playable audio.
 
-### 🟢 Ready for Game Day
+Meaning: The team can run Game Day without relying on the generic fallback for player walkups.
 
-Definition:
+### Some Audio Needs Attention
 
-Every player has playable audio.
+Definition: One or more players are missing player-specific audio, need Apple Music, are still preparing without another playable route, or need repair.
 
-Examples:
+Meaning: Offer direct repair paths, but never block Game Day.
 
-🟢 All players playable
-
----
-
-### 🟡 Some Players Need Audio
-
-Definition:
-
-One or more players will use fallback behavior.
-
-Examples:
-
-🟡 3 players missing audio
-
-Action:
-
-Offer help.
-
-Never block.
+Optional secondary metrics, such as how many players have announcer intros or photos, should be framed as celebration or polish, not readiness debt.
 
 ---
 
-Optional secondary metrics:
+## Device-Level Game Day Checks
 
-⭐ 8 players have announcer intros
+Keep device and environment checks separate from player readiness. Examples:
 
-This is celebration.
+- Audio route
+- Network reachability when source-backed playback may need it
+- Music authorization and subscription state
+- Volume Automation setting and behavior
+- At least one present player in the lineup
 
-Not pressure.
-
----
-
-# Missing Data Philosophy
-
-Roll Call never fails.
-
-Fallback order:
-
-1. Intro + Song
-2. Song
-3. Intro
-4. Generic cheering
-
-No player should feel broken.
+These checks can warn or offer actions, but they should not turn player cards red or convert optional setup into required setup.
 
 ---
 
-# Discovery Philosophy
+## Missing Data Philosophy
 
-Announcer intros are important.
+Roll Call never fails the live tap silently.
 
-But they are non-obvious.
+Playback fallback order:
 
-Do not teach them in onboarding.
+1. Intro + song
+2. Song only
+3. Intro only
+4. Generic cheering fallback
 
-Do not force setup.
-
-Do not interrupt.
-
-Instead:
-
-Reveal them after success.
-
-Example:
-
-🎤 Nice!
-
-Want to add announcer intros?
-
-They make walkups feel way more like the real thing.
-
-[ Try It ]
+Fallback protects Game Day. It does not mean the player's setup is lost, and it does not mean fallback should be counted as that player's own ready state.
 
 ---
 
-# Codex Implementation Notes
+## Explicitly Rejected Models
 
-If implementing readiness:
+Do not use:
 
-DO:
-- Optimize for confidence
-- Optimize for discoverability
-- Use positive language
+- Percent complete, such as "Setup 64%"
+- Bronze, Silver, Gold, Platinum, or similar tiers
+- "Player incomplete" as a primary status
+- Red error styling for missing optional features
+- Blocking Game Day because setup could be better
 
-DO NOT:
-- Use percentages
-- Gate Game Day
-- Treat photos/styles as requirements
-- Show warning-heavy UI
-- Introduce setup completion mechanics
+Reasons:
+- Percentages create guilt.
+- Tiers turn setup into homework.
+- Missing polish does not mean the player is broken.
+- Game Day reliability depends on graceful fallback, not perfect setup.
 
-When uncertain:
+---
 
-Ask:
+## Implementation Notes
+
+Do:
+- Optimize for confidence.
+- Use positive, plain language.
+- Make repair actions direct.
+- Keep portability and device-specific readiness honest.
+- Preserve user choices during import, repair, and regeneration.
+
+Do not:
+- Gate Game Day.
+- Treat photos, themes, or announcer intros as requirements.
+- Hide Apple Music or device-dependency caveats.
+- Delete or overwrite a saved song choice just because it cannot play here yet.
+- Introduce setup-completion mechanics.
+
+When uncertain, ask:
 
 > Does this help users feel ready?
 
-If not:
-
-Do not include it in readiness.
+If not, leave it out of readiness.

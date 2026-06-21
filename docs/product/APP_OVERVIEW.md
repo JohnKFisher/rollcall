@@ -1,6 +1,6 @@
 # Roll Call — Application Overview
 
-This document gives a non-code AI everything it needs to discuss the Roll Call app at a product level: what it is, who it's for, how the screens fit together, what the user can do on each one, and the principles that constrain future change. It is current as of build 63 / version 1.1.0.
+This document gives a non-code AI everything it needs to discuss the Roll Call app at a product level: what it is, who it's for, how the screens fit together, what the user can do on each one, and the principles that constrain future change. It is current as of build 73 / version 1.2.
 
 If you are an AI reading this to help with planning: assume the human you are talking to is the sole developer and product owner. They want help thinking through changes, tradeoffs, and priorities — not generating code. Quote back the principles in this document when they conflict with a proposal.
 
@@ -33,13 +33,15 @@ These words have specific meaning in Roll Call. Use them precisely when discussi
 
 - **Team** — the durable container. Has a name, accent color, roster of players, batting order, session state, announcer profile, and a small library of built-in crowd clips. A device can have many teams. One team is "selected" at a time.
 - **Player** — belongs to a team. Has display name, optional uniform number, optional photo, optional cue (audio assignment), optional custom announcer recording, and an `isPresent` flag for today's lineup.
-- **Cue** — the playable audio assignment for a player. Has a source (Apple Music song, local audio file, or built-in clip), a start time, a duration, a fade-out duration, and a pause-after-announcer value. A player without a cue falls back to a generic crowd cheer at Game Day.
+- **Player Song / Cue** — the playable audio assignment for a player. Has a source (Music Library, Apple Music catalog, local audio/video file, generated Roll Call clip, or built-in fallback), a selected start time, a duration, a fade-out duration, and a pause-after-announcer value. A player without player-specific audio falls back to a generic crowd cheer at Game Day.
+- **Song Clip** — the durable saved source-and-timing truth behind a Player Song or Custom Clip. Generated local media may make it portable, but the original source-backed recipe is preserved so the user can repair or regenerate it later.
 - **Announcer / Announcement Cue** — an optional recorded voice clip ("Now batting, number 17, Ellie!") that the user records into the app. Separate from the song cue. Lives at the player level.
 - **Lineup / Batting Order** — the ordered list of present players for today's game. Game Day plays in this order. The user can sort A-Z, sort by number, or drag manually. Manual order is preserved across launches.
 - **Game Day** — the live screen where the actual walkups happen. The product's reason for existing.
 - **Game Day Announcer Mode** — how cues play. Three values: `Announcer Only`, `Announcer+Song`, `Song Only`. Set per-team in session state, toggled from the live screen.
-- **Clip / General Clip** — the team's built-in library of short crowd sounds (e.g. `Small Cheer`, `Crowd Swell`, `Big Cheer`) for live moments outside the walkup flow. Lives in its own tab.
-- **Readiness** — Roll Call's confidence model. Answers "if I pressed Start Game right now, would it feel good?" Three states for players: ✓ Ready (has playable audio), ★ Enhanced (has audio + announcer intro), ○ Optional (everything else — photos, polish). Never a percentage. Never red. Never blocks Game Day.
+- **Sound Effect** — a bundled crowd reaction in the Clips tab, such as a small cheer, rhythmic clap, chant, or stadium swell.
+- **Custom Clip** — a team-specific live clip in the Clips tab. Custom Clips can be copied from Player Songs or created directly, then reordered, edited, deleted, restored, and exported with the team. After copying, Custom Clips and Player Songs are independent.
+- **Readiness** — Roll Call's confidence model. Answers "if I opened Game Day right now, would it feel good?" Current song states include `Ready on Any Device`, `Ready on This Device`, `Preparing`, `Needs Apple Music`, and `Needs Repair`, with announcer intros treated as `Enhanced` and photos/polish treated as optional. Never a percentage. Never blocks Game Day.
 
 ---
 
@@ -57,7 +59,7 @@ Setup Guide steps:
 
 1. **Team** — name the team, pick an accent color from eight presets (Roll Call Orange, Red, Gold, Green, Blue, Purple, Gray, Black). Or "Add Team from Another User's .rollcall File" instead.
 2. **Player** — add a first player (name required, uniform number optional). On returning to this step later, this screen becomes "Review your first/second/third player." for editing.
-3. **Audio** — assign walkup audio. Primary choice is "Add Song" (Apple Music). Secondary is "Use Local Audio". A "Try with a Crowd Cheering" option lets the user defer audio entirely and use the built-in cheer fallback. After audio is assigned, the screen turns into a simple trim selector (start point + length chips: 6, 8, 10, 12, 15 seconds, plus a Preview button).
+3. **Audio** — assign walkup audio through the same Music Library-first song flow used by Player Editor. Music Library is primary, Apple Music catalog search is an explicit secondary path, and Import Audio or Video is the file fallback. A "Try with a Crowd Cheering" option lets the user defer audio entirely and use the built-in cheer fallback. Song and file selections open the draft Make Your Clip editor before saving to the player.
 4. **Lineup** — two variants:
     - With fewer than 3 players: title reads "Three players make lineup click." The primary action is "Add One More Player to Reach Three." A secondary "Open Lineup Anyway" is available. "Got It" is hidden until the user opens the lineup at least once.
     - With 3+ players: title reads "Now check the lineup." Primary action is "Open Today's Lineup." "Got It" still requires the user to actually open the lineup first.
@@ -85,7 +87,9 @@ Once onboarding is complete, the app's main UI is a six-tab `TabView`. The order
 
 Every tab (except the live ones) shows a **team banner** at the top with the selected team's name, accent color, and a small status line (e.g. "12 players • 9 present"). The banner is consistent across tabs so the user always knows which team is active. On Game Day, the banner shows a "Warnings" badge if anything live needs attention.
 
-There is no automatic launch into Game Day on app open; the app remembers which tab the user was on. The principle is "open to the last team, don't trap the user in a flow."
+Game Day and Clips also have a deliberate horizontal swipe shortcut between them. That shortcut preserves playback and screen state, stays live-surface-only, and is disabled during modal, edit, import, prompt, or other flows where a live swipe would be surprising.
+
+The app preserves the last useful context unless first-run or no-team state requires onboarding. The principle is "open to the team, don't trap the user in a flow."
 
 ---
 
@@ -104,11 +108,16 @@ The center of the product. Dark by default in Live appearance (toggleable in Set
 
 Tap interactions degrade gracefully. If a player has no cue and announcer mode is "Song Only" or "Announcer+Song", playback falls back to a built-in cheer. If a player has no recorded announcer in "Announcer Only" mode, same. Game Day never fails silently and never errors out — it always plays *something*.
 
-### 5.2 Clips (the General Clips tab)
+### 5.2 Clips (the live Clips tab)
 
-A team's library of built-in crowd reactions, separate from per-player cues. Defaults now focus on a smaller sports-oriented set: a friendly fallback cheer, a rhythmic clap, a general stadium swell, a stronger rally cheer, a bigger cheer, and a simple chant option. Each clip is a card with title, duration text, and a large play button (circle, accent color). Tapping plays the clip immediately. This tab uses the same Live appearance treatment as Game Day so it doubles as a "during a live moment, fire a crowd reaction" surface.
+A team's live clip board, separate from the per-player walkup flow. This tab uses the same Live appearance treatment as Game Day so it can be used during a live moment without feeling like setup.
 
-Clips currently are a fixed bundled set per team — the user cannot add custom clips. (This is on the 1.x list as "Improved Clips" and "Ability to add songs to clips.")
+There are two sections:
+
+- **Sound Effects** — bundled crowd reactions focused on a smaller sports-oriented set: a friendly fallback cheer, a rhythmic clap, a general stadium swell, a stronger rally cheer, a bigger cheer, and a simple chant option.
+- **Custom Clips** — team-specific live clips that can be copied from Player Songs or created directly. They can be reordered, edited, deleted into Recently Deleted, restored, and included in team packages.
+
+Custom Clip editing is explicit. Adding, editing, reordering, and deletion happen from an Edit Custom Clips sheet, not accidentally during live play. Copies remain independent from Player Songs so editing or deleting one never silently changes the other.
 
 ### 5.3 Players (roster management)
 
@@ -121,11 +130,12 @@ If no team is selected, the tab shows a ContentUnavailable view nudging the user
 
 ### 5.4 Teams (team lifecycle)
 
-Three sections:
+Primary sections:
 
-- **Selected Team** — the active team's summary card, an Accent Preset Grid for changing color, and a "Team Actions" menu (Rename, Duplicate, Update Apple Music Playlist, Import Roster CSV, Remove).
-- **Create Team** — single text field and "Create Team" button.
-- **Teams** — list of every team on device with selection state.
+- **Selected Team / Manage Team** — active team summary, accent preset grid, rename, duplicate, and remove actions.
+- **Team Setup** — Import Roster CSV.
+- **Share Team** — Share Team Package, Import Team Package, and Create Apple Music Playlist.
+- **Teams** — choose, create, or import the roster Roll Call should use.
 
 This is where team identity and lifecycle live, intentionally separated from everyday roster work in the Players tab.
 
@@ -134,22 +144,22 @@ This is where team identity and lifecycle live, intentionally separated from eve
 The "are we good to play?" view. Per the Readiness Model (`docs/product/READINESS_MODEL.md`), it is intentionally encouraging, never shaming. Cards, in order:
 
 - **Readiness Overview Card** — overall summary plus "Open Game Day" button.
-- **Player Audio Card** — list of players, each showing ✓ Ready (has audio) or "Needs Audio" (will use fallback). Tap to open the player editor.
-- **Enhancements Card** — announcer-intro upgrades (★ Enhanced). Discoverability surface for the announcer feature, not a requirement.
+- **Player Audio Card** — list of players with portability-aware song status such as `Ready on Any Device`, `Ready on This Device`, `Preparing`, `Needs Apple Music`, or `Needs Repair`. Tap to open the player editor.
+- **Enhancements Card** — announcer-intro upgrades. Discoverability surface for the announcer feature, not a requirement.
 - **Optional Upgrades Card** — photo additions and other cosmetic polish.
 - **Game Day Checks Card** — device-level conditions: audio route, network, Apple Music auth, volume automation, lineup configured. These can issue "Request Apple Music Access" or similar action prompts.
 
-There is no percentage score, no Bronze/Silver/Gold, no red player errors. A player without audio is "Needs Audio," not "Incomplete."
+There is no percentage score, no Bronze/Silver/Gold, no red player errors. A player without player-specific audio needs attention or repair, but Game Day fallback still protects the live moment.
 
 ### 5.6 Settings
 
 A scroll view of grouped sections:
 
-- **Team Package** — Export Selected Team, Share Latest .rollcall Package (only shows once an export exists), Add Team from .rollcall Package.
-- **Setup Guide** — Open Setup Guide (returns user to the guided flow for a new or imported team).
-- **Game Day** — three toggles: Always Use Dark Live Screens (default on), Game Day Haptics, Volume Automation (off by default; lets Roll Call adjust system volume for fades).
+- **Setup Guide & Teams** — Open Setup Guide, plus a row that sends users to Teams for import/export tools.
+- **Music & Playback** — Hide Explicit Apple Music Results, Volume Automation.
+- **Game Day** — Always Use Dark Live Screens, Game Day Haptics, Keep Screen Awake, Show Lineup Progress Hints.
 - **Recovery** — navigation into Recovery, where `Recently Deleted` handles everyday team/player undelete for 60 days and backups remain available for restoring an earlier app state.
-- **About** — version, build, environment chip, copyright credit to John Kenneth Fisher, GitHub link, Email Feedback link (pre-fills version metadata), Attributions & Licenses link.
+- **About Roll Call** — top doorway row into version, build, environment chip, copyright credit to John Kenneth Fisher, public web/GitHub-style link, Email Feedback link, What's New, earned Rate Roll Call entry, and Attributions & Licenses.
 - **Advanced / Developer Tools** (only visible when feature flag is on) — environment gates, runtime testing flags, experimental actions, diagnostics.
 
 ---
@@ -162,8 +172,8 @@ Opened from any player row (Players tab, Readiness list, Game Day tile long-pres
 
 - **Setup Summary** — at-a-glance status card.
 - **Identity** — display name, uniform number, photo (PhotosPicker → in-app crop).
-- **Song Cue** — choose Apple Music song, choose Local Audio, swap source, clear cue. Shows the assigned song title and source.
-- **Fine Tune Clip** (only when a cue exists) — start scrubber, length chips, suggested-hook / start-at-beginning modes, preview, and an "Advanced Trim" navigation that opens a more detailed editor.
+- **Player Song** — choose from Music Library, search Apple Music, import audio or video, swap source, clear cue. Shows the assigned song title, source, and current readiness/portability status.
+- **Make Your Clip / Fine Tune Clip** (only when a song exists) — waveform or honest placeholder rail, selected-window dragging, length choices, exact start/length/fade controls, preview with playhead, and explicit Save for draft selections.
 - **Announcement Cue** — record a custom intro via in-app mic recording. Buttons: Start/Stop Recording, Preview, Clear. A warning is shown if the file reference exists but the audio file is missing.
 - **Remove Player** at the bottom, destructive role.
 
@@ -179,13 +189,15 @@ Opened from Game Day's Lineup button, from the Setup Guide's lineup step, or fro
 
 This sheet uses the system Edit mode for dragging. Closing returns to wherever it was opened from.
 
-### 6.3 Apple Music Picker sheet
+### 6.3 Choose Song / Make Your Clip flow
 
-Title "Choose Song." Search Apple Music's catalog and select a song. Behind the scenes, the app first checks Apple Music authorization; if not granted, it shows a primer alert ("Use Apple Music?") explaining why before triggering the system prompt. Once a song is picked, the app auto-applies a "suggested hook" trim (its best guess at a good 10-second segment) and returns to the audio step or to the player editor.
+Title "Choose Song." Music Library is primary and uses Apple's native picker when available. Apple Music catalog search is a separate explicit path with a native-style searchable list; files remain available as Import Audio or Video. The app asks for Music access only after the user chooses an Apple Music or Music Library action, and explains why before the system prompt.
 
-### 6.4 Advanced Trim sheet
+Selecting a song or file opens a draft Make Your Clip editor. The user can preview, drag the selected window, adjust length and fade, and save explicitly. Cancelling the draft leaves the existing player song or Custom Clip unchanged.
 
-Reachable from the Player Editor's Fine Tune Clip section. A more detailed view with finer scrub control. Not used in the Setup Guide.
+### 6.4 Advanced Trim / Clip Editor controls
+
+Reachable from Player Editor, Setup Guide audio, and Custom Clip editing. Provides finer controls for start, length, fade, preview, and source-backed readiness. The Setup Guide no longer keeps a separate simplified trimmer; it uses the shared flow.
 
 ### 6.5 Roster Preview sheet
 
@@ -201,9 +213,11 @@ Triggered after picking a player photo. Pan/zoom/rotate then save.
 
 ### Audio sources
 
-- **Apple Music** — the primary, recommended source. Requires Apple Music authorization. On accounts with an active Apple Music subscription and MusicKit App Service entitlement, Roll Call can play arbitrary positions in full-length tracks. Without that, the app falls back to whatever preview snippet is available.
-- **Local audio / video** — files imported from the device, including video files (only the audio track is used). Used when the user prefers their own media or when Apple Music isn't available.
-- **Built-in clips** — short crowd reactions bundled with the app. Used both as the General Clips library and as the fallback when a player has no cue.
+- **Music Library** — the primary, recommended source. It uses the user's familiar library surface and may expose local readable media when iOS allows it.
+- **Apple Music catalog search** — an explicit secondary source. Requires Apple Music authorization. With an active Apple Music subscription and MusicKit App Service entitlement, Roll Call can use source-backed full-song playback; otherwise it may rely on preview snippets where available.
+- **Local audio / video** — files imported from the device, including video files (only the audio track is used). Used when the user prefers their own media or when music services are not available.
+- **Generated Roll Call clips** — app-owned local `.m4a` clips rendered only when public APIs expose genuinely readable local audio. These are preferred for playback/export when valid.
+- **Built-in clips / Sound Effects** — short crowd reactions bundled with the app. Used as the Clips Sound Effects library and as the fallback when a player has no cue.
 
 ### Fallback order (per UX Rulebook)
 
@@ -236,16 +250,20 @@ The mode is on `Team.session.gameDayAnnouncerMode`, persisted, and survives back
 
 ## 9. Readiness Model — Detailed
 
-Player states:
+Player song states:
 
-- **✓ Ready** — has playable audio (song or imported file). This player will work.
-- **★ Enhanced** — Ready *and* has a custom announcer recording. Feels celebratory; the app uses this as a discovery surface for the announcer feature.
-- **○ Optional** — anything else (photo missing, etc.). Never implies the player is broken.
+- **Ready on Any Device** — has app-owned portable playable audio, such as a valid generated Roll Call clip.
+- **Ready on This Device** — playable here, but dependent on the current device, library, subscription, account, network, or source-backed route.
+- **Preparing** — Roll Call is trying to prepare a more reliable or portable clip without discarding the saved source truth.
+- **Needs Apple Music** — the saved song depends on Music access/subscription/library state that is not currently available.
+- **Needs Repair** — Roll Call cannot currently read or play the saved source; the user should choose the song again or import a replacement.
+- **Enhanced** — Ready and has a custom announcer recording. Feels celebratory; the app uses this as a discovery surface for the announcer feature.
+- **Optional** — anything else (photo missing, theme polish, etc.). Never implies the player is broken.
 
 Team states:
 
-- **🟢 Ready for Game Day** — every player has playable audio.
-- **🟡 Some Players Need Audio** — one or more will use fallback. Offers help; never blocks.
+- **Ready for Game Day** — every present player has player-specific playable audio.
+- **Some Audio Needs Attention** — one or more players will use fallback, need Apple Music, are preparing without another playable route, or need repair. Offers help; never blocks.
 
 Game Day Checks (device-level, separate from player setup):
 
@@ -269,17 +287,17 @@ Discovery is preferred over pressure. Announcer intros are surfaced post-success
 
 ### `.rollcall` packages
 
-A `.rollcall` file is a portable archive of a single team: roster, cues, photos, custom announcer recordings, team identity, session state. Created from Settings -> Export Selected Team. Added via Settings -> Add Team from .rollcall Package, or by sending the file to the device (Files, AirDrop, etc.).
+A `.rollcall` file is a portable archive of a single team: roster, Player Songs, Custom Clips, generated/local media when available, photos, custom announcer recordings, team identity, and session state. Created from Teams -> Share Team Package. Added via Teams -> Import Team Package, Settings -> Import or Export Teams, or by sending the file to the device (Files, AirDrop, etc.).
 
-Import adds the package as a new team and leaves existing teams unchanged. Imports automatically create a recovery backup first.
+Import adds the package as a new team and leaves existing teams unchanged. Imports automatically create a recovery backup first. Package preview and import should preserve unavailable items in place and report portability honestly: portable, ready on this device, needs Apple Music, still preparing, or needs repair.
 
 ### Roster CSV import
 
-Available from Teams → Team Actions menu. Imports name + uniform number rows from a CSV; opens a Roster Preview sheet for confirmation before applying. This is a fast way to seed a roster but does not import audio.
+Available from Teams -> Team Setup. Imports name + uniform number rows from a CSV; opens a Roster Preview sheet for confirmation before applying. This is a fast way to seed a roster but does not import audio.
 
 ### Recovery
 
-Reached from Settings → Recovery. The screen now leads with **Recently Deleted**, a mixed newest-first list of deleted teams and players. Deleted items stay there for 60 days unless restored or permanently deleted. Team restores are full-fidelity; player restores return to the original team and try to rejoin the prior batting-order position while marking the player present today. If a player's original team is still deleted, the row stays visible and explains that the team must be restored first.
+Reached from Settings -> Recovery. The screen now leads with **Recently Deleted**, a mixed newest-first list of deleted teams, players, and Custom Clips. Deleted items stay there for 60 days unless restored or permanently deleted. Team restores are full-fidelity; player restores return to the original team and try to rejoin the prior batting-order position while marking the player present today. If a player's original team is still deleted, the row stays visible and explains that the team must be restored first.
 
 Restore is the primary action. Permanent delete is secondary and confirmed item by item. If some saved media is missing, Roll Call explains what could not be recovered and offers a `Restore What We Can` fallback instead of silently restoring a partial result.
 
@@ -301,7 +319,7 @@ Be very cautious when proposing features that step on these lines.
 - Event production software
 - Analytics or play-by-play history
 - Remote control or multi-device coordination
-- Heavy audio engineering tools (waveforms, per-cue gain, etc. — these are deferred indefinitely)
+- Heavy audio engineering tools beyond the current focused clip editor (per-cue gain, detailed mixing, DAW-style editing, etc.)
 - Required cloud backups
 
 **Reliability rules:**
@@ -327,21 +345,18 @@ Be very cautious when proposing features that step on these lines.
 **Near-term (1.x candidates):**
 
 - Team Home (a "what now?" landing screen, currently the Game Day tab serves this role indirectly)
-- Improved Clips (custom user clips, sample songs in "Recent")
 - Improved Readiness
-- Improved Backup/Restore + Recently Deleted
 - Improved Photo Editing
 - Improved hook-finding (the "suggested" auto-trim heuristic)
 - Better sharing convenience
-- Improved song selection and clip creation flows
-- Adding songs to clips
+- More song-selection and clip-creation polish
 
 **Likely future free feature candidates (later):**
 
 - Presentation styles / Game Day visual themes
 - Announcer Studio (richer announcer authoring — multiple presets, varied templates)
 - Batch editing
-- Save Apple Music clip as a local file (currently feature-flagged Experimental)
+- More portable local generation when public APIs expose readable media
 - Lyric-based song selection
 - Multiple intro/song presets per player
 - Presentation packs
