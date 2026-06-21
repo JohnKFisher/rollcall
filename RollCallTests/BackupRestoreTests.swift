@@ -231,6 +231,85 @@ final class BackupRestoreTests: XCTestCase {
         XCTAssertFalse(assetExists("old-announcer.caf"))
     }
 
+    @MainActor
+    func testEditingCustomClipRetainsGeneratedAssetReferencedOnlyByBackup() throws {
+        let generatedRelativePath = "GeneratedClips/backup-only-custom-clip.m4a"
+        var customClip = SongClip(cue: RollCallTestFixtures.localCue(relativePath: "custom-source.m4a"))
+        customClip.generatedAsset = GeneratedClipAsset(
+            relativePath: generatedRelativePath,
+            status: .ready,
+            renderedSelection: customClip.requestedSelection,
+            generationKey: customClip.generationKey,
+            generatedAt: RollCallTestFixtures.now
+        )
+        customClip.readinessInputs.playback = .localClipReady
+        customClip.portabilityInputs.generatedAssetCanBeExported = true
+        var team = RollCallTestFixtures.team(players: [])
+        team.teamClips = [customClip]
+        let snapshot = SnapshotRecord(
+            id: UUID(),
+            createdAt: RollCallTestFixtures.now,
+            reason: "Manual backup",
+            relativeManifestPath: "custom-clip-backup.json"
+        )
+        try writeSnapshotState(
+            RollCallTestFixtures.appState(team: team),
+            fileName: snapshot.relativeManifestPath
+        )
+        try writeState(RollCallTestFixtures.appState(team: team, snapshots: [snapshot]))
+        try writeGeneratedAsset("backup-only-custom-clip.m4a")
+        let model = AppModel()
+
+        var editedCue = customClip.editingCue
+        editedCue.startTime += 1
+        model.updateCustomClip(customClip.id, with: editedCue, named: "Edited Clip")
+
+        XCTAssertTrue(generatedAssetExists("backup-only-custom-clip.m4a"))
+    }
+
+    @MainActor
+    func testEditingPlayerSongRetainsGeneratedAssetReferencedOnlyByBackup() throws {
+        let generatedRelativePath = "GeneratedClips/backup-only-player-song.m4a"
+        var songClip = SongClip(cue: RollCallTestFixtures.localCue(relativePath: "player-source.m4a"))
+        songClip.generatedAsset = GeneratedClipAsset(
+            relativePath: generatedRelativePath,
+            status: .ready,
+            renderedSelection: songClip.requestedSelection,
+            generationKey: songClip.generationKey,
+            generatedAt: RollCallTestFixtures.now
+        )
+        songClip.readinessInputs.playback = .localClipReady
+        songClip.portabilityInputs.generatedAssetCanBeExported = true
+        var player = RollCallTestFixtures.player(
+            id: RollCallTestFixtures.alexID,
+            name: "Alex Ramirez",
+            number: "12"
+        )
+        player.songAssignment = .privateClip(songClip)
+        let team = RollCallTestFixtures.team(players: [player])
+        let snapshot = SnapshotRecord(
+            id: UUID(),
+            createdAt: RollCallTestFixtures.now,
+            reason: "Manual backup",
+            relativeManifestPath: "player-song-backup.json"
+        )
+        try writeSnapshotState(
+            RollCallTestFixtures.appState(team: team),
+            fileName: snapshot.relativeManifestPath
+        )
+        try writeState(RollCallTestFixtures.appState(team: team, snapshots: [snapshot]))
+        try writeGeneratedAsset("backup-only-player-song.m4a")
+        let model = AppModel()
+        var editedPlayer = try XCTUnwrap(model.selectedTeam?.players.first)
+        var editedCue = songClip.editingCue
+        editedCue.startTime += 1
+        editedPlayer.updatePrivateSongClip(with: editedCue)
+
+        model.updatePlayer(editedPlayer)
+
+        XCTAssertTrue(generatedAssetExists("backup-only-player-song.m4a"))
+    }
+
     private func writePackageDirectory(name: String, manifest: TeamPackageManifest) throws -> URL {
         let packageURL = temp.fileURL(name)
         try FileManager.default.createDirectory(at: packageURL, withIntermediateDirectories: true)
@@ -279,8 +358,20 @@ final class BackupRestoreTests: XCTestCase {
         try Data("test".utf8).write(to: url, options: .atomic)
     }
 
+    private func writeGeneratedAsset(_ fileName: String) throws {
+        let url = try AppPaths.generatedClipsDirectory().appendingPathComponent(fileName)
+        try Data("test".utf8).write(to: url, options: .atomic)
+    }
+
     private func assetExists(_ relativePath: String) -> Bool {
         guard let url = try? AppPaths.assetURL(relativePath: relativePath) else { return false }
+        return FileManager.default.fileExists(atPath: url.path)
+    }
+
+    private func generatedAssetExists(_ fileName: String) -> Bool {
+        guard let url = try? AppPaths.generatedClipsDirectory().appendingPathComponent(fileName) else {
+            return false
+        }
         return FileManager.default.fileExists(atPath: url.path)
     }
 }

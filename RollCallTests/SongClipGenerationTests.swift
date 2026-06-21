@@ -632,6 +632,41 @@ final class SongClipGenerationTests: XCTestCase {
         XCTAssertFalse(appleMusicSource.runtimeVolumeAutomationEnabled(whenSettingEnabled: false))
     }
 
+    @MainActor
+    func testAppleMusicPlaybackFailureUsesNoSongFallbackCue() throws {
+        let appleMusicCue = RollCallTestFixtures.appleMusicCue(
+            songID: "apple-music-unavailable",
+            title: "Unavailable Song",
+            artistName: "Artist"
+        )
+        var player = RollCallTestFixtures.player(
+            id: RollCallTestFixtures.alexID,
+            name: "Alex Morgan",
+            number: "7"
+        )
+        player.songAssignment = .privateClip(SongClip(cue: appleMusicCue))
+        try writeState(RollCallTestFixtures.appState(team: RollCallTestFixtures.team(players: [player])))
+        try writeAsset("small-cheer.mp3")
+        let model = AppModel()
+        let loadedPlayer = try XCTUnwrap(model.selectedTeam?.players.first)
+
+        let fallbackCue = try XCTUnwrap(
+            model.fallbackCueAfterPlaybackFailure(for: loadedPlayer, failedCue: appleMusicCue)
+        )
+
+        XCTAssertEqual(fallbackCue.id, appleMusicCue.id)
+        guard case .builtInClip(let source) = fallbackCue.source else {
+            return XCTFail("Expected Apple Music playback failure to resolve to the built-in fallback cue.")
+        }
+        XCTAssertEqual(source.id, "small-cheer")
+        XCTAssertNil(
+            model.fallbackCueAfterPlaybackFailure(
+                for: loadedPlayer,
+                failedCue: RollCallTestFixtures.localCue()
+            )
+        )
+    }
+
     func testSourceBackedFadeScheduleEndsFadeAtSelectedDuration() {
         let schedule = PlaybackFadeSchedule.sourceBacked(
             selectedDuration: 12,
@@ -985,6 +1020,11 @@ final class SongClipGenerationTests: XCTestCase {
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
         encoder.dateEncodingStrategy = .iso8601
         try encoder.encode(state).write(to: AppPaths.stateURL(), options: .atomic)
+    }
+
+    private func writeAsset(_ relativePath: String) throws {
+        let url = try AppPaths.assetURL(relativePath: relativePath)
+        try Data("test".utf8).write(to: url, options: .atomic)
     }
 
     @MainActor

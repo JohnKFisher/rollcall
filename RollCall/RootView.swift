@@ -7766,7 +7766,7 @@ private struct PlayerEditorSheet: View {
                     dismiss()
                 }
             } message: {
-                Text("Closing now will lose unsaved name, number, photo, and trim edits. Song, imported audio, and Announcement Cue changes are already saved.")
+                Text("Closing now will lose unsaved name, number, photo, and any unsaved advanced trim edits. Song clips you saved in Make Your Clip and Announcement Cue changes are already saved.")
             }
             .fileImporter(
                 isPresented: $showSongFileImporter,

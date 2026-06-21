@@ -1285,8 +1285,10 @@ final class AppModel: ObservableObject {
     }
 
     func play(player: Player) async {
+        var attemptedPlan: PlayerPlaybackPlan?
         do {
             guard let plan = playbackPlan(for: player) else { return }
+            attemptedPlan = plan
             switch plan {
             case .cue(let cue, let announcerRelativePath):
                 try await playbackEngine.play(
@@ -1304,6 +1306,23 @@ final class AppModel: ObservableObject {
             markGameDayPlayerCuePlayedForRating()
             haptics.success(isEnabled: state.settings.hapticsEnabled)
         } catch {
+            if case .cue(let failedCue, _)? = attemptedPlan,
+               let fallbackCue = fallbackCueAfterPlaybackFailure(for: player, failedCue: failedCue) {
+                do {
+                    try await playbackEngine.play(
+                        cue: fallbackCue,
+                        announcerRelativePath: nil,
+                        fadeOutVolumeAutomationEnabled: state.settings.fadeOutVolumeAutomationEnabled
+                    )
+                    markGameDayPlayerCuePlayedForRating()
+                    haptics.success(isEnabled: state.settings.hapticsEnabled)
+                    return
+                } catch {
+                    lastError = error.localizedDescription
+                    haptics.warning(isEnabled: state.settings.hapticsEnabled)
+                    return
+                }
+            }
             lastError = error.localizedDescription
             haptics.warning(isEnabled: state.settings.hapticsEnabled)
         }
@@ -2387,6 +2406,11 @@ final class AppModel: ObservableObject {
         return nil
     }
 
+    func fallbackCueAfterPlaybackFailure(for player: Player, failedCue: Cue) -> Cue? {
+        guard case .appleMusic = failedCue.source else { return nil }
+        return fallbackCue(for: player, cueID: failedCue.id)
+    }
+
     private func cueIsPlayable(_ cue: Cue) -> Bool {
         switch cue.source {
         case .appleMusic:
@@ -2517,6 +2541,7 @@ final class AppModel: ObservableObject {
 
     private func removeAssetIfUnreferenced(relativePath: String) {
         guard !assetIsReferenced(relativePath: relativePath) else { return }
+        guard !assetIsReferencedByBackupSnapshot(relativePath: relativePath) else { return }
         audioAssetService.removeAsset(relativePath: relativePath)
     }
 
@@ -2538,6 +2563,36 @@ final class AppModel: ObservableObject {
         return state.recentlyDeleted.contains { item in
             storedAssetRelativePaths(for: item).contains(relativePath)
         }
+    }
+
+    private func assetIsReferencedByBackupSnapshot(relativePath: String) -> Bool {
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        for snapshot in state.snapshots {
+            do {
+                let snapshotURL = try backupSnapshotURL(for: snapshot)
+                let snapshotState = try decoder.decode(AppState.self, from: Data(contentsOf: snapshotURL))
+                if snapshotState.teams.contains(where: { storedAssetRelativePaths(for: $0).contains(relativePath) }) {
+                    return true
+                }
+            } catch {
+                return true
+            }
+        }
+        return false
+    }
+
+    private func backupSnapshotURL(for snapshot: SnapshotRecord) throws -> URL {
+        let fileName = snapshot.relativeManifestPath
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !fileName.isEmpty,
+              fileName == URL(fileURLWithPath: fileName).lastPathComponent,
+              !fileName.hasPrefix("."),
+              !fileName.contains("/"),
+              !fileName.contains("\\") else {
+            throw AppError.invalidImport
+        }
+        return try AppPaths.snapshotsDirectory().appendingPathComponent(fileName)
     }
 
     private func storedAssetRelativePaths(for player: Player) -> [String] {
