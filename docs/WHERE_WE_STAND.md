@@ -4,9 +4,10 @@ Use this file as a concise project status snapshot for the current version, what
 
 ## Roll Call
 
-Current version: `1.2` (build `73`)
+Current version: `1.2` (build `76`)
 
 Status:
+- `1.2` build `76` starts Roll Call's StoreKit support transaction listener at app launch, so delayed support purchases, pending approvals, and subscription updates can be observed and finished. The marketing version remains `1.2`.
 - Custom Clips now replace the unfinished shared Team Clips model. Player Songs and team-specific Custom Clips are independent after copying, so editing or deleting one never silently changes the other.
 - The Clips page now separates Sound Effects from an ordered Custom Clips grid. Live tiles are tap-to-play; adding, editing, reordering, and deletion require an explicit Edit action that stops playback and exits when the app backgrounds or the user leaves Clips.
 - Team package import and sharing now live on the Teams tab, with Settings pointing users back to Teams for those tools. Sharing creates the package and immediately opens the system share sheet; roster import and Apple Music playlist creation now sit in visible team-focused sections instead of the old catch-all Team Actions menu.

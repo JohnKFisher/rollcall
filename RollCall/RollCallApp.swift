@@ -12,6 +12,10 @@ extension UTType {
 struct RollCallApp: App {
     @StateObject private var appModel = AppModel()
 
+    init() {
+        StoreKitSupportTransactionObserver.shared.start()
+    }
+
     var body: some Scene {
         WindowGroup {
             RootView(appModel: appModel)

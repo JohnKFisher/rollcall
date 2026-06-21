@@ -170,6 +170,48 @@ private struct SupportLocalCache: Codable, Equatable {
     )
 }
 
+private extension SupportLocalCache {
+    mutating func recordVerifiedSupport(
+        productID: String,
+        title: String,
+        kind: SupportContributionKind,
+        purchasedAt: Date
+    ) {
+        hasSeenVerifiedSupport = true
+        lastVerifiedProductID = productID
+        lastVerifiedTitle = title
+        lastVerifiedAt = purchasedAt
+
+        if kind == .recurring {
+            activeSubscriptionProductID = productID
+            activeSubscriptionTitle = title
+        }
+    }
+}
+
+@MainActor
+final class StoreKitSupportTransactionObserver {
+    static let shared = StoreKitSupportTransactionObserver()
+
+    private var updatesTask: Task<Void, Never>?
+
+    private init() {}
+
+    func start() {
+        guard updatesTask == nil else { return }
+
+        updatesTask = Task {
+            for await verification in Transaction.updates {
+                await StoreKitSupportStore.handleTransactionUpdate(verification)
+            }
+        }
+    }
+
+    deinit {
+        updatesTask?.cancel()
+    }
+}
+
 @MainActor
 final class StoreKitSupportStore: ObservableObject {
     @Published private(set) var oneTimeOptions: [SupportProductOption] = []
@@ -247,7 +289,7 @@ final class StoreKitSupportStore: ObservableObject {
             let result = try await product.purchase()
             switch result {
             case .success(let verification):
-                let transaction = try verifiedTransaction(from: verification)
+                let transaction = try Self.verifiedTransaction(from: verification)
                 recordVerifiedSupport(productID: transaction.productID, purchasedAt: transaction.purchaseDate)
                 await transaction.finish()
                 purchaseMessage = "Thanks for supporting Roll Call."
@@ -280,43 +322,19 @@ final class StoreKitSupportStore: ObservableObject {
     }
 
     private func refreshSupportStatusFromStoreKit() async {
-        var activeSubscriptionID: String?
-
-        for await verification in Transaction.currentEntitlements {
-            guard let transaction = try? verifiedTransaction(from: verification),
-                  let definition = definition(for: transaction.productID) else {
-                continue
-            }
-
-            cache.hasSeenVerifiedSupport = true
-            cache.lastVerifiedProductID = transaction.productID
-            cache.lastVerifiedTitle = definition.title
-            cache.lastVerifiedAt = transaction.purchaseDate
-
-            if definition.kind == .recurring,
-               transaction.revocationDate == nil,
-               transaction.expirationDate.map({ $0 > Date() }) ?? true {
-                activeSubscriptionID = transaction.productID
-            }
-        }
-
-        cache.activeSubscriptionProductID = activeSubscriptionID
-        cache.activeSubscriptionTitle = activeSubscriptionID.flatMap { definition(for: $0)?.title }
+        cache = await Self.cacheRefreshingSupportStatusFromStoreKit(startingWith: cache)
         saveCache()
         applyCache()
     }
 
     private func recordVerifiedSupport(productID: String, purchasedAt: Date) {
-        guard let definition = definition(for: productID) else { return }
-        cache.hasSeenVerifiedSupport = true
-        cache.lastVerifiedProductID = productID
-        cache.lastVerifiedTitle = definition.title
-        cache.lastVerifiedAt = purchasedAt
-
-        if definition.kind == .recurring {
-            cache.activeSubscriptionProductID = productID
-            cache.activeSubscriptionTitle = definition.title
-        }
+        guard let definition = Self.definition(for: productID) else { return }
+        cache.recordVerifiedSupport(
+            productID: productID,
+            title: definition.title,
+            kind: definition.kind,
+            purchasedAt: purchasedAt
+        )
 
         saveCache()
         applyCache()
@@ -336,7 +354,77 @@ final class StoreKitSupportStore: ObservableObject {
         recurringOptions = options.filter { $0.definition.kind == .recurring }
     }
 
-    private func verifiedTransaction(
+    private func saveCache() {
+        Self.save(cache, to: userDefaults)
+    }
+
+    private static func loadCache(from userDefaults: UserDefaults) -> SupportLocalCache {
+        guard let data = userDefaults.data(forKey: cacheKey),
+              let cache = try? JSONDecoder().decode(SupportLocalCache.self, from: data) else {
+            return .empty
+        }
+        return cache
+    }
+
+    static func handleTransactionUpdate(
+        _ verification: VerificationResult<Transaction>,
+        userDefaults: UserDefaults = .standard
+    ) async {
+        guard let transaction = try? verifiedTransaction(from: verification),
+              let definition = definition(for: transaction.productID) else {
+            return
+        }
+
+        var updatedCache = loadCache(from: userDefaults)
+        updatedCache.recordVerifiedSupport(
+            productID: transaction.productID,
+            title: definition.title,
+            kind: definition.kind,
+            purchasedAt: transaction.purchaseDate
+        )
+        updatedCache = await cacheRefreshingSupportStatusFromStoreKit(startingWith: updatedCache)
+        save(updatedCache, to: userDefaults)
+
+        await transaction.finish()
+    }
+
+    private static func cacheRefreshingSupportStatusFromStoreKit(
+        startingWith cache: SupportLocalCache
+    ) async -> SupportLocalCache {
+        var updatedCache = cache
+        var activeSubscriptionID: String?
+
+        for await verification in Transaction.currentEntitlements {
+            guard let transaction = try? verifiedTransaction(from: verification),
+                  let definition = definition(for: transaction.productID) else {
+                continue
+            }
+
+            updatedCache.recordVerifiedSupport(
+                productID: transaction.productID,
+                title: definition.title,
+                kind: definition.kind,
+                purchasedAt: transaction.purchaseDate
+            )
+
+            if definition.kind == .recurring,
+               transaction.revocationDate == nil,
+               transaction.expirationDate.map({ $0 > Date() }) ?? true {
+                activeSubscriptionID = transaction.productID
+            }
+        }
+
+        updatedCache.activeSubscriptionProductID = activeSubscriptionID
+        updatedCache.activeSubscriptionTitle = activeSubscriptionID.flatMap { definition(for: $0)?.title }
+        return updatedCache
+    }
+
+    private static func save(_ cache: SupportLocalCache, to userDefaults: UserDefaults) {
+        guard let data = try? JSONEncoder().encode(cache) else { return }
+        userDefaults.set(data, forKey: cacheKey)
+    }
+
+    private static func verifiedTransaction(
         from result: VerificationResult<Transaction>
     ) throws -> Transaction {
         switch result {
@@ -347,21 +435,8 @@ final class StoreKitSupportStore: ObservableObject {
         }
     }
 
-    private func definition(for productID: String) -> SupportProductDefinition? {
+    private static func definition(for productID: String) -> SupportProductDefinition? {
         SupportProductDefinition.all.first { $0.productID == productID }
-    }
-
-    private func saveCache() {
-        guard let data = try? JSONEncoder().encode(cache) else { return }
-        userDefaults.set(data, forKey: Self.cacheKey)
-    }
-
-    private static func loadCache(from userDefaults: UserDefaults) -> SupportLocalCache {
-        guard let data = userDefaults.data(forKey: cacheKey),
-              let cache = try? JSONDecoder().decode(SupportLocalCache.self, from: data) else {
-            return .empty
-        }
-        return cache
     }
 
     private static let cacheKey = "rollCall.support.localCache.v1"
