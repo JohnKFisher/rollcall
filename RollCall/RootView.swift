@@ -58,38 +58,44 @@ private struct WhatsNewBundle {
     let fullChangelogURL: URL
 
     static let current = WhatsNewBundle(
-        family: "1.1",
+        family: "1.2",
         releases: [
             WhatsNewRelease(
-                version: "1.1",
-                intro: "Thanks for using Roll Call! Here are the biggest improvements in this release.",
+                version: "1.2",
+                intro: "This MAJOR update makes song setup much smoother, adds Custom Clips, and helps you know what's ready before game day starts.",
                 highlights: [
                     WhatsNewHighlight(
-                        title: "A Better Game Day Experience",
-                        detail: "Game Day is now cleaner and less busy, and the player grid now follows the batting order more clearly. In Settings -> Game Day, you can turn on an optional lineup progress hint animation, and you can set the screen to stay awake during games. Volume Automation also now respects your pre-set volume.",
-                        systemImage: "figure.baseball"
-                    ),
-                    WhatsNewHighlight(
-                        title: "Create Apple Music Playlists",
-                        detail: "Create and update Apple Music playlists of your team songs directly from Team Actions.",
+                        title: "Better Song Setup",
+                        detail: "Pick from Apple's familiar Music Library first, search Apple Music when you need to, or import a file. Songs now open as drafts, so you can preview and adjust before replacing a player's Game Day cue.",
                         systemImage: "music.note.list"
                     ),
                     WhatsNewHighlight(
-                        title: "Recovery & Recently Deleted",
-                        detail: "Restore deleted teams and players when mistakes happen.",
-                        systemImage: "trash.slash.circle.fill"
+                        title: "Custom Clips",
+                        detail: "Create team-specific Custom Clips for quick song cues that are not tied to a player. Copy, reorder, edit, delete, and restore clips without silently changing the original song or clip.",
+                        systemImage: "square.grid.2x2.fill"
                     ),
                     WhatsNewHighlight(
-                        title: "Team Colors Throughout the App",
-                        detail: "Your team color now appears throughout Roll Call.",
-                        systemImage: "paintpalette.fill"
+                        title: "Safer Song Choices",
+                        detail: "Explicit Apple Music search results are hidden by default, and Roll Call asks before using explicit songs selected from the Music Library.",
+                        systemImage: "checkmark.shield.fill"
+                    ),
+                    WhatsNewHighlight(
+                        title: "Make Your Clip",
+                        detail: "Shape a walk-up clip with a draggable song window, quick length choices, preview, and a clear Save step. When Roll Call can inspect the audio, it shows a simple shape to help find the right moment.",
+                        systemImage: "waveform"
+                    ),
+                    WhatsNewHighlight(
+                        title: "Faster Live Switching",
+                        detail: "Swipe between Game Day and Clips without stopping playback. The shortcut stays focused on the two live screens.",
+                        systemImage: "arrow.left.arrow.right"
+                    ),
+                    WhatsNewHighlight(
+                        title: "Clearer Readiness",
+                        detail: "See which songs and clips are ready on this device, which can travel to another device, and which need Apple Music or repair after a team import.",
+                        systemImage: "shippingbox.fill"
                     )
                 ],
-                lookingAhead: WhatsNewHighlight(
-                    title: "Improvements to Song Selection and Trimming",
-                    detail: "Looking ahead, we're exploring changes and enhancements to song selection and trimming for a future update.",
-                    systemImage: "wand.and.stars"
-                )
+                lookingAhead: nil
             )
         ],
         fullChangelogURL: URL(string: "https://sidelarklabs.com/rollcall/support/roll-call-support#changelog")!
@@ -506,7 +512,6 @@ struct RootView: View {
     private var canPresentAutomaticWhatsNew: Bool {
         appModel.hasUnseenWhatsNew
             && !appModel.shouldShowOnboarding
-            && isSafeNonLiveTabForWhatsNew
             && !hasBlockingWhatsNewPresentation
     }
 
@@ -842,7 +847,12 @@ struct RootView: View {
                 PackageExportPreviewSheet(
                     pending: pending,
                     onExport: {
-                        Task { await appModel.confirmPendingPackageExport() }
+                        Task {
+                            await appModel.confirmPendingPackageExport()
+                            if appModel.exportURL != nil {
+                                packageSharePresented = true
+                            }
+                        }
                     },
                     onPrepareFirst: {
                         appModel.cancelPendingPackageExport()
@@ -1450,15 +1460,15 @@ struct RootView: View {
         @Environment(\.colorScheme) private var colorScheme
         @Environment(\.rollCallTeamAccentTheme) private var teamAccentTheme
 
-        private var status: (text: String, icon: String, role: StatusChipRole)? {
+        private var status: (text: String, role: StatusChipRole)? {
             if clip.generatedAsset.status == .pending {
-                return ("Preparing", "clock.arrow.circlepath", .neutral)
+                return ("Preparing", .neutral)
             }
             switch clip.readinessInputs.playback {
             case .needsAppleMusic:
-                return ("Needs Apple Music", "music.note", .warning)
+                return ("Needs Apple Music", .warning)
             case .needsRepair:
-                return ("Needs Repair", "wrench.and.screwdriver", .warning)
+                return ("Needs Repair", .warning)
             default:
                 return nil
             }
@@ -1467,16 +1477,8 @@ struct RootView: View {
         var body: some View {
             Button(action: play) {
                 VStack(alignment: .leading, spacing: 5) {
-                    HStack(alignment: .center, spacing: 4) {
-                        Text("Clip")
-                            .font(.caption.weight(.bold))
-                            .foregroundStyle(Color(uiColor: .secondaryLabel))
-                        Spacer(minLength: 0)
-                        tileIcon
-                    }
-
                     Text(clip.displayName ?? clip.playbackCue.rosterDisplayTitle)
-                        .font(.subheadline.weight(.bold))
+                        .font(.callout.weight(.bold))
                         .foregroundStyle(Color(uiColor: .label))
                         .lineLimit(2)
                         .minimumScaleFactor(0.74)
@@ -1492,7 +1494,7 @@ struct RootView: View {
                     }
                 }
                 .padding(8)
-                .frame(maxWidth: .infinity, minHeight: 82, alignment: .topLeading)
+                .frame(maxWidth: .infinity, minHeight: 82, alignment: .center)
                 .background(
                     customClipBackgroundColor,
                     in: RoundedRectangle(cornerRadius: 13, style: .continuous)
@@ -1511,22 +1513,6 @@ struct RootView: View {
             .accessibilityLabel(clip.displayName ?? clip.playbackCue.rosterDisplayTitle)
             .accessibilityValue(isPlaying ? "Currently playing" : "")
             .accessibilityHint(isPlayable ? "Plays this Custom Clip." : "Explains what this Custom Clip needs before it can play.")
-        }
-
-        @ViewBuilder
-        private var tileIcon: some View {
-            if isPlaying {
-                PlayingSpeakerSymbol(systemImage: "speaker.wave.3.fill", color: Color.rollCall(.live, surface: .live))
-                    .font(.caption.weight(.bold))
-            } else if let status {
-                Image(systemName: status.icon)
-                    .font(.caption.weight(.bold))
-                    .foregroundStyle(statusColor(status.role))
-            } else {
-                Image(systemName: "music.note")
-                    .font(.caption.weight(.bold))
-                    .foregroundStyle(Color(uiColor: .secondaryLabel))
-            }
         }
 
         private func statusColor(_ role: StatusChipRole) -> Color {
@@ -1653,7 +1639,7 @@ struct RootView: View {
                 VStack(alignment: .leading, spacing: RollCallSpacingTier.large.value) {
                     if let team = appModel.selectedTeam {
                         TeamsSectionGroup(
-                            title: "Currently Selected Team",
+                            title: "Current Team",
                             helperText: "Lifecycle tools stay here so they do not interrupt normal team selection."
                         ) {
                             VStack(alignment: .leading, spacing: RollCallSpacingTier.standard.value) {
@@ -1674,16 +1660,11 @@ struct RootView: View {
                                         showRenameTeamAlert = true
                                     }
                                     Button("Duplicate Selected Team") { appModel.duplicateTeam() }
-                                    Button("Create or Update Apple Music Playlist") {
-                                        appModel.clearAppleMusicPlaylistStatus()
-                                        teamPlaylistPreview = appModel.selectedTeamAppleMusicPlaylistSummary()
-                                    }
-                                    Button("Import Roster CSV") { csvImportPresented = true }
                                     Button("Remove Selected Team", role: .destructive) {
                                         showRemoveTeamConfirmation = true
                                     }
                                 } label: {
-                                    Label("Team Actions", systemImage: "ellipsis.circle")
+                                    Label("Manage Team", systemImage: "ellipsis.circle")
                                         .frame(maxWidth: .infinity)
                                 }
                                 .buttonStyle(RollCallButtonStyle(
@@ -1692,9 +1673,30 @@ struct RootView: View {
                                     teamAccentTheme: selectedTeamAccentTheme
                                 ))
 
-                                Text("Want an Apple Music team playlist? Use Team Actions to create or update it.")
+                                Text("Rename, duplicate, or remove the selected team from Manage Team.")
                                     .rollCallText(.helperText)
+                            }
+                        }
+                    }
 
+                    TeamsSectionGroup(
+                        title: "Team Setup",
+                        helperText: "Bring roster data into the selected team."
+                    ) {
+                        VStack(spacing: RollCallSpacingTier.standard.value) {
+                            Button {
+                                csvImportPresented = true
+                            } label: {
+                                SettingsRowLabel(
+                                    title: "Import Roster CSV",
+                                    detail: "Add players from a simple roster file.",
+                                    systemImage: "tablecells"
+                                )
+                            }
+                            .rollCallButtonStyle(.secondary)
+                            .disabled(appModel.selectedTeam == nil)
+
+                            VStack(alignment: .leading, spacing: RollCallSpacingTier.tight.value) {
                                 Text("Roster CSV format: name, number. Use a header row or simple two-column rows; player number is optional.")
                                     .rollCallText(.helperText)
                             }
@@ -1702,10 +1704,81 @@ struct RootView: View {
                     }
 
                     TeamsSectionGroup(
-                        title: "Create Team",
-                        helperText: "Add a roster container, then choose it below."
+                        title: "Share Team",
+                        helperText: "Move teams between devices or share them with another coach."
+                    ) {
+                        VStack(spacing: RollCallSpacingTier.standard.value) {
+                            Button {
+                                appModel.prepareSelectedTeamExport()
+                            } label: {
+                                SettingsRowLabel(
+                                    title: "Share Team Package",
+                                    detail: "Create a portable .rollcall package and choose where to send or save it.",
+                                    systemImage: "shippingbox.fill",
+                                    style: .filledAction
+                                )
+                            }
+                            .rollCallButtonStyle(.primary)
+                            .disabled(appModel.selectedTeam == nil)
+
+                            Button {
+                                packageImportContext = .settings
+                                packageImportPresented = true
+                            } label: {
+                                SettingsRowLabel(
+                                    title: "Import Team Package",
+                                    detail: "Add a shared .rollcall package as a new team. Existing teams stay unchanged.",
+                                    systemImage: "tray.and.arrow.down.fill"
+                                )
+                            }
+                            .rollCallButtonStyle(.secondary)
+
+                            Button {
+                                appModel.clearAppleMusicPlaylistStatus()
+                                teamPlaylistPreview = appModel.selectedTeamAppleMusicPlaylistSummary()
+                            } label: {
+                                SettingsRowLabel(
+                                    title: "Create Apple Music Playlist",
+                                    detail: "Create or update a playlist from this team's player songs.",
+                                    systemImage: "music.note.list"
+                                )
+                            }
+                            .rollCallButtonStyle(.secondary)
+                            .disabled(appModel.selectedTeam == nil)
+                        }
+                    }
+
+                    TeamsSectionGroup(
+                        title: "Teams",
+                        helperText: "Choose, create, or import the roster Roll Call should use."
                     ) {
                         VStack(alignment: .leading, spacing: RollCallSpacingTier.standard.value) {
+                            if appModel.state.teams.isEmpty {
+                                TeamsEmptyState()
+                            } else {
+                                VStack(spacing: 0) {
+                                    ForEach(Array(appModel.state.teams.enumerated()), id: \.element.id) { index, team in
+                                        if index > 0 {
+                                            Divider()
+                                                .padding(.leading, 46)
+                                        }
+
+                                        Button {
+                                            appModel.selectTeam(team)
+                                        } label: {
+                                            TeamSelectionRow(
+                                                team: team,
+                                                isSelected: appModel.state.selectedTeamID == team.id
+                                            )
+                                            .padding(.vertical, RollCallSpacingTier.tight.value)
+                                        }
+                                        .buttonStyle(.plain)
+                                    }
+                                }
+                            }
+
+                            Divider()
+
                             TextField("Team name", text: $newTeamName)
                                 .textFieldStyle(.roundedBorder)
 
@@ -1715,42 +1788,13 @@ struct RootView: View {
                             } label: {
                                 SettingsRowLabel(
                                     title: "Create Team",
-                                    detail: "Add a new team, then choose it below.",
+                                    detail: "Add a new team, then choose it above.",
                                     systemImage: "plus",
                                     style: .filledAction
                                 )
                             }
                             .rollCallButtonStyle(.primary)
                             .disabled(newTeamName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                        }
-                    }
-
-                    TeamsSectionGroup(
-                        title: "Select Active Team",
-                        helperText: "Choose the roster Roll Call should use for setup and game day."
-                    ) {
-                        if appModel.state.teams.isEmpty {
-                            TeamsEmptyState()
-                        } else {
-                            VStack(spacing: 0) {
-                                ForEach(Array(appModel.state.teams.enumerated()), id: \.element.id) { index, team in
-                                    if index > 0 {
-                                        Divider()
-                                            .padding(.leading, 46)
-                                    }
-
-                                    Button {
-                                        appModel.selectTeam(team)
-                                    } label: {
-                                        TeamSelectionRow(
-                                            team: team,
-                                            isSelected: appModel.state.selectedTeamID == team.id
-                                        )
-                                        .padding(.vertical, RollCallSpacingTier.tight.value)
-                                    }
-                                    .buttonStyle(.plain)
-                                }
-                            }
                         }
                     }
                 }
@@ -1848,7 +1892,7 @@ struct RootView: View {
 
                     SettingsSectionGroup(
                         title: "Team & Setup",
-                        helperText: "Export, share, import, or reopen guided setup for teams."
+                        helperText: "Reopen guided setup or jump to team package tools."
                     ) {
                         VStack(spacing: RollCallSpacingTier.standard.value) {
                             Button {
@@ -1863,39 +1907,12 @@ struct RootView: View {
                             .rollCallButtonStyle(.secondary)
 
                             Button {
-                                appModel.prepareSelectedTeamExport()
+                                selectedTab = .teams
                             } label: {
                                 SettingsRowLabel(
-                                    title: "Export Selected Team",
-                                    detail: "Create the latest portable team package.",
-                                    systemImage: "shippingbox.fill",
-                                    style: .filledAction
-                                )
-                            }
-                            .rollCallButtonStyle(.primary)
-                            .disabled(appModel.selectedTeam == nil)
-
-                            if appModel.exportURL != nil {
-                                Button {
-                                    packageSharePresented = true
-                                } label: {
-                                    SettingsRowLabel(
-                                        title: "Share Latest .rollcall Package",
-                                        detail: "Open the system share sheet for the most recent export.",
-                                        systemImage: "square.and.arrow.up"
-                                    )
-                                }
-                                .rollCallButtonStyle(.secondary)
-                            }
-
-                            Button {
-                                packageImportContext = .settings
-                                packageImportPresented = true
-                            } label: {
-                                SettingsRowLabel(
-                                    title: "Import Team from .rollcall Package",
-                                    detail: "Adds the shared team as a new team. Existing teams stay unchanged.",
-                                    systemImage: "tray.and.arrow.down.fill"
+                                    title: "Import or Export Teams",
+                                    detail: "Team sharing and import tools now live on the Teams tab.",
+                                    systemImage: "person.3.sequence.fill"
                                 )
                             }
                             .rollCallButtonStyle(.secondary)
@@ -4611,8 +4628,13 @@ private struct WhatsNewSheet: View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: RollCallSpacingTier.large.value) {
-                    Text(versionSubline)
-                        .rollCallText(.helperText)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("What's New in \(bundle.family)")
+                            .rollCallText(.screenTitle)
+                            .fixedSize(horizontal: false, vertical: true)
+                        Text(versionSubline)
+                            .rollCallText(.helperText)
+                    }
 
                     ForEach(bundle.releases) { release in
                         releaseSection(release)
@@ -4623,10 +4645,13 @@ private struct WhatsNewSheet: View {
                     }
                     .buttonStyle(.plain)
                 }
-                .padding(RollCallSpacingTier.large.value)
+                .padding(.horizontal, RollCallSpacingTier.large.value)
+                .padding(.top, RollCallSpacingTier.tight.value)
+                .padding(.bottom, RollCallSpacingTier.large.value)
             }
             .accentWashBackground()
-            .navigationTitle("What's New in 1.1")
+            .navigationTitle("")
+            .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button("Done", action: onDone)
@@ -4975,14 +5000,14 @@ private struct PackageExportPreviewSheet: View {
                 }
             }
             .accentWashListBackground()
-            .navigationTitle("Export \(pending.teamName)?")
+            .navigationTitle("Share \(pending.teamName)?")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel", role: .cancel, action: onCancel)
                 }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Create Package", action: onExport)
+                    Button("Share Package", action: onExport)
                         .fontWeight(.semibold)
                 }
             }

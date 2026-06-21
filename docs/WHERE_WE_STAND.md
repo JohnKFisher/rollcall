@@ -4,18 +4,21 @@ Use this file as a concise project status snapshot for the current version, what
 
 ## Roll Call
 
-Current version: `1.2` (build `71`)
+Current version: `1.2` (build `73`)
 
 Status:
 - Custom Clips now replace the unfinished shared Team Clips model. Player Songs and team-specific Custom Clips are independent after copying, so editing or deleting one never silently changes the other.
 - The Clips page now separates Sound Effects from an ordered Custom Clips grid. Live tiles are tap-to-play; adding, editing, reordering, and deletion require an explicit Edit action that stops playback and exits when the app backgrounds or the user leaves Clips.
+- Team package import and sharing now live on the Teams tab, with Settings pointing users back to Teams for those tools. Sharing creates the package and immediately opens the system share sheet; roster import and Apple Music playlist creation now sit in visible team-focused sections instead of the old catch-all Team Actions menu.
 - Game Day and Clips now support a deliberate horizontal swipe shortcut between the two live surfaces. The shortcut preserves playback and screen state, stays disabled during modal/edit/import/prompt flows, gives a small horizontal nudge after clear swipe intent, and uses a light haptic on successful swipes.
 - Team-package export and backups preserve Custom Clips, their order, generated/local audio where available, and honest Apple Music readiness. Import keeps unavailable clips in their saved positions and routes them toward repair.
 - Custom Clip deletion uses the existing 60-day Recently Deleted system, including original-team-only and position-aware restore plus conservative generated-file retention.
 - Phase 6 implementation and automated verification are complete: conservative cleanup, non-Release inspection/manual cleanup, redacted diagnostics, package/migration/cleanup regression coverage, Debug launch, and Debug/Release builds pass. Final field confidence still requires the planned physical-device Music Library, Apple Music playback, AirDrop/package, and audible repair checks.
 - Support bundles now report aggregate generation, readiness, portability, retry, policy, storage, cleanup, and boolean playback-state diagnostics without audio, song metadata, roster names, filenames, or source/model identifiers.
 - The Phase 3 Music Library-first picker received a high-level physical-device check on 2026-06-14 and appeared to work. Broader device coverage and detailed audible edge-case verification remain part of final Phase 6 release verification.
-- `1.2` build `71` is the checked-in fade-audit build for hands-on issue review. It keeps original song, timing, and fade truth editable when generated clips exist and aligns source-backed fades with generated local clip fade timing.
+- `1.2` build `73` is the checked-in What's New presentation-timing build. The bundled 1.2 update sheet can now appear on first launch after an update even when Roll Call opens on Game Day or Clips, while onboarding, import, edit, alert, busy, and other modal flows still take priority.
+- `1.2` build `72` was the checked-in What's New and continued hands-on review build, with the bundled in-app update sheet refreshed for 1.2 and no product behavior changes beyond the version/build metadata.
+- `1.2` build `71` was the checked-in fade-audit build for hands-on issue review. It keeps original song, timing, and fade truth editable when generated clips exist and aligns source-backed fades with generated local clip fade timing.
 - Filled accent buttons now choose a readable black or white foreground from the selected team color, so light accents like Gold remain legible in dark mode.
 - `1.2` build `70` was the checked-in post-icon-refresh build for hands-on issue review. The app target now compiles the Icon Composer `AppIcon.icon` package directly, including its dark and tinted app-icon variants, while the `.rollcall` document icons remain generated from the same artwork.
 - `1.2` build `69` was the checked-in post-plan build for hands-on issue review.
@@ -158,16 +161,16 @@ What works now:
 - `.rollcall` package export/import with bundled local media, custom intro audio, and roster photos
 - `.rollcall` export now produces a zipped single-file archive (with backward-compatible import support for older directory-style packages)
 - AirDropped or shared `.rollcall` files can now open directly into Roll Call's existing import flow, the manual import picker accepts `.rollcall` files even when Files surfaces them as generic file data, and the app now advertises `.rollcall` as an editable document type it owns
-- Settings import now uses an explicit document picker so `.rollcall` files and legacy package folders can actually be chosen on-device
+- Manual team package import uses an explicit document picker so `.rollcall` files and legacy package folders can actually be chosen on-device
 - Manual backups plus in-app restore, with automatic pre-import backups and retention capped to the newest 10; these remain the broader earlier-app-state safety tool while `Recently Deleted` handles everyday team/player recovery
 - CSV roster import with preview before apply
 - Branded launch screen based on the Music Triage splash style
 - Developer Tools screen with experimental controls and support-bundle export
-- Team Actions can create or update the managed Apple Music playlist `Roll Call - <Team Name>` from the selected team's catalog-backed Apple Music cues, after previewing included songs, skipped cues, duplicate handling, and the managed-playlist overwrite warning.
+- The Teams tab can create or update the managed Apple Music playlist `Roll Call - <Team Name>` from the selected team's catalog-backed Apple Music cues, after previewing included songs, skipped cues, duplicate handling, and the managed-playlist overwrite warning.
 - Build-environment support now separates `Debug`, `Internal`, and `Release` configurations/schemes, with centralized `BuildEnvironment` / `FeatureFlags` guardrails so Release hides Developer Tools and experimental testing surfaces
 - `RollCallTests` can be run from Xcode with the `Roll Call Debug` scheme or from the command line using the README test command.
 - Settings > About now shows app version, build number, build environment, and an email feedback link with version details in the subject
-- Settings > About now includes a What's New entry. Existing users see the same update notes automatically once per version/build when they reach a safe non-live tab; Game Day, Clips, onboarding, package import, and other modal flows take priority.
+- Settings > About now includes a What's New entry. Existing users see the same update notes automatically once per version/build on first launch after an update, even if Roll Call opens on Game Day or Clips; onboarding, package import, edit, alert, busy, and other modal flows take priority.
 - Settings > About now also exposes a `Rate Roll Call` entry after ten good Game Day sessions, and non-Release Developer Tools can flip that threshold met/not met for testing while resetting automatic prompt attempt state.
 - Settings > About > Attributions & Licenses now includes a Special Thanks section for the girls of the Piscataway Thunder Softball Team
 - Repo README and license notice now describe the public noncommercial fork policy, commercial-permission boundary, small-snippet exception, and third-party asset attributions.
