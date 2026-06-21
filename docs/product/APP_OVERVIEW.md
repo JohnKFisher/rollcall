@@ -1,6 +1,6 @@
 # Roll Call — Application Overview
 
-This document gives a non-code AI everything it needs to discuss the Roll Call app at a product level: what it is, who it's for, how the screens fit together, what the user can do on each one, and the principles that constrain future change. It is current as of build 73 / version 1.2.
+This document gives a non-code AI everything it needs to discuss the Roll Call app at a product level: what it is, who it's for, how the screens fit together, what the user can do on each one, and the principles that constrain future change. It is current as of build 75 / version 1.2.
 
 If you are an AI reading this to help with planning: assume the human you are talking to is the sole developer and product owner. They want help thinking through changes, tradeoffs, and priorities — not generating code. Quote back the principles in this document when they conflict with a proposal.
 
@@ -10,7 +10,7 @@ If you are an AI reading this to help with planning: assume the human you are ta
 
 Roll Call is an iPhone app for **youth-sports walk-up cues**. The coach (or a parent, sibling, helper) sets up a roster ahead of time. When a player comes to bat (or step onto the field, or up to the line — it is sport-agnostic), the user taps the player's tile and the app plays that player's chosen audio cue: usually a short trimmed clip of their walk-up song, optionally introduced by a recorded "Now batting, number 17, Ellie..." announcement.
 
-It is iPhone-first, all app features are free, optional in-app donations may be offered to support development, and it has no required account, no ads, no social features, and no cloud backend. All data lives on device. Teams can be exported as `.rollcall` packages and imported on another device, but that is a manual sharing model, not automated sync.
+It is iPhone-first, all app features are free, optional in-app support contributions are available in Settings/About, and it has no required account, no ads, no social features, and no cloud backend. All team data lives on device. Teams can be exported as `.rollcall` packages and imported on another device, but that is a manual sharing model, not automated sync.
 
 ### The product priorities, in order
 
@@ -42,6 +42,7 @@ These words have specific meaning in Roll Call. Use them precisely when discussi
 - **Sound Effect** — a bundled crowd reaction in the Clips tab, such as a small cheer, rhythmic clap, chant, or stadium swell.
 - **Custom Clip** — a team-specific live clip in the Clips tab. Custom Clips can be copied from Player Songs or created directly, then reordered, edited, deleted, restored, and exported with the team. After copying, Custom Clips and Player Songs are independent.
 - **Readiness** — Roll Call's confidence model. Answers "if I opened Game Day right now, would it feel good?" Current song states include `Ready on Any Device`, `Ready on This Device`, `Preparing`, `Needs Apple Music`, and `Needs Repair`, with announcer intros treated as `Enhanced` and photos/polish treated as optional. Never a percentage. Never blocks Game Day.
+- **Support Contribution** — an optional StoreKit purchase path for users who want to support maintenance. Includes repeatable one-time support and monthly/yearly recurring support. It never unlocks features, changes Game Day behavior, affects readiness, or travels with exported teams.
 
 ---
 
@@ -156,10 +157,11 @@ There is no percentage score, no Bronze/Silver/Gold, no red player errors. A pla
 A scroll view of grouped sections:
 
 - **Setup Guide & Teams** — Open Setup Guide, plus a row that sends users to Teams for import/export tools.
+- **Support Roll Call** — opens the optional support screen with one-time and recurring StoreKit contribution options.
 - **Music & Playback** — Hide Explicit Apple Music Results, Volume Automation.
 - **Game Day** — Always Use Dark Live Screens, Game Day Haptics, Keep Screen Awake, Show Lineup Progress Hints.
 - **Recovery** — navigation into Recovery, where `Recently Deleted` handles everyday team/player undelete for 60 days and backups remain available for restoring an earlier app state.
-- **About Roll Call** — top doorway row into version, build, environment chip, copyright credit to John Kenneth Fisher, public web/GitHub-style link, Email Feedback link, What's New, earned Rate Roll Call entry, and Attributions & Licenses.
+- **About Roll Call** — top doorway row into version, build, environment chip, copyright credit to John Kenneth Fisher, optional Support Roll Call entry, public web/GitHub-style link, Email Feedback link, What's New, earned Rate Roll Call entry, and Attributions & Licenses.
 - **Advanced / Developer Tools** (only visible when feature flag is on) — environment gates, runtime testing flags, experimental actions, diagnostics.
 
 ---
@@ -206,6 +208,23 @@ Appears when the user imports a roster CSV. Lists the rows about to be imported.
 ### 6.6 Photo Crop full-screen cover
 
 Triggered after picking a player photo. Pan/zoom/rotate then save.
+
+### 6.7 Support Roll Call screen
+
+Opened from Settings, About Roll Call, or the rating prompt's low-pressure support link. This screen explains that Roll Call is free, ad-free, and fully functional for every team, then offers optional StoreKit support contributions.
+
+The support screen uses a segmented control:
+
+- **One-Time** — repeatable consumable support options: `Tip of the Cap`, `Dugout High Five`, `Walk-Up Hero`, and `Grand Slam Legend`.
+- **Recurring** — auto-renewable support options: `Season Supporter` monthly and `All-Star Season Supporter` yearly.
+
+StoreKit provides availability and localized prices. The app verifies transactions locally, finishes purchases, shows gratitude after verified support, shows active recurring support only when StoreKit confirms it, and includes Restore Support plus Manage Subscriptions actions for recurring support.
+
+Support state is intentionally comfort UI only. It does not unlock features, remove limitations, rank users, affect Game Day, alter exports, or create account/cloud identity.
+
+### 6.8 Rating Request sheet
+
+The earned rating prompt remains a calm post-success sheet, never a Game Day interruption. It asks satisfied users to rate Roll Call, offers "Email Me Instead" for support problems, and includes a quiet "You can also contribute in Settings." path into Support Roll Call.
 
 ---
 
@@ -291,6 +310,8 @@ A `.rollcall` file is a portable archive of a single team: roster, Player Songs,
 
 Import adds the package as a new team and leaves existing teams unchanged. Imports automatically create a recovery backup first. Package preview and import should preserve unavailable items in place and report portability honestly: portable, ready on this device, needs Apple Music, still preparing, or needs repair.
 
+Support contribution state is not part of `.rollcall` packages. Team sharing should never carry purchase history, gratitude state, subscription status, or anything that suggests one user's support applies to another device/team owner.
+
 ### Roster CSV import
 
 Available from Teams -> Team Setup. Imports name + uniform number rows from a CSV; opens a Roster Preview sheet for confirmation before applying. This is a fast way to seed a roster but does not import audio.
@@ -302,6 +323,8 @@ Reached from Settings -> Recovery. The screen now leads with **Recently Deleted*
 Restore is the primary action. Permanent delete is secondary and confirmed item by item. If some saved media is missing, Roll Call explains what could not be recovered and offers a `Restore What We Can` fallback instead of silently restoring a partial result.
 
 The lower part of Recovery still contains manual **Backups**. Automatic backups are taken before package imports and before restoring from a backup. Only the newest 10 are kept. Backups are for returning to an earlier app state, not for everyday deleted-player or deleted-team recovery.
+
+Support contribution state is also outside app backup/restore semantics. StoreKit remains the source of truth for active recurring support; local cached gratitude is only for UI comfort on the current install.
 
 ---
 
@@ -324,7 +347,7 @@ Be very cautious when proposing features that step on these lines.
 
 **Reliability rules:**
 
-- Donations must never affect Game Day reliability or feature access.
+- Support contributions must never affect Game Day reliability or feature access.
 - Game Day must always do *something* when tapped — fallbacks are mandatory.
 
 **UX rules:**
@@ -332,7 +355,7 @@ Be very cautious when proposing features that step on these lines.
 - No long tutorial carousels.
 - No permission barrage (ask only after the user expressed intent).
 - No setup-as-homework feel (no percentages, no checklists styled as required).
-- No donation pressure or guilt prompts after the user has invested setup effort.
+- No support pressure or guilt prompts after the user has invested setup effort.
 - No ratings prompt during Game Day.
 - Confirm only irreversible actions; prefer recovery over constant confirmations.
 
@@ -365,7 +388,8 @@ Be very cautious when proposing features that step on these lines.
 **Support framing:**
 
 - Priority order for future feature value: Creativity > Save Time > Pretty > Control.
-- Donations may support the app, but must stay optional and calm.
+- Support contributions exist to support maintenance and compatibility, not to create premium tiers.
+- One-time and recurring support must stay optional and calm.
 - Never gate the real app.
 
 ---

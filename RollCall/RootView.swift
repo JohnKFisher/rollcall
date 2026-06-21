@@ -428,6 +428,7 @@ struct RootView: View {
     @State private var hasResolvedInitialTab = false
     @State private var whatsNewPresentation: WhatsNewPresentation?
     @State private var ratingRequestPresentation: RatingRequestPresentation?
+    @State private var supportScreenPresented = false
     @State private var teamPlaylistPreview: TeamAppleMusicPlaylistSummary?
     @State private var showTeamClips = false
     @State private var customClipRepairPrompt: SongClip?
@@ -1873,6 +1874,24 @@ struct RootView: View {
         return components.url ?? URL(string: "mailto:johnkfisher@mac.com")!
     }
 
+    private func openSupportScreenFromRatingPrompt() {
+        ratingRequestPresentation = nil
+        selectedTab = .settings
+        supportScreenPresented = true
+    }
+
+    private func manageSupportSubscriptions() {
+        guard let scene = UIApplication.shared.connectedScenes
+            .compactMap({ $0 as? UIWindowScene })
+            .first(where: { $0.activationState == .foregroundActive }) else {
+            return
+        }
+
+        Task {
+            try? await AppStore.showManageSubscriptions(in: scene)
+        }
+    }
+
     private var settingsTab: some View {
         NavigationStack {
             ScrollView {
@@ -1885,6 +1904,17 @@ struct RootView: View {
                                 title: "About Roll Call",
                                 detail: "Version, feedback, release notes, and credits.",
                                 systemImage: "baseball.fill"
+                            )
+                        }
+                        .buttonStyle(.plain)
+
+                        NavigationLink {
+                            SupportRollCallScreen(onManageSubscriptions: manageSupportSubscriptions)
+                        } label: {
+                            SettingsNavigationLabel(
+                                title: "Support Roll Call",
+                                detail: "Optional contributions for maintenance and future improvements.",
+                                systemImage: "heart.fill"
                             )
                         }
                         .buttonStyle(.plain)
@@ -2062,8 +2092,21 @@ struct RootView: View {
         .sheet(item: $ratingRequestPresentation) { _ in
             RatingRequestSheet(
                 onRate: requestManualRatingReview,
-                onEmailSupport: requestRatingSupportEmail
+                onEmailSupport: requestRatingSupportEmail,
+                onSupportDevelopment: openSupportScreenFromRatingPrompt
             )
+        }
+        .sheet(isPresented: $supportScreenPresented) {
+            NavigationStack {
+                SupportRollCallScreen(onManageSubscriptions: manageSupportSubscriptions)
+                .toolbar {
+                    ToolbarItem(placement: .topBarTrailing) {
+                        Button("Done") {
+                            supportScreenPresented = false
+                        }
+                    }
+                }
+            }
         }
     }
 
@@ -2100,6 +2143,17 @@ struct RootView: View {
 
                 SettingsSectionGroup(title: "Support") {
                     VStack(alignment: .leading, spacing: RollCallSpacingTier.standard.value) {
+                        NavigationLink {
+                            SupportRollCallScreen(onManageSubscriptions: manageSupportSubscriptions)
+                        } label: {
+                            SettingsNavigationLabel(
+                                title: "Support Roll Call",
+                                detail: "Optional contributions help keep Roll Call maintained.",
+                                systemImage: "heart.fill"
+                            )
+                        }
+                        .buttonStyle(.plain)
+
                         Link(destination: URL(string: "https://sidelarklabs.com/rollcall/")!) {
                             SettingsRowLabel(
                                 title: "Roll Call Website",
@@ -7143,23 +7197,273 @@ private struct DeveloperToolsView: View {
     }
 }
 
+private struct SupportRollCallScreen: View {
+    let onManageSubscriptions: () -> Void
+
+    @StateObject private var supportStore = StoreKitSupportStore()
+    @State private var selectedKind: SupportContributionKind = .oneTime
+
+    private var visibleOptions: [SupportProductOption] {
+        switch selectedKind {
+        case .oneTime:
+            return supportStore.oneTimeOptions
+        case .recurring:
+            return supportStore.recurringOptions
+        }
+    }
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: RollCallSpacingTier.large.value) {
+                SettingsSectionGroup(title: "Support Roll Call") {
+                    VStack(alignment: .leading, spacing: RollCallSpacingTier.standard.value) {
+                        Text("Roll Call is free, ad-free, and fully functional for every team.")
+                            .rollCallText(.body)
+                        Text("Optional support helps keep the app maintained, compatible with iOS updates, and improving over time.")
+                            .rollCallText(.body)
+                        Text("Support never unlocks Game Day features, teams, imports, exports, or reliability.")
+                            .rollCallText(.helperText)
+                    }
+                }
+
+                if supportStore.activeSubscriptionTitle != nil || supportStore.hasVerifiedSupport {
+                    SettingsSectionGroup(title: "Thank You") {
+                        VStack(alignment: .leading, spacing: RollCallSpacingTier.standard.value) {
+                            if let activeSubscriptionTitle = supportStore.activeSubscriptionTitle {
+                                SupportStatusRow(
+                                    title: "\(activeSubscriptionTitle) Active",
+                                    detail: "Thanks for helping maintain Roll Call for every team.",
+                                    systemImage: "checkmark.seal.fill"
+                                )
+                            } else {
+                                SupportStatusRow(
+                                    title: "Thanks for supporting Roll Call",
+                                    detail: "Your contribution is appreciated.",
+                                    systemImage: "heart.fill"
+                                )
+                            }
+                        }
+                    }
+                }
+
+                Picker("Support Type", selection: $selectedKind) {
+                    Text("One-Time").tag(SupportContributionKind.oneTime)
+                    Text("Recurring").tag(SupportContributionKind.recurring)
+                }
+                .pickerStyle(.segmented)
+
+                SettingsSectionGroup(title: selectedKind == .oneTime ? "One-Time Support" : "Recurring Support") {
+                    VStack(alignment: .leading, spacing: RollCallSpacingTier.standard.value) {
+                        if supportStore.isLoadingProducts {
+                            ProgressView("Loading support options...")
+                                .frame(maxWidth: .infinity, alignment: .center)
+                        } else if visibleOptions.isEmpty {
+                            Text(supportStore.productLoadMessage ?? "Support options are unavailable right now. Please try again later.")
+                                .rollCallText(.helperText)
+                            Button("Retry") {
+                                Task { await supportStore.retryLoadingProducts() }
+                            }
+                            .buttonStyle(.bordered)
+                        } else {
+                            ForEach(visibleOptions) { option in
+                                SupportProductButton(
+                                    option: option,
+                                    isPurchasing: supportStore.purchaseInProgressProductID == option.id,
+                                    onPurchase: {
+                                        Task { await supportStore.purchase(option) }
+                                    }
+                                )
+                            }
+
+                            if let productLoadMessage = supportStore.productLoadMessage {
+                                Text(productLoadMessage)
+                                    .rollCallText(.helperText)
+                            }
+                        }
+
+                        if selectedKind == .recurring {
+                            Text("Recurring support renews automatically until canceled in your Apple ID subscriptions. You can manage or cancel anytime. Support does not unlock features.")
+                                .rollCallText(.helperText)
+
+                            VStack(spacing: RollCallSpacingTier.tight.value) {
+                                Button {
+                                    Task { await supportStore.restoreSupportSubscription() }
+                                } label: {
+                                    SupportUtilityActionRow(
+                                        title: "Restore Support",
+                                        detail: "Check this Apple ID for an active subscription.",
+                                        systemImage: "arrow.clockwise",
+                                        isLoading: supportStore.isRestoring
+                                    )
+                                }
+                                .buttonStyle(.plain)
+                                .disabled(supportStore.isRestoring)
+
+                                Button {
+                                    onManageSubscriptions()
+                                } label: {
+                                    SupportUtilityActionRow(
+                                        title: "Manage Subscriptions",
+                                        detail: "Open Apple ID subscription settings.",
+                                        systemImage: "person.crop.circle.badge.checkmark",
+                                        isLoading: false
+                                    )
+                                }
+                                .buttonStyle(.plain)
+                            }
+                        }
+                    }
+                }
+
+                if let purchaseMessage = supportStore.purchaseMessage {
+                    Text(purchaseMessage)
+                        .rollCallText(.helperText)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+
+                Text("One-time contributions can be made again any time. If Roll Call can see past support on this Apple ID, it will show a thank-you here.")
+                    .rollCallText(.helperText)
+            }
+            .padding(.horizontal, 16)
+            .padding(.top, RollCallSpacingTier.tight.value)
+            .padding(.bottom, RollCallSpacingTier.large.value)
+        }
+        .accentWashBackground()
+        .navigationTitle("Support Roll Call")
+        .navigationBarTitleDisplayMode(.inline)
+        .task {
+            await supportStore.refreshOnAppear()
+        }
+    }
+}
+
+private struct SupportProductButton: View {
+    let option: SupportProductOption
+    let isPurchasing: Bool
+    let onPurchase: () -> Void
+
+    var body: some View {
+        Button(action: onPurchase) {
+            HStack(alignment: .center, spacing: RollCallSpacingTier.standard.value) {
+                SettingsIcon(systemImage: option.definition.kind == .oneTime ? "heart.fill" : "arrow.clockwise.circle.fill", role: .accent)
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(option.definition.title)
+                        .font(.headline)
+                        .fontWeight(.semibold)
+                        .foregroundColor(Color(uiColor: .label))
+                        .lineLimit(2)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Text(option.definition.subtitle)
+                        .font(.footnote)
+                        .fontWeight(.medium)
+                        .foregroundColor(Color(uiColor: .secondaryLabel))
+                        .lineLimit(3)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                Spacer(minLength: RollCallSpacingTier.standard.value)
+
+                if isPurchasing {
+                    ProgressView()
+                } else {
+                    Text(option.priceText)
+                        .font(.headline)
+                        .fontWeight(.semibold)
+                        .foregroundStyle(Color(uiColor: .label))
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.72)
+                }
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .disabled(isPurchasing)
+    }
+}
+
+private extension SupportProductOption {
+    var priceText: String {
+        if let priceSuffix = definition.priceSuffix {
+            return "\(displayPrice)\(priceSuffix)"
+        }
+        return displayPrice
+    }
+}
+
+private struct SupportUtilityActionRow: View {
+    let title: String
+    let detail: String
+    let systemImage: String
+    let isLoading: Bool
+
+    var body: some View {
+        HStack(alignment: .center, spacing: RollCallSpacingTier.standard.value) {
+            if isLoading {
+                ProgressView()
+                    .frame(width: 34, height: 34)
+            } else {
+                SettingsIcon(systemImage: systemImage, role: .accent)
+            }
+
+            VStack(alignment: .leading, spacing: 3) {
+                Text(title)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(Color(uiColor: .label))
+                Text(detail)
+                    .font(.caption)
+                    .foregroundStyle(Color(uiColor: .secondaryLabel))
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            Spacer(minLength: RollCallSpacingTier.standard.value)
+            Image(systemName: "chevron.right")
+                .font(.footnote.weight(.semibold))
+                .foregroundStyle(Color(uiColor: .tertiaryLabel))
+        }
+        .padding(.vertical, 2)
+        .contentShape(Rectangle())
+    }
+}
+
+private struct SupportStatusRow: View {
+    let title: String
+    let detail: String
+    let systemImage: String
+
+    var body: some View {
+        HStack(alignment: .center, spacing: RollCallSpacingTier.standard.value) {
+            SettingsIcon(systemImage: systemImage, role: .accent)
+            VStack(alignment: .leading, spacing: 4) {
+                Text(title)
+                    .font(.headline)
+                    .fontWeight(.semibold)
+                    .foregroundColor(Color(uiColor: .label))
+                Text(detail)
+                    .font(.footnote)
+                    .fontWeight(.medium)
+                    .foregroundColor(Color(uiColor: .secondaryLabel))
+            }
+        }
+    }
+}
+
 private struct RatingRequestSheet: View {
     @Environment(\.dismiss) private var dismiss
 
     let onRate: () -> Void
     let onEmailSupport: () -> Void
+    let onSupportDevelopment: () -> Void
+
+    private var cardShape: RoundedRectangle {
+        RoundedRectangle(cornerRadius: 24, style: .continuous)
+    }
 
     var body: some View {
         NavigationStack {
             ZStack {
-                LinearGradient(
-                    colors: [
-                        Color(red: 0.95, green: 0.97, blue: 1.0),
-                        Color(red: 0.89, green: 0.93, blue: 0.99)
-                    ],
-                    startPoint: .topLeading,
-                    endPoint: .bottomTrailing
-                )
+                Color(uiColor: .systemGroupedBackground)
                 .ignoresSafeArea()
 
                 VStack(spacing: 24) {
@@ -7173,11 +7477,12 @@ private struct RatingRequestSheet: View {
                         VStack(spacing: 8) {
                             Text("Enjoying Roll Call?")
                                 .font(.title3.weight(.semibold))
+                                .foregroundStyle(Color(uiColor: .label))
                                 .multilineTextAlignment(.center)
 
                             Text("Roll Call is free to use. If it has helped your team, a quick App Store rating is a great way to say thanks.")
                                 .font(.body)
-                                .foregroundStyle(.secondary)
+                                .foregroundStyle(Color(uiColor: .secondaryLabel))
                                 .multilineTextAlignment(.center)
                         }
 
@@ -7197,7 +7502,7 @@ private struct RatingRequestSheet: View {
                             .buttonStyle(.borderedProminent)
                             .controlSize(.large)
 
-                            Button("Email Support Instead") {
+                            Button("Email Me Instead") {
                                 dismiss()
                                 onEmailSupport()
                             }
@@ -7212,18 +7517,28 @@ private struct RatingRequestSheet: View {
                     }
                     .padding(24)
                     .frame(maxWidth: 360)
-                    .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 28, style: .continuous))
+                    .background(Color(uiColor: .secondarySystemGroupedBackground), in: cardShape)
                     .overlay(
-                        RoundedRectangle(cornerRadius: 28, style: .continuous)
-                            .stroke(Color.white.opacity(0.35), lineWidth: 1)
+                        cardShape
+                            .stroke(Color(uiColor: .separator).opacity(0.35), lineWidth: 1)
                     )
-                    .shadow(color: Color.black.opacity(0.12), radius: 22, y: 10)
+                    .shadow(color: Color.black.opacity(0.16), radius: 18, y: 8)
 
                     VStack(spacing: 10) {
                         Text("If something isn't working right, email me and I'll take a look.")
                             .font(.footnote)
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(Color(uiColor: .secondaryLabel))
                             .multilineTextAlignment(.center)
+
+                        Button {
+                            dismiss()
+                            onSupportDevelopment()
+                        } label: {
+                            Text("You can also contribute in Settings.")
+                                .font(.footnote.weight(.semibold))
+                                .multilineTextAlignment(.center)
+                        }
+                        .buttonStyle(.plain)
                     }
                     .frame(maxWidth: 360)
 

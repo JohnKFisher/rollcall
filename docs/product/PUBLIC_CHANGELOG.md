@@ -75,6 +75,10 @@ Roll Call 1.2 is a major update focusing on Audio Setup. It makes choosing, prev
 - .rollcall package import and sharing now live on the Teams tab, which has been redesigned to group similar tasks together. Sharing now creates the package and immediately opens the system share sheet, while roster import and Apple Music playlist creation now sit in visible team-focused sections.
 - Team color polish: active teams are easier to spot in the picker, and filled buttons choose readable text colors for light/dark team accents.
 
+### Tip Jar
+
+- Added a new Support Roll Call screen in Settings/About with optional one-time and monthly/yearly support contributions. Roll Call proudly remains fully usable without paying a dime.
+
 ---
 
 ## Version 1.1.1

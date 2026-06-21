@@ -7,7 +7,6 @@ Internal notes for building public-facing changelogs. Keep entries understandabl
 
 ### Added
 
-
 ### Changed
 
 
@@ -15,6 +14,5 @@ Internal notes for building public-facing changelogs. Keep entries understandabl
 
 
 ### Reliability / Data Safety
-
 
 ### Internal / Maintenance

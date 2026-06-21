@@ -70,11 +70,11 @@ Do not include GitHub, public project, or manifesto links on the support screen.
 Implement both:
 
 - One-time support purchases using consumable in-app purchases.
-- Optional monthly support using auto-renewable subscriptions.
+- Optional recurring support using auto-renewable subscriptions.
 
 Support purchases and subscriptions are voluntary contribution paths only. They do not unlock app functionality.
 
-Monthly subscriptions are an explicit promise of ongoing app maintenance, compatibility, bug fixing, and free improvements for every team. They are not a promise of premium priority, special treatment, or exclusive features.
+Recurring subscriptions are an explicit promise of ongoing app maintenance, compatibility, bug fixing, and free improvements for every team. They are not a promise of premium priority, special treatment, or exclusive features.
 
 ## Product IDs
 
@@ -82,12 +82,12 @@ Use fully namespaced product IDs.
 
 Suggested IDs:
 
-- `com.sidelarklabs.rollcall.support.dugout`
-- `com.sidelarklabs.rollcall.support.softballs`
-- `com.sidelarklabs.rollcall.support.tournament`
-- `com.sidelarklabs.rollcall.support.team`
+- `com.sidelarklabs.rollcall.support.small`
+- `com.sidelarklabs.rollcall.support.medium`
+- `com.sidelarklabs.rollcall.support.large`
+- `com.sidelarklabs.rollcall.support.legendary`
 - `com.sidelarklabs.rollcall.support.monthly`
-- `com.sidelarklabs.rollcall.support.monthly.extra`
+- `com.sidelarklabs.rollcall.support.yearly`
 
 The app should define the expected product IDs, ordering, and local display intent. StoreKit should provide availability and localized price strings.
 
@@ -99,10 +99,11 @@ One-time tier names should be warm and softball-adjacent rather than donor-size/
 
 Recommended tiers:
 
-- `Dugout Support`
-- `Softball Support`
-- `Tournament Support`
-- `Team Support`
+- `Tip of the Cap`
+- `Dugout High Five`
+- `Walk-Up Hero`
+- `Grand Slam Legend`
+
 
 Each row should show:
 
@@ -112,20 +113,20 @@ Each row should show:
 
 Example:
 
-`Dugout Support`
-`Buy a dugout snack`
+`Dugout High Five`
+`A little extra cheer for the team`
 `$2.99`
 
 Keep the actual product name clearly about support. Avoid titles that imply the user is buying a real-world item that will be fulfilled.
 
-## Monthly Support
+## Recurring Support
 
 Use auto-renewable subscriptions.
 
-Monthly names should be plain and non-status-based:
+Recurring names should be plain and non-status-based:
 
-- `Monthly Support`
-- `Extra Monthly Support`
+- `Season Supporter`
+- `All-Star Season Supporter`
 
 Avoid names like `MVP`, status badges, "best value," or any language that ranks supporters.
 
@@ -137,17 +138,21 @@ Each row should show:
 
 Example:
 
-`Monthly Support`
-`Helps keep Roll Call maintained for every team`
-`$0.99/month`
+`Season Supporter`
+`Monthly support to keep Roll Call maintained for every team`
+`$0.99/mo`
 
-The monthly tab should include short pre-purchase fine print:
+`All-Star Season Supporter`
+`Yearly support for compatibility, fixes, and improvements`
+`$7.99/yr`
 
-> Monthly support renews automatically until canceled in your Apple ID subscriptions. You can manage or cancel anytime. Support does not unlock features.
+The recurring tab should include short pre-purchase fine print:
+
+> Recurring support renews automatically until canceled in your Apple ID subscriptions. You can manage or cancel anytime. Support does not unlock features.
 
 Also include low-prominence footer actions:
 
-- `Restore Monthly Support`
+- `Restore Support`
 - `Manage Subscriptions`
 
 ## Screen Layout
@@ -155,20 +160,20 @@ Also include low-prominence footer actions:
 Use a segmented control:
 
 - `One-Time`
-- `Monthly`
+- `Recurring`
 
 Default selection: `One-Time`.
 
 Recommended screen order:
 
-1. Short explanatory copy.
+1. Short explanatory copy (Make it clear that this app is 100% free, and tips are extremely appreciated but completely optional.)
 2. Gratitude/status area only if verified support exists.
 3. Segmented control.
 4. Product rows for the selected segment.
 5. Restore/manage actions where relevant.
 6. Optionality/footer copy.
 
-Do not show both one-time and monthly sections stacked by default; six purchase options at once risks making the page feel like a store.
+Do not show both one-time and recurring sections stacked by default; six purchase options at once risks making the page feel like a store.
 
 ## Supporter State
 
@@ -176,7 +181,7 @@ Separate current entitlement from gratitude.
 
 Show active subscription state only when StoreKit confirms an active subscription:
 
-- `Monthly Support Active`
+- `Season Supporter Active`
 
 Show gratitude when there is verified past support:
 
@@ -200,11 +205,11 @@ Implementation requirements:
 - Verify transactions locally.
 - Finish transactions.
 - Observe subscription status changes.
-- Restore monthly support when requested.
+- Restore recurring support when requested.
 - Provide a manage-subscriptions path.
 - Record minimal local supporter state for UI comfort.
 
-StoreKit is the source of truth for active monthly support. Local cache is only a convenience layer for previously verified support/gratitude and last-known UI state.
+StoreKit is the source of truth for active recurring support. Local cache is only a convenience layer for previously verified support/gratitude and last-known UI state.
 
 Suggested local cache:
 
@@ -222,7 +227,7 @@ Consumable one-time support is repeatable and should not be described as a durab
 
 Use restore language focused on subscriptions:
 
-- `Restore Monthly Support`
+- `Restore Support`
 
 If StoreKit transaction history shows prior one-time support, the app may show gratitude. Do not promise that one-time support "restores" like a permanent unlock.
 

@@ -5,6 +5,7 @@ import MediaPlayer
 import OSLog
 @preconcurrency import MusicKit
 import Network
+import StoreKit
 import UniformTypeIdentifiers
 import ZIPFoundation
 
@@ -80,6 +81,290 @@ enum AppError: LocalizedError {
             return "Apple Music could not update this team playlist. \(message)"
         }
     }
+}
+
+enum SupportContributionKind: String, CaseIterable, Identifiable {
+    case oneTime
+    case recurring
+
+    var id: String { rawValue }
+}
+
+struct SupportProductDefinition: Identifiable, Equatable {
+    let productID: String
+    let kind: SupportContributionKind
+    let title: String
+    let subtitle: String
+    let priceSuffix: String?
+
+    var id: String { productID }
+
+    static let all: [SupportProductDefinition] = [
+        SupportProductDefinition(
+            productID: "com.sidelarklabs.rollcall.support.small",
+            kind: .oneTime,
+            title: "Tip of the Cap",
+            subtitle: "A small cheer for keeping Roll Call going",
+            priceSuffix: nil
+        ),
+        SupportProductDefinition(
+            productID: "com.sidelarklabs.rollcall.support.medium",
+            kind: .oneTime,
+            title: "Dugout High Five",
+            subtitle: "A little extra cheer for the team",
+            priceSuffix: nil
+        ),
+        SupportProductDefinition(
+            productID: "com.sidelarklabs.rollcall.support.large",
+            kind: .oneTime,
+            title: "Walk-Up Hero",
+            subtitle: "Helps keep the walk-up magic improving",
+            priceSuffix: nil
+        ),
+        SupportProductDefinition(
+            productID: "com.sidelarklabs.rollcall.support.legendary",
+            kind: .oneTime,
+            title: "Grand Slam Legend",
+            subtitle: "A big thank-you for the whole lineup",
+            priceSuffix: nil
+        ),
+        SupportProductDefinition(
+            productID: "com.sidelarklabs.rollcall.support.monthly",
+            kind: .recurring,
+            title: "Season Supporter",
+            subtitle: "Monthly support to keep Roll Call maintained for every team",
+            priceSuffix: "/mo"
+        ),
+        SupportProductDefinition(
+            productID: "com.sidelarklabs.rollcall.support.yearly",
+            kind: .recurring,
+            title: "All-Star Season Supporter",
+            subtitle: "Yearly support for compatibility, fixes, and improvements",
+            priceSuffix: "/yr"
+        )
+    ]
+}
+
+struct SupportProductOption: Identifiable {
+    let definition: SupportProductDefinition
+    let displayPrice: String
+
+    var id: String { definition.productID }
+}
+
+private struct SupportLocalCache: Codable, Equatable {
+    var hasSeenVerifiedSupport: Bool
+    var lastVerifiedProductID: String?
+    var lastVerifiedTitle: String?
+    var lastVerifiedAt: Date?
+    var activeSubscriptionProductID: String?
+    var activeSubscriptionTitle: String?
+
+    static let empty = SupportLocalCache(
+        hasSeenVerifiedSupport: false,
+        lastVerifiedProductID: nil,
+        lastVerifiedTitle: nil,
+        lastVerifiedAt: nil,
+        activeSubscriptionProductID: nil,
+        activeSubscriptionTitle: nil
+    )
+}
+
+@MainActor
+final class StoreKitSupportStore: ObservableObject {
+    @Published private(set) var oneTimeOptions: [SupportProductOption] = []
+    @Published private(set) var recurringOptions: [SupportProductOption] = []
+    @Published private(set) var isLoadingProducts = false
+    @Published private(set) var productLoadMessage: String?
+    @Published private(set) var purchaseMessage: String?
+    @Published private(set) var purchaseInProgressProductID: String?
+    @Published private(set) var isRestoring = false
+    @Published private(set) var hasVerifiedSupport = false
+    @Published private(set) var activeSubscriptionTitle: String?
+
+    private var productsByID: [String: Product] = [:]
+    private var cache: SupportLocalCache
+
+    init(userDefaults: UserDefaults = .standard) {
+        self.userDefaults = userDefaults
+        self.cache = Self.loadCache(from: userDefaults)
+        applyCache()
+    }
+
+    private let userDefaults: UserDefaults
+
+    func refreshOnAppear() async {
+        await loadProductsIfNeeded()
+        await refreshSupportStatusFromStoreKit()
+    }
+
+    func loadProductsIfNeeded() async {
+        guard productsByID.isEmpty else {
+            rebuildOptions()
+            return
+        }
+
+        isLoadingProducts = true
+        productLoadMessage = nil
+        defer { isLoadingProducts = false }
+
+        do {
+            let identifiers = SupportProductDefinition.all.map(\.productID)
+            let products = try await Product.products(for: identifiers)
+            productsByID = Dictionary(uniqueKeysWithValues: products.map { ($0.id, $0) })
+            rebuildOptions()
+
+            let missingCount = identifiers.filter { productsByID[$0] == nil }.count
+            if products.isEmpty {
+                productLoadMessage = "Support options are unavailable right now. Please try again later."
+            } else if missingCount > 0 {
+                productLoadMessage = "Some support options are temporarily unavailable."
+            }
+        } catch {
+            productsByID = [:]
+            oneTimeOptions = []
+            recurringOptions = []
+            productLoadMessage = "Support options are unavailable right now. Please try again later."
+        }
+    }
+
+    func retryLoadingProducts() async {
+        productsByID = [:]
+        await loadProductsIfNeeded()
+    }
+
+    func purchase(_ option: SupportProductOption) async {
+        guard let product = productsByID[option.id] else {
+            purchaseMessage = "That support option is unavailable right now. Please try again later."
+            return
+        }
+
+        purchaseInProgressProductID = option.id
+        purchaseMessage = nil
+        defer { purchaseInProgressProductID = nil }
+
+        do {
+            let result = try await product.purchase()
+            switch result {
+            case .success(let verification):
+                let transaction = try verifiedTransaction(from: verification)
+                recordVerifiedSupport(productID: transaction.productID, purchasedAt: transaction.purchaseDate)
+                await transaction.finish()
+                purchaseMessage = "Thanks for supporting Roll Call."
+            case .pending:
+                purchaseMessage = "Purchase pending. Roll Call will update here when it completes."
+            case .userCancelled:
+                break
+            @unknown default:
+                purchaseMessage = "Support could not be completed. Please try again later."
+            }
+        } catch {
+            purchaseMessage = "Support could not be completed. Please try again later."
+        }
+    }
+
+    func restoreSupportSubscription() async {
+        isRestoring = true
+        purchaseMessage = nil
+        defer { isRestoring = false }
+
+        do {
+            try await AppStore.sync()
+            await refreshSupportStatusFromStoreKit()
+            purchaseMessage = activeSubscriptionTitle == nil
+                ? "No active support subscription was found for this Apple ID."
+                : "Support subscription restored."
+        } catch {
+            purchaseMessage = "Support could not be restored right now. Please try again later."
+        }
+    }
+
+    private func refreshSupportStatusFromStoreKit() async {
+        var activeSubscriptionID: String?
+
+        for await verification in Transaction.currentEntitlements {
+            guard let transaction = try? verifiedTransaction(from: verification),
+                  let definition = definition(for: transaction.productID) else {
+                continue
+            }
+
+            cache.hasSeenVerifiedSupport = true
+            cache.lastVerifiedProductID = transaction.productID
+            cache.lastVerifiedTitle = definition.title
+            cache.lastVerifiedAt = transaction.purchaseDate
+
+            if definition.kind == .recurring,
+               transaction.revocationDate == nil,
+               transaction.expirationDate.map({ $0 > Date() }) ?? true {
+                activeSubscriptionID = transaction.productID
+            }
+        }
+
+        cache.activeSubscriptionProductID = activeSubscriptionID
+        cache.activeSubscriptionTitle = activeSubscriptionID.flatMap { definition(for: $0)?.title }
+        saveCache()
+        applyCache()
+    }
+
+    private func recordVerifiedSupport(productID: String, purchasedAt: Date) {
+        guard let definition = definition(for: productID) else { return }
+        cache.hasSeenVerifiedSupport = true
+        cache.lastVerifiedProductID = productID
+        cache.lastVerifiedTitle = definition.title
+        cache.lastVerifiedAt = purchasedAt
+
+        if definition.kind == .recurring {
+            cache.activeSubscriptionProductID = productID
+            cache.activeSubscriptionTitle = definition.title
+        }
+
+        saveCache()
+        applyCache()
+    }
+
+    private func applyCache() {
+        hasVerifiedSupport = cache.hasSeenVerifiedSupport
+        activeSubscriptionTitle = cache.activeSubscriptionTitle
+    }
+
+    private func rebuildOptions() {
+        let options = SupportProductDefinition.all.compactMap { definition -> SupportProductOption? in
+            guard let product = productsByID[definition.productID] else { return nil }
+            return SupportProductOption(definition: definition, displayPrice: product.displayPrice)
+        }
+        oneTimeOptions = options.filter { $0.definition.kind == .oneTime }
+        recurringOptions = options.filter { $0.definition.kind == .recurring }
+    }
+
+    private func verifiedTransaction(
+        from result: VerificationResult<Transaction>
+    ) throws -> Transaction {
+        switch result {
+        case .verified(let transaction):
+            return transaction
+        case .unverified(_, let error):
+            throw error
+        }
+    }
+
+    private func definition(for productID: String) -> SupportProductDefinition? {
+        SupportProductDefinition.all.first { $0.productID == productID }
+    }
+
+    private func saveCache() {
+        guard let data = try? JSONEncoder().encode(cache) else { return }
+        userDefaults.set(data, forKey: Self.cacheKey)
+    }
+
+    private static func loadCache(from userDefaults: UserDefaults) -> SupportLocalCache {
+        guard let data = userDefaults.data(forKey: cacheKey),
+              let cache = try? JSONDecoder().decode(SupportLocalCache.self, from: data) else {
+            return .empty
+        }
+        return cache
+    }
+
+    private static let cacheKey = "rollCall.support.localCache.v1"
 }
 
 private func builtInClipRelativePath(for source: BuiltInClipSource) -> String {

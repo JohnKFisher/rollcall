@@ -2,6 +2,12 @@
 
 Use this file as a concise decision log for project-specific architectural, behavioral, tooling, and scope decisions.
 
+## 2026-06-21
+
+- Approved: add optional StoreKit support contributions in Settings/About, with one-time consumable support and monthly/yearly auto-renewable support, while keeping every Roll Call feature free and excluding support state from team exports and app backups.
+  Rationale: users who want to support maintenance can do so without creating a paywall, account, backend, analytics, or live-use interruption.
+  Status: approved
+
 ## 2026-06-19
 
 - Approved: explicit music filtering is selection-time only. Roll Call hides explicit Apple Music search results by default and confirms explicit Music Library selections after pick because the native library picker cannot be pre-filtered. The filter does not alter saved cues, playlist creation, or imported files.
