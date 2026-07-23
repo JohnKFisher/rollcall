@@ -107,6 +107,30 @@ final class PackageServiceTests: XCTestCase {
         }
     }
 
+    func testPreviewRejectsDuplicatePlayerOrLineupIDs() throws {
+        let player = RollCallTestFixtures.player(
+            id: RollCallTestFixtures.alexID,
+            name: "Alex Ramirez",
+            number: "12"
+        )
+        var team = RollCallTestFixtures.team(players: [player, player], battingOrder: [player.id, player.id])
+        team.session.battingOrderIsCustomized = true
+        let packageURL = try writePackageDirectory(
+            name: "DuplicateIDs.rollcall",
+            manifest: TeamPackageManifest(
+                schemaVersion: AppState.currentSchemaVersion,
+                appVersion: "1.0.1",
+                exportedAt: RollCallTestFixtures.now,
+                deviceLabel: "Test Device",
+                team: team
+            )
+        )
+
+        XCTAssertThrowsError(try service.preview(packageURL: packageURL)) { error in
+            XCTAssertAppError(error, is: .invalidImport)
+        }
+    }
+
     func testImportPreservesMissingLocalAudioAsRepairableAssignment() throws {
         let player = RollCallTestFixtures.player(
             id: RollCallTestFixtures.alexID,

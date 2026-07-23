@@ -76,6 +76,11 @@ enum RestorePreparation: Equatable {
     case partialPrompt(PartialRestorePrompt)
 }
 
+enum RecoveryNavigationDestination: Equatable {
+    case players
+    case customClip(UUID)
+}
+
 struct AnnouncerVoiceOption: Identifiable, Hashable {
     let id: String
     let name: String
@@ -494,10 +499,11 @@ final class AppModel: ObservableObject {
     @Published private(set) var appleMusicPlaylistRecovery: AppleMusicPlaylistRecovery?
     @Published private(set) var appleMusicPlaybackCapability: AppleMusicPlaybackCapability = .unknown
     @Published private(set) var customAnnouncerRecordingPhase: CustomAnnouncerRecordingPhase = .idle
-    @Published var pendingRecoveryNavigationToken: UUID?
+    @Published var pendingRecoveryNavigation: RecoveryNavigationDestination?
     @Published private(set) var gameDayLineupProgressHintEvent: GameDayLineupProgressHintEvent?
     @Published private(set) var pendingSongClipPreparationCount = 0
     @Published private(set) var generatedClipCleanupReport: GeneratedClipCleanupReport?
+    @Published private(set) var activeFallbackPlayerID: UUID?
     private var hasFinishedLaunching = false
     private let persistenceWriter = StatePersistenceWriter()
     private var persistSequence = 0
@@ -514,6 +520,8 @@ final class AppModel: ObservableObject {
     private var songClipPreparationTask: Task<Void, Never>?
     private var songClipPreparationLiveUseThrottled = false
     private var lowPowerModeTask: Task<Void, Never>?
+    private var activePlaybackRequestID = UUID()
+    private var pendingAssetCleanupPaths = Set<String>()
 
     let audioAssetService = AudioAssetService()
     let musicCatalogService = MusicCatalogService()
@@ -532,7 +540,7 @@ final class AppModel: ObservableObject {
     }
 
     var hasUnseenWhatsNew: Bool {
-        state.lastSeenWhatsNewReleaseID != AppMetadata.whatsNewReleaseID
+        !AppMetadata.hasSeenWhatsNewRelease(state.lastSeenWhatsNewReleaseID)
     }
 
     var hasEarnedRatingRequest: Bool {
@@ -622,6 +630,14 @@ final class AppModel: ObservableObject {
 
     var selectedTeam: Team? {
         state.teams.first(where: { $0.id == state.selectedTeamID })
+    }
+
+    var selectedTeamReadiness: ReadinessStatus? {
+        guard let readiness = state.lastReadiness,
+              readiness.teamID == selectedTeam?.id else {
+            return nil
+        }
+        return readiness
     }
 
     var shouldShowOnboarding: Bool {
@@ -850,6 +866,26 @@ final class AppModel: ObservableObject {
         }
     }
 
+    func commitPlayerEditorDraft(_ draft: Player) {
+        guard let teamIndex,
+              let playerIndex = state.teams[teamIndex].players.firstIndex(where: { $0.id == draft.id }) else {
+            return
+        }
+
+        var merged = state.teams[teamIndex].players[playerIndex]
+        merged.displayName = draft.displayName
+        merged.uniformNumber = draft.uniformNumber
+        merged.pronunciationOverride = draft.pronunciationOverride
+        merged.photoRelativePath = draft.photoRelativePath
+
+        if let draftCue = draft.songAssignment?.privateClip?.editingCue,
+           merged.songAssignment?.privateClip?.editingCue != draftCue {
+            merged.updatePrivateSongClip(with: draftCue)
+        }
+
+        updatePlayer(merged)
+    }
+
     func resolvedSongClip(for player: Player) -> SongClip? {
         selectedTeam?.songClip(for: player)
     }
@@ -901,16 +937,16 @@ final class AppModel: ObservableObject {
         state.teams[teamIndex].modifiedAt = .now
         prewarmNextBatterCue()
         scheduleReadinessRefresh()
+        let updatedPaths = Set(storedAssetRelativePaths(for: updated))
+        previousPaths
+            .filter { !updatedPaths.contains($0) }
+            .forEach(removeAssetIfUnreferenced(relativePath:))
         persist()
         scheduleTeamClipPreparation(
             teamID: state.teams[teamIndex].id,
             teamClipID: clipID,
             trigger: .assignmentSaved
         )
-        let updatedPaths = Set(storedAssetRelativePaths(for: updated))
-        previousPaths
-            .filter { !updatedPaths.contains($0) }
-            .forEach(removeAssetIfUnreferenced(relativePath:))
     }
 
     func copyExistingClip(_ clip: SongClip, to playerID: UUID) {
@@ -1212,27 +1248,34 @@ final class AppModel: ObservableObject {
         }
     }
 
-    func startRecordingCustomAnnouncer(for player: Player) async {
-        customAnnouncerRecordingPhase = .starting(player.id)
+    func startRecordingCustomAnnouncer(forPlayerID playerID: UUID) async {
+        customAnnouncerRecordingPhase = .starting(playerID)
         do {
             let destinationURL = customAnnouncerTemporaryURL(fileExtension: "caf")
-            try await customAnnouncerRecorder.startRecording(for: player.id, destinationURL: destinationURL)
-            customAnnouncerRecordingPhase = .recording(player.id)
+            try await customAnnouncerRecorder.startRecording(for: playerID, destinationURL: destinationURL)
+            customAnnouncerRecordingPhase = .recording(playerID)
         } catch {
             customAnnouncerRecordingPhase = .idle
             lastError = error.localizedDescription
         }
     }
 
-    func stopRecordingCustomAnnouncer(for player: Player) async {
-        customAnnouncerRecordingPhase = .stopping(player.id)
+    func stopRecordingCustomAnnouncer(forPlayerID playerID: UUID) async {
+        guard let teamIndex,
+              let playerIndex = state.teams[teamIndex].players.firstIndex(where: { $0.id == playerID }) else {
+            customAnnouncerRecorder.cancelRecording()
+            customAnnouncerRecordingPhase = .idle
+            return
+        }
+        let player = state.teams[teamIndex].players[playerIndex]
+        customAnnouncerRecordingPhase = .stopping(playerID)
         do {
             let recordedURL = try await customAnnouncerRecorder.stopRecording()
             let asset: LocalAudioSource
             do {
-                let replacementRelativePath = self.assetIsReferenced(relativePath: player.customAnnouncerRelativePath, byAnyPlayerOtherThan: player.id)
-                    ? self.audioAssetService.freshCustomAnnouncerRelativePath()
-                    : nil
+                let replacementRelativePath = player.customAnnouncerRelativePath == nil
+                    ? nil
+                    : self.audioAssetService.freshCustomAnnouncerRelativePath()
                 asset = try audioAssetService.storeCustomAnnouncerRecording(
                     from: recordedURL,
                     playerID: player.id,
@@ -1272,22 +1315,40 @@ final class AppModel: ObservableObject {
         }
     }
 
-    func clearSong(for player: Player) {
-        var updated = player
+    func clearSong(forPlayerID playerID: UUID) {
+        guard let teamIndex,
+              let playerIndex = state.teams[teamIndex].players.firstIndex(where: { $0.id == playerID }) else {
+            return
+        }
+        var updated = state.teams[teamIndex].players[playerIndex]
         updated.cue = nil
         updatePlayer(updated)
     }
 
-    func clearCustomAnnouncer(for player: Player) {
-        var updated = player
+    func clearCustomAnnouncer(forPlayerID playerID: UUID) {
+        guard let teamIndex,
+              let playerIndex = state.teams[teamIndex].players.firstIndex(where: { $0.id == playerID }) else {
+            return
+        }
+        var updated = state.teams[teamIndex].players[playerIndex]
         updated.customAnnouncerRelativePath = nil
         updatePlayer(updated)
     }
 
-    func play(player: Player) async {
+    func play(player: Player, teamID: UUID? = nil) async {
+        let requestID = beginPlaybackRequest()
+        let currentPlayer: Player
+        if let teamID {
+            guard state.selectedTeamID == teamID,
+                  let selectedPlayer = selectedTeam?.players.first(where: { $0.id == player.id }) else { return }
+            currentPlayer = selectedPlayer
+        } else {
+            guard let selectedPlayer = selectedTeam?.players.first(where: { $0.id == player.id }) else { return }
+            currentPlayer = selectedPlayer
+        }
         var attemptedPlan: PlayerPlaybackPlan?
         do {
-            guard let plan = playbackPlan(for: player) else { return }
+            guard let plan = playbackPlan(for: currentPlayer) else { return }
             attemptedPlan = plan
             switch plan {
             case .cue(let cue, let announcerRelativePath):
@@ -1303,21 +1364,27 @@ final class AppModel: ObservableObject {
                     fadeOutVolumeAutomationEnabled: state.settings.fadeOutVolumeAutomationEnabled
                 )
             }
+            guard isCurrentPlaybackRequest(requestID) else { return }
             markGameDayPlayerCuePlayedForRating()
             haptics.success(isEnabled: state.settings.hapticsEnabled)
         } catch {
+            guard isCurrentPlaybackRequest(requestID) else { return }
             if case .cue(let failedCue, _)? = attemptedPlan,
-               let fallbackCue = fallbackCueAfterPlaybackFailure(for: player, failedCue: failedCue) {
+               let fallbackCue = fallbackCueAfterPlaybackFailure(for: currentPlayer, failedCue: failedCue) {
+                activeFallbackPlayerID = currentPlayer.id
                 do {
                     try await playbackEngine.play(
                         cue: fallbackCue,
                         announcerRelativePath: nil,
                         fadeOutVolumeAutomationEnabled: state.settings.fadeOutVolumeAutomationEnabled
                     )
+                    guard isCurrentPlaybackRequest(requestID) else { return }
                     markGameDayPlayerCuePlayedForRating()
                     haptics.success(isEnabled: state.settings.hapticsEnabled)
                     return
                 } catch {
+                    guard isCurrentPlaybackRequest(requestID) else { return }
+                    activeFallbackPlayerID = nil
                     lastError = error.localizedDescription
                     haptics.warning(isEnabled: state.settings.hapticsEnabled)
                     return
@@ -1329,19 +1396,23 @@ final class AppModel: ObservableObject {
     }
 
     func play(builtInClip: BuiltInClip) async {
+        let requestID = beginPlaybackRequest()
         do {
             try await playbackEngine.play(
                 cue: builtInClip.cue,
                 fadeOutVolumeAutomationEnabled: state.settings.fadeOutVolumeAutomationEnabled
             )
+            guard isCurrentPlaybackRequest(requestID) else { return }
             haptics.success(isEnabled: state.settings.hapticsEnabled)
         } catch {
+            guard isCurrentPlaybackRequest(requestID) else { return }
             lastError = error.localizedDescription
             haptics.warning(isEnabled: state.settings.hapticsEnabled)
         }
     }
 
     func play(customClip: SongClip) async {
+        let requestID = beginPlaybackRequest()
         let currentClip = selectedTeam?.teamClips.first(where: { $0.id == customClip.id }) ?? customClip
         let cue = currentClip.playbackCue
         guard cueIsPlayable(cue) else {
@@ -1356,8 +1427,10 @@ final class AppModel: ObservableObject {
                 cue: cue,
                 fadeOutVolumeAutomationEnabled: state.settings.fadeOutVolumeAutomationEnabled
             )
+            guard isCurrentPlaybackRequest(requestID) else { return }
             haptics.success(isEnabled: state.settings.hapticsEnabled)
         } catch {
+            guard isCurrentPlaybackRequest(requestID) else { return }
             lastError = error.localizedDescription
             haptics.warning(isEnabled: state.settings.hapticsEnabled)
         }
@@ -1368,16 +1441,31 @@ final class AppModel: ObservableObject {
     }
 
     func stopPlayback() {
+        _ = beginPlaybackRequest()
         playbackEngine.stop()
     }
 
+    private func beginPlaybackRequest() -> UUID {
+        let requestID = UUID()
+        activePlaybackRequestID = requestID
+        activeFallbackPlayerID = nil
+        return requestID
+    }
+
+    private func isCurrentPlaybackRequest(_ requestID: UUID) -> Bool {
+        activePlaybackRequestID == requestID
+    }
+
     func previewCue(_ cue: Cue) async {
+        let requestID = beginPlaybackRequest()
         do {
             try await playbackEngine.play(
                 cue: cue,
                 fadeOutVolumeAutomationEnabled: state.settings.fadeOutVolumeAutomationEnabled
             )
+            guard isCurrentPlaybackRequest(requestID) else { return }
         } catch {
+            guard isCurrentPlaybackRequest(requestID) else { return }
             lastError = error.localizedDescription
         }
     }
@@ -1986,7 +2074,14 @@ final class AppModel: ObservableObject {
             self.flattenLegacySharedAssignments(for: self.state.teams.count - 1)
             self.normalizeLineup(for: self.state.teams.count - 1)
             if opensOnboardingHandoff {
-                self.state.onboarding = .completed()
+                self.state.onboarding = OnboardingState(
+                    completedAt: nil,
+                    activeFlow: .importHandoff,
+                    activeTeamID: imported.id,
+                    didChooseCheerFallback: false,
+                    didSeeLineup: false,
+                    importHandoffTeamID: imported.id
+                )
             }
             self.completedPackageImportTeamID = imported.id
             self.completedPackageImportAudit = importResult.audit.retargeted(
@@ -2035,6 +2130,7 @@ final class AppModel: ObservableObject {
     }
 
     func applyPendingRosterImport() async {
+        guard !isBusy else { return }
         await busy {
             guard let teamIndex = self.teamIndex, let pendingRosterImport = self.pendingRosterImport else { return }
             try await self.createBackupBeforeRiskyOperation(reason: "Automatic backup before roster CSV import")
@@ -2186,6 +2282,7 @@ final class AppModel: ObservableObject {
             let currentLastSeenWhatsNewReleaseID = self.state.lastSeenWhatsNewReleaseID
             let currentSchemaVersion = self.state.schemaVersion
             let currentRecentlyDeleted = self.state.recentlyDeleted
+            let currentSnapshots = self.state.snapshots
 
             let restoredState = try await Task.detached(priority: .utility) { () -> AppState in
                 let decoder = JSONDecoder()
@@ -2197,6 +2294,7 @@ final class AppModel: ObservableObject {
                 restoredState.lastSeenWhatsNewReleaseID = currentLastSeenWhatsNewReleaseID
                 restoredState.schemaVersion = max(restoredState.schemaVersion, currentSchemaVersion)
                 restoredState.recentlyDeleted = currentRecentlyDeleted
+                restoredState.snapshots = currentSnapshots
                 return restoredState
             }.value
 
@@ -2231,7 +2329,11 @@ final class AppModel: ObservableObject {
         }
     }
 
-    func restoreRecentlyDeletedItem(_ item: RecentlyDeletedItem, allowPartial: Bool = false) {
+    func restoreRecentlyDeletedItem(
+        _ item: RecentlyDeletedItem,
+        allowPartial: Bool = false,
+        markRestoredPlayerPresent: Bool = false
+    ) {
         switch item.payload {
         case .team(let deletedTeam):
             let summary = missingMediaSummary(for: deletedTeam.team)
@@ -2250,7 +2352,12 @@ final class AppModel: ObservableObject {
                 lastError = "Roll Call could not fully restore \(deletedPlayer.player.displayName). Choose Restore What We Can to bring back the player without the missing media."
                 return
             }
-            restoreDeletedPlayer(item, deletedPlayer: deletedPlayer, missingTypes: missingTypes)
+            restoreDeletedPlayer(
+                item,
+                deletedPlayer: deletedPlayer,
+                missingTypes: missingTypes,
+                markPresent: markRestoredPlayerPresent
+            )
         case .customClip(let deletedClip):
             guard state.teams.contains(where: { $0.id == deletedClip.originalTeamID }) else {
                 lastError = "Restore the team first to bring this Custom Clip back."
@@ -2422,6 +2529,20 @@ final class AppModel: ObservableObject {
         }
     }
 
+    func playerWillUseFallback(for player: Player) -> Bool {
+        switch selectedTeam?.session.gameDayAnnouncerMode ?? .announcerAndSong {
+        case .announcerOnly:
+            return !hasStoredCustomAnnouncer(for: player)
+        case .announcerAndSong, .songOnly:
+            guard let cue = resolvedCue(for: player) else { return true }
+            return !cueIsPlayable(cue)
+        }
+    }
+
+    func isPlayingFallback(for player: Player) -> Bool {
+        activeFallbackPlayerID == player.id && playbackEngine.activeCueID == playbackID(for: player)
+    }
+
     private func playbackPlan(for player: Player) -> PlayerPlaybackPlan? {
         let mode = selectedTeam?.session.gameDayAnnouncerMode ?? .announcerAndSong
         let announcerRelativePath = storedCustomAnnouncerRelativePath(for: player)
@@ -2542,6 +2663,17 @@ final class AppModel: ObservableObject {
     private func removeAssetIfUnreferenced(relativePath: String) {
         guard !assetIsReferenced(relativePath: relativePath) else { return }
         guard !assetIsReferencedByBackupSnapshot(relativePath: relativePath) else { return }
+        pendingAssetCleanupPaths.insert(relativePath)
+    }
+
+    func discardUncommittedAsset(relativePath: String) {
+        removeAssetIfUnreferenced(relativePath: relativePath)
+        persist()
+    }
+
+    private func removePersistedAssetIfStillUnreferenced(relativePath: String) {
+        guard !assetIsReferenced(relativePath: relativePath) else { return }
+        guard !assetIsReferencedByBackupSnapshot(relativePath: relativePath) else { return }
         audioAssetService.removeAsset(relativePath: relativePath)
     }
 
@@ -2659,6 +2791,7 @@ final class AppModel: ObservableObject {
     private func backupSnapshotState(from state: AppState) -> AppState {
         var snapshotState = state
         snapshotState.recentlyDeleted = []
+        snapshotState.snapshots = []
         return snapshotState
     }
 
@@ -2676,9 +2809,10 @@ final class AppModel: ObservableObject {
         var songCount = 0
         var photoCount = 0
         var announcementCueCount = 0
+        var customClipCount = 0
 
         var hasMissingMedia: Bool {
-            songCount > 0 || photoCount > 0 || announcementCueCount > 0
+            songCount > 0 || photoCount > 0 || announcementCueCount > 0 || customClipCount > 0
         }
 
         var warningText: String {
@@ -2691,6 +2825,9 @@ final class AppModel: ObservableObject {
             }
             if announcementCueCount > 0 {
                 segments.append("\(announcementCueCount) \(announcementCueCount == 1 ? "Announcement Cue is" : "Announcement Cues are") missing")
+            }
+            if customClipCount > 0 {
+                segments.append("\(customClipCount) \(customClipCount == 1 ? "Custom Clip is" : "Custom Clips are") missing audio")
             }
             guard let first = segments.first else { return "" }
             if segments.count == 1 {
@@ -2721,7 +2858,7 @@ final class AppModel: ObservableObject {
     }
 
     private func missingMediaSummary(for team: Team) -> MissingMediaSummary {
-        team.players.reduce(into: MissingMediaSummary()) { summary, player in
+        var summary = team.players.reduce(into: MissingMediaSummary()) { summary, player in
             let missingTypes = missingMediaTypes(for: player)
             if missingTypes.contains(.song) {
                 summary.songCount += 1
@@ -2733,6 +2870,8 @@ final class AppModel: ObservableObject {
                 summary.announcementCueCount += 1
             }
         }
+        summary.customClipCount = team.teamClips.filter { !cueIsPlayable($0.playbackCue) }.count
+        return summary
     }
 
     private func playerPartialPrompt(for item: RecentlyDeletedItem, player: Player, missingTypes: [MissingMediaType]) -> PartialRestorePrompt {
@@ -2785,7 +2924,7 @@ final class AppModel: ObservableObject {
         state.recentlyDeleted.removeAll { $0.id == item.id }
         scheduleReadinessRefresh()
         prewarmNextBatterCue()
-        pendingRecoveryNavigationToken = UUID()
+        pendingRecoveryNavigation = .players
         if let partialSummary {
             showBanner("\(restoredTeam.name) restored, but \(partialSummary.warningText). Open players to re-add the missing media.", style: .warning)
         } else {
@@ -2794,14 +2933,21 @@ final class AppModel: ObservableObject {
         persist()
     }
 
-    private func restoreDeletedPlayer(_ item: RecentlyDeletedItem, deletedPlayer: DeletedPlayerRecord, missingTypes: [MissingMediaType]) {
+    private func restoreDeletedPlayer(
+        _ item: RecentlyDeletedItem,
+        deletedPlayer: DeletedPlayerRecord,
+        missingTypes: [MissingMediaType],
+        markPresent: Bool
+    ) {
         guard let restoreTeamIndex = state.teams.firstIndex(where: { $0.id == deletedPlayer.originalTeamID }) else {
             lastError = "Restore the team first to bring this player back."
             return
         }
 
         var restoredPlayer = deletedPlayer.player
-        restoredPlayer.isPresent = true
+        if markPresent {
+            restoredPlayer.isPresent = true
+        }
         let insertionIndex = restoredPlayerInsertionIndex(
             previousBattingOrder: deletedPlayer.previousBattingOrder,
             playerID: restoredPlayer.id,
@@ -2818,9 +2964,12 @@ final class AppModel: ObservableObject {
         state.recentlyDeleted.removeAll { $0.id == item.id }
         scheduleReadinessRefresh()
         prewarmNextBatterCue()
-        pendingRecoveryNavigationToken = UUID()
+        pendingRecoveryNavigation = .players
         if missingTypes.isEmpty {
-            showBanner("\(restoredPlayer.displayName) restored.", style: .success)
+            showBanner(
+                markPresent ? "\(restoredPlayer.displayName) restored and marked present." : "\(restoredPlayer.displayName) restored.",
+                style: .success
+            )
         } else {
             showBanner("\(restoredPlayer.displayName) restored, but \(playerMissingSummaryText(missingTypes)) missing. Open the player to re-add it.", style: .warning)
         }
@@ -2847,7 +2996,7 @@ final class AppModel: ObservableObject {
             trigger: .importRepair
         )
         scheduleReadinessRefresh()
-        pendingRecoveryNavigationToken = UUID()
+        pendingRecoveryNavigation = .customClip(deletedClip.clip.id)
         let name = deletedClip.clip.displayName ?? deletedClip.clip.playbackCue.label
         showBanner(
             isMissingMedia ? "\(name) restored, but it still needs repair." : "\(name) restored.",
@@ -3297,13 +3446,12 @@ final class AppModel: ObservableObject {
 
         updateSongClip(clip, teamID: request.teamID, target: request.target)
         state.teams[teamIndex].modifiedAt = .now
-        persist()
-        scheduleReadinessRefresh()
-
         if let previousGeneratedPath,
            previousGeneratedPath != clip.generatedAsset.relativePath {
             removeAssetIfUnreferenced(relativePath: previousGeneratedPath)
         }
+        persist()
+        scheduleReadinessRefresh()
     }
 
     private func recordPreparationFailure(
@@ -3342,25 +3490,34 @@ final class AppModel: ObservableObject {
 
     private func persist() {
         let snapshot = state
+        let cleanupPaths = pendingAssetCleanupPaths
+        pendingAssetCleanupPaths.removeAll()
         let destinationURL: URL
         do {
             destinationURL = try AppPaths.stateURL()
         } catch {
+            pendingAssetCleanupPaths.formUnion(cleanupPaths)
             lastError = error.localizedDescription
             return
         }
         persistSequence += 1
         let sequence = persistSequence
         Task(priority: .utility) { [persistenceWriter] in
-            let errorDescription = await persistenceWriter.enqueue(
+            let result = await persistenceWriter.enqueue(
                 snapshot,
                 sequence: sequence,
                 destinationURL: destinationURL
             )
 
-            if let errorDescription {
-                await MainActor.run {
+            await MainActor.run {
+                switch result {
+                case .written:
+                    cleanupPaths.forEach(self.removePersistedAssetIfStillUnreferenced)
+                case .failed(let errorDescription):
+                    self.pendingAssetCleanupPaths.formUnion(cleanupPaths)
                     self.lastError = errorDescription
+                case .unconfirmed:
+                    self.pendingAssetCleanupPaths.formUnion(cleanupPaths)
                 }
             }
         }
@@ -3810,17 +3967,23 @@ struct GeneratedAnnouncerAsset {
     var voiceLanguageCode: String?
 }
 
+private enum StatePersistenceResult {
+    case written
+    case failed(String)
+    case unconfirmed
+}
+
 private actor StatePersistenceWriter {
     private var latestSequence = 0
     private var pending: (state: AppState, sequence: Int, destinationURL: URL)?
     private var isWriting = false
 
-    func enqueue(_ state: AppState, sequence: Int, destinationURL: URL) async -> String? {
-        guard sequence >= latestSequence else { return nil }
+    func enqueue(_ state: AppState, sequence: Int, destinationURL: URL) async -> StatePersistenceResult {
+        guard sequence >= latestSequence else { return .unconfirmed }
         latestSequence = sequence
         pending = (state, sequence, destinationURL)
 
-        guard !isWriting else { return nil }
+        guard !isWriting else { return .unconfirmed }
         isWriting = true
         defer { isWriting = false }
 
@@ -3833,7 +3996,10 @@ private actor StatePersistenceWriter {
                 latestError = error.localizedDescription
             }
         }
-        return latestError
+        if let latestError {
+            return .failed(latestError)
+        }
+        return .written
     }
 }
 

@@ -8,7 +8,22 @@ enum AppMetadata {
     static let appVersion = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0.0.0"
     static let buildNumber = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "0"
     static let customIntroStorageMarker = "flat-custom-intro-v2"
-    static let whatsNewReleaseID = "\(appVersion) (\(buildNumber))"
+    static var whatsNewReleaseID: String {
+        releaseFamily(for: appVersion)
+    }
+
+    static func releaseFamily(for version: String) -> String {
+        let components = version.split(separator: ".")
+        guard components.count >= 2 else { return version }
+        return components.prefix(2).map(String.init).joined(separator: ".")
+    }
+
+    static func hasSeenWhatsNewRelease(_ savedReleaseID: String?, for currentVersion: String = appVersion) -> Bool {
+        guard let savedReleaseID else { return false }
+        let savedVersion = savedReleaseID.split(separator: " ").first.map(String.init) ?? savedReleaseID
+        return releaseFamily(for: savedVersion) == releaseFamily(for: currentVersion)
+    }
+
     static let appStoreWriteReviewURL = URL(string: "https://apps.apple.com/us/app/roll-call-walk-up-music/id6769516985?action=write-review")!
 }
 
@@ -700,16 +715,95 @@ enum ReadinessState: String, Codable {
     }
 }
 
+enum ReadinessCheckCategory: String, Codable, Equatable {
+    case playerAudio
+    case playerAnnouncement
+    case playerPhoto
+    case audioRoute
+    case volume
+    case network
+    case appleMusicAccess
+    case lineup
+}
+
+enum ReadinessCheckAction: String, Codable, Equatable {
+    case none
+    case requestAppleMusicAccess
+}
+
 struct ReadinessCheck: Codable, Equatable, Identifiable {
     var id: String
     var title: String
     var detail: String
     var state: ReadinessState
+    var category: ReadinessCheckCategory
+    var playerID: UUID?
+    var action: ReadinessCheckAction
+
+    init(
+        id: String,
+        title: String,
+        detail: String,
+        state: ReadinessState,
+        category: ReadinessCheckCategory? = nil,
+        playerID: UUID? = nil,
+        action: ReadinessCheckAction = .none
+    ) {
+        self.id = id
+        self.title = title
+        self.detail = detail
+        self.state = state
+        self.category = category ?? Self.legacyCategory(for: id)
+        self.playerID = playerID
+        self.action = action
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id
+        case title
+        case detail
+        case state
+        case category
+        case playerID
+        case action
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(String.self, forKey: .id)
+        title = try container.decode(String.self, forKey: .title)
+        detail = try container.decode(String.self, forKey: .detail)
+        state = try container.decode(ReadinessState.self, forKey: .state)
+        category = try container.decodeIfPresent(ReadinessCheckCategory.self, forKey: .category)
+            ?? Self.legacyCategory(for: id)
+        playerID = try container.decodeIfPresent(UUID.self, forKey: .playerID)
+        action = try container.decodeIfPresent(ReadinessCheckAction.self, forKey: .action) ?? .none
+    }
+
+    private static func legacyCategory(for id: String) -> ReadinessCheckCategory {
+        if id.contains("announcement-upgrade") || id.contains("custom-announcer") {
+            return .playerAnnouncement
+        }
+        if id.contains("photo-upgrade") {
+            return .playerPhoto
+        }
+        if id.hasPrefix("player-") {
+            return .playerAudio
+        }
+        switch id {
+        case "route": return .audioRoute
+        case "volume": return .volume
+        case "network": return .network
+        case "music-auth": return .appleMusicAccess
+        default: return .lineup
+        }
+    }
 }
 
 struct ReadinessStatus: Codable, Equatable {
     var generatedAt: Date
     var checks: [ReadinessCheck]
+    var teamID: UUID? = nil
 }
 
 struct SnapshotRecord: Codable, Equatable, Identifiable {
@@ -1159,6 +1253,10 @@ struct PendingPackageImport: Identifiable {
     var customAnnouncementCount: Int {
         team.players.filter { $0.customAnnouncerRelativePath != nil }.count
     }
+
+    var customClipCount: Int {
+        team.teamClips.count
+    }
 }
 
 struct PendingPackageExport: Identifiable {
@@ -1279,7 +1377,7 @@ extension BuiltInClip {
 
 extension Team {
     func orderedPlayers(by ids: [UUID]) -> [Player] {
-        let lookup = Dictionary(uniqueKeysWithValues: players.map { ($0.id, $0) })
+        let lookup = Dictionary(players.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
         let ordered = ids.compactMap { lookup[$0] }
         let unordered = players.filter { player in
             !ids.contains(player.id)

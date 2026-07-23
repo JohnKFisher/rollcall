@@ -41,7 +41,7 @@ final class RecentlyDeletedTests: XCTestCase {
     }
 
     @MainActor
-    func testRestoreDeletedPlayerReturnsPlayerToOriginalTeamAsPresent() throws {
+    func testRestoreDeletedPlayerPreservesOriginalPresence() throws {
         let player = RollCallTestFixtures.player(
             id: RollCallTestFixtures.alexID,
             name: "Alex Ramirez",
@@ -73,7 +73,7 @@ final class RecentlyDeletedTests: XCTestCase {
         XCTAssertEqual(model.state.recentlyDeleted.count, 0)
         XCTAssertEqual(model.state.selectedTeamID, team.id)
         XCTAssertEqual(model.state.teams.first?.players.first?.displayName, "Alex Ramirez")
-        XCTAssertEqual(model.state.teams.first?.players.first?.isPresent, true)
+        XCTAssertEqual(model.state.teams.first?.players.first?.isPresent, false)
         XCTAssertEqual(model.state.teams.first?.session.battingOrder, [player.id])
     }
 

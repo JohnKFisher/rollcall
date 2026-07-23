@@ -127,7 +127,7 @@ private struct RollCallButtonStyleModifier: ViewModifier {
     }
 }
 
-extension Button {
+extension View {
     func rollCallButtonStyle(
         _ family: RollCallButtonFamily,
         surface: RollCallSurfaceVariant = .standard

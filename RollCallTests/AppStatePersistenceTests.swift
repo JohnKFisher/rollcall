@@ -2,6 +2,14 @@ import XCTest
 @testable import RollCall
 
 final class AppStatePersistenceTests: XCTestCase {
+    func testWhatsNewReleaseIdentityStaysWithinMajorMinorFamily() {
+        XCTAssertEqual(AppMetadata.releaseFamily(for: "1.2.1"), "1.2")
+        XCTAssertTrue(AppMetadata.hasSeenWhatsNewRelease("1.2 (76)", for: "1.2.1"))
+        XCTAssertTrue(AppMetadata.hasSeenWhatsNewRelease("1.2.1 (77)", for: "1.2.2"))
+        XCTAssertFalse(AppMetadata.hasSeenWhatsNewRelease("1.1 (73)", for: "1.2.1"))
+        XCTAssertFalse(AppMetadata.hasSeenWhatsNewRelease(nil, for: "1.2.1"))
+    }
+
     func testDefaultTrimLengthIsTwelveSeconds() throws {
         XCTAssertEqual(AppState.empty.trimDefaults.preferredLength, 12)
 

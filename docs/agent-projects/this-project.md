@@ -1,9 +1,3 @@
-# Roll Call Project Profile
-
-Read this when the repository/task is Roll Call or clearly touches Roll Call product behavior, release/App Store work, support docs, Apple Music/media behavior, import/export packages, or existing Roll Call project docs.
-
-Do not read this for unrelated projects.
-
 ## Identity
 
 Roll Call is a public App Store app: `Roll Call: Walk-Up Music`.
@@ -55,8 +49,6 @@ Likely project docs, if present:
 - `docs/DECISIONS.md`
 - `docs/WHERE_WE_STAND.md`
 - `docs/WORKING_CHANGELOG.md`
-- release notes / App Store / TestFlight / support docs
-- privacy, terms, licenses, Sidelark Labs site pages
 
 Do not inline long Roll Call history into agent rules. Route to the relevant current project doc when needed.
 

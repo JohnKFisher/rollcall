@@ -1,0 +1,327 @@
+{
+  ".claude/settings.local.json": {
+    "mtime": 1779574435.6929958,
+    "ast_hash": "c5f41ab0a3b2de6e88cb427a364a3eac",
+    "semantic_hash": "c5f41ab0a3b2de6e88cb427a364a3eac"
+  },
+  "RollCall.xcodeproj/xcshareddata/xcodecloud/manifest.json": {
+    "mtime": 1783813508.0,
+    "ast_hash": "52c5eb1595c30c77ccb62b9d134f2ccf",
+    "semantic_hash": "52c5eb1595c30c77ccb62b9d134f2ccf"
+  },
+  "RollCall/AppIcon.icon/icon.json": {
+    "mtime": 1782442102.0,
+    "ast_hash": "376df00507f6843c6c35c68839e6cc52",
+    "semantic_hash": "376df00507f6843c6c35c68839e6cc52"
+  },
+  "RollCall/AppModel.swift": {
+    "mtime": 1783822467.2854154,
+    "ast_hash": "8f8540d58398c22ec9e1036db8609166",
+    "semantic_hash": "8f8540d58398c22ec9e1036db8609166"
+  },
+  "RollCall/Assets.xcassets/AccentColor.colorset/Contents.json": {
+    "mtime": 1778532511.0027401,
+    "ast_hash": "c621aed727181f7c0dac3388d5cef191",
+    "semantic_hash": "c621aed727181f7c0dac3388d5cef191"
+  },
+  "RollCall/Assets.xcassets/AppIcon.appiconset/Contents.json": {
+    "mtime": 1782395335.4725122,
+    "ast_hash": "249507388fbd0f5e355cc3f08f92fc1e",
+    "semantic_hash": "249507388fbd0f5e355cc3f08f92fc1e"
+  },
+  "RollCall/Assets.xcassets/Contents.json": {
+    "mtime": 1778532510.9184544,
+    "ast_hash": "9deb2ada1cc834bbebf8bbad9c8978a1",
+    "semantic_hash": "9deb2ada1cc834bbebf8bbad9c8978a1"
+  },
+  "RollCall/Assets.xcassets/John.imageset/Contents.json": {
+    "mtime": 1779220528.83526,
+    "ast_hash": "25cc8f5cd7ef99e95f747124c823ced5",
+    "semantic_hash": "25cc8f5cd7ef99e95f747124c823ced5"
+  },
+  "RollCall/Assets.xcassets/SoftballLaunch.imageset/Contents.json": {
+    "mtime": 1779560359.5325825,
+    "ast_hash": "ae68c7f92563db60ead72fb48adf140e",
+    "semantic_hash": "ae68c7f92563db60ead72fb48adf140e"
+  },
+  "RollCall/BuildEnvironment.swift": {
+    "mtime": 1782395335.4798317,
+    "ast_hash": "4377313f7be1ad9e8f46bc6681a36dc0",
+    "semantic_hash": "4377313f7be1ad9e8f46bc6681a36dc0"
+  },
+  "RollCall/DesignSystem/RollCallButtonStyles.swift": {
+    "mtime": 1783814291.6705587,
+    "ast_hash": "2d3f0329b8baf31dadf73ceb3d01d195",
+    "semantic_hash": "2d3f0329b8baf31dadf73ceb3d01d195"
+  },
+  "RollCall/DesignSystem/RollCallCardStyles.swift": {
+    "mtime": 1781014338.1045637,
+    "ast_hash": "031031c651bf15716c604acb91c1ecaa",
+    "semantic_hash": "031031c651bf15716c604acb91c1ecaa"
+  },
+  "RollCall/DesignSystem/RollCallColors.swift": {
+    "mtime": 1782395335.4803493,
+    "ast_hash": "492941bb1c2d899e1e89923c96bb80fe",
+    "semantic_hash": "492941bb1c2d899e1e89923c96bb80fe"
+  },
+  "RollCall/DesignSystem/RollCallDesignSystem.swift": {
+    "mtime": 1778868930.9063966,
+    "ast_hash": "aa0c4d7d6effa8ae7282f1601b53e410",
+    "semantic_hash": "aa0c4d7d6effa8ae7282f1601b53e410"
+  },
+  "RollCall/DesignSystem/RollCallSpacing.swift": {
+    "mtime": 1778868931.0880988,
+    "ast_hash": "e56d48f240f73dd3a38f38d4dff63df8",
+    "semantic_hash": "e56d48f240f73dd3a38f38d4dff63df8"
+  },
+  "RollCall/DesignSystem/RollCallTypography.swift": {
+    "mtime": 1779394606.5978565,
+    "ast_hash": "4175ddc204d20377339e3d4b03f638d9",
+    "semantic_hash": "4175ddc204d20377339e3d4b03f638d9"
+  },
+  "RollCall/DesignSystem/StatusChip.swift": {
+    "mtime": 1778868931.2522333,
+    "ast_hash": "2a9dd64eee5c12ab408b47cc9a654912",
+    "semantic_hash": "2a9dd64eee5c12ab408b47cc9a654912"
+  },
+  "RollCall/DesignSystem/TeamBanner.swift": {
+    "mtime": 1781014338.1055472,
+    "ast_hash": "ad4ae832f839768b08559d6c78299f0c",
+    "semantic_hash": "ad4ae832f839768b08559d6c78299f0c"
+  },
+  "RollCall/GeneratedClipCleanupService.swift": {
+    "mtime": 1782395335.480613,
+    "ast_hash": "2f2a8b20b63442cac808dcac42afdf85",
+    "semantic_hash": "2f2a8b20b63442cac808dcac42afdf85"
+  },
+  "RollCall/Models.swift": {
+    "mtime": 1783822467.1731381,
+    "ast_hash": "4ca928ea18cf8d1b549623ffd290e233",
+    "semantic_hash": "4ca928ea18cf8d1b549623ffd290e233"
+  },
+  "RollCall/MusicRenderProbeModels.swift": {
+    "mtime": 1782395335.4813454,
+    "ast_hash": "035e0691566eab2c3dd4587a568c6f01",
+    "semantic_hash": "035e0691566eab2c3dd4587a568c6f01"
+  },
+  "RollCall/MusicRenderProbeService.swift": {
+    "mtime": 1782395335.4815829,
+    "ast_hash": "4e1e7eff7b8fb421d6228addcc71b57d",
+    "semantic_hash": "4e1e7eff7b8fb421d6228addcc71b57d"
+  },
+  "RollCall/MusicRenderProbeView.swift": {
+    "mtime": 1782395335.4818277,
+    "ast_hash": "a9392141f54f0b95d6b6564ec4ce9b07",
+    "semantic_hash": "a9392141f54f0b95d6b6564ec4ce9b07"
+  },
+  "RollCall/RollCallApp.swift": {
+    "mtime": 1782395335.4821916,
+    "ast_hash": "1a5326ffbeebbe5d53464cd9aab5cfb3",
+    "semantic_hash": "1a5326ffbeebbe5d53464cd9aab5cfb3"
+  },
+  "RollCall/RootView.swift": {
+    "mtime": 1783814291.3960712,
+    "ast_hash": "3fed858f8a2c3a6fe96ca35906216079",
+    "semantic_hash": "3fed858f8a2c3a6fe96ca35906216079"
+  },
+  "RollCall/Services.swift": {
+    "mtime": 1783814291.1224358,
+    "ast_hash": "d9f74fd1dc2b73103e5998d71bef30c3",
+    "semantic_hash": "d9f74fd1dc2b73103e5998d71bef30c3"
+  },
+  "RollCall/SongClipGenerationQueue.swift": {
+    "mtime": 1782395335.4862745,
+    "ast_hash": "de28a1d0a9f7a8c67cbbdc7ef616fc77",
+    "semantic_hash": "de28a1d0a9f7a8c67cbbdc7ef616fc77"
+  },
+  "RollCall/SongClipGenerationService.swift": {
+    "mtime": 1782395335.4867086,
+    "ast_hash": "f3c29d25d819f56dac4a0f77d7e9db43",
+    "semantic_hash": "f3c29d25d819f56dac4a0f77d7e9db43"
+  },
+  "RollCall/SongClipModels.swift": {
+    "mtime": 1782395335.4871645,
+    "ast_hash": "ebbc2181ef6d15ce49592eb1fd620503",
+    "semantic_hash": "ebbc2181ef6d15ce49592eb1fd620503"
+  },
+  "RollCall/SongPickerFlow.swift": {
+    "mtime": 1783743048.8586836,
+    "ast_hash": "ef2be1cd5a37e7c4a87b937605b73956",
+    "semantic_hash": "ef2be1cd5a37e7c4a87b937605b73956"
+  },
+  "RollCall/SongWaveformService.swift": {
+    "mtime": 1782395335.4879293,
+    "ast_hash": "f7886893c8774caabc31a929cabf8a33",
+    "semantic_hash": "f7886893c8774caabc31a929cabf8a33"
+  },
+  "RollCallTests/AppStatePersistenceTests.swift": {
+    "mtime": 1783822467.5049345,
+    "ast_hash": "a054c2bd696dca8d36b61c2f1d6512c5",
+    "semantic_hash": "a054c2bd696dca8d36b61c2f1d6512c5"
+  },
+  "RollCallTests/BackupRestoreTests.swift": {
+    "mtime": 1782395335.4886844,
+    "ast_hash": "4e90f5456301baf27474330a91fe4dc8",
+    "semantic_hash": "4e90f5456301baf27474330a91fe4dc8"
+  },
+  "RollCallTests/GeneratedClipCleanupTests.swift": {
+    "mtime": 1782395335.4890053,
+    "ast_hash": "dc85225471d1beb98d2eded47a8a1c37",
+    "semantic_hash": "dc85225471d1beb98d2eded47a8a1c37"
+  },
+  "RollCallTests/MusicRenderProbeTests.swift": {
+    "mtime": 1782395335.4892457,
+    "ast_hash": "6485ac7c2266ce6bc4cea76c4096a1cb",
+    "semantic_hash": "6485ac7c2266ce6bc4cea76c4096a1cb"
+  },
+  "RollCallTests/PackageServiceTests.swift": {
+    "mtime": 1783651932.8207421,
+    "ast_hash": "68a3d4a73359ce14f7da338c3990df65",
+    "semantic_hash": "68a3d4a73359ce14f7da338c3990df65"
+  },
+  "RollCallTests/RatingRequestTests.swift": {
+    "mtime": 1781014338.1108472,
+    "ast_hash": "248dc93e63da0120d1ed38ee03a0091d",
+    "semantic_hash": "248dc93e63da0120d1ed38ee03a0091d"
+  },
+  "RollCallTests/ReadinessServiceTests.swift": {
+    "mtime": 1782395335.490461,
+    "ast_hash": "9603fb9c9423637ca8def4b977bf72ce",
+    "semantic_hash": "9603fb9c9423637ca8def4b977bf72ce"
+  },
+  "RollCallTests/RecentlyDeletedTests.swift": {
+    "mtime": 1783651857.040659,
+    "ast_hash": "bd1369d107db342b7221c58ad01cd89a",
+    "semantic_hash": "bd1369d107db342b7221c58ad01cd89a"
+  },
+  "RollCallTests/RootTabStartupTests.swift": {
+    "mtime": 1780001314.2231932,
+    "ast_hash": "e5bdf021c7400896502d180a67ba7291",
+    "semantic_hash": "e5bdf021c7400896502d180a67ba7291"
+  },
+  "RollCallTests/RosterCSVImportTests.swift": {
+    "mtime": 1780001314.2235239,
+    "ast_hash": "a9b3bac1d6bbbde54a877fda3b9483b2",
+    "semantic_hash": "a9b3bac1d6bbbde54a877fda3b9483b2"
+  },
+  "RollCallTests/SongClipGenerationTests.swift": {
+    "mtime": 1782395335.4910836,
+    "ast_hash": "624c7aa6c2e69ebcd8bfd56803c8c6f3",
+    "semantic_hash": "624c7aa6c2e69ebcd8bfd56803c8c6f3"
+  },
+  "RollCallTests/TeamAppleMusicPlaylistSummaryTests.swift": {
+    "mtime": 1781014338.1111007,
+    "ast_hash": "5b6c52f3717053535d95786f31a58f36",
+    "semantic_hash": "5b6c52f3717053535d95786f31a58f36"
+  },
+  "RollCallTests/TeamLineupTests.swift": {
+    "mtime": 1781014338.1115358,
+    "ast_hash": "f8af56ddc5c65eabda3b125d6933d0f7",
+    "semantic_hash": "f8af56ddc5c65eabda3b125d6933d0f7"
+  },
+  "RollCallTests/TestSupport/RollCallTestFixtures.swift": {
+    "mtime": 1781014338.1117563,
+    "ast_hash": "d5df0dd61e3b5d04cb032efb81637eaf",
+    "semantic_hash": "d5df0dd61e3b5d04cb032efb81637eaf"
+  },
+  "AGENTS.md": {
+    "mtime": 1782924705.039945,
+    "ast_hash": "1b297b207b6c4db310c494a52538c700",
+    "semantic_hash": "1b297b207b6c4db310c494a52538c700"
+  },
+  "ATTRIBUTIONS.md": {
+    "mtime": 1781014338.100611,
+    "ast_hash": "7fcd831b58f8b57a250221f28088c6d7",
+    "semantic_hash": "7fcd831b58f8b57a250221f28088c6d7"
+  },
+  "CLAUDE.md": {
+    "mtime": 1782878921.0,
+    "ast_hash": "e8567631fcf94ae53013c2da2d6b2e46",
+    "semantic_hash": "e8567631fcf94ae53013c2da2d6b2e46"
+  },
+  "README.md": {
+    "mtime": 1780088554.6081276,
+    "ast_hash": "6fe31b6e0103df6e03f88bb33efa4e51",
+    "semantic_hash": "6fe31b6e0103df6e03f88bb33efa4e51"
+  },
+  "ROLL-CALL-LICENSE-NOTICE.md": {
+    "mtime": 1779307989.3926835,
+    "ast_hash": "60f2418df569f1de5c5915818aeb344d",
+    "semantic_hash": "60f2418df569f1de5c5915818aeb344d"
+  },
+  "RollCall/AppIcon.icon/Assets/Image Layer.png": {
+    "mtime": 1782442102.0,
+    "ast_hash": "e53cb084c6623e4b8f8e27d19e830654",
+    "semantic_hash": "e53cb084c6623e4b8f8e27d19e830654"
+  },
+  "RollCall/AppIcon.icon/Assets/Layer 7.png": {
+    "mtime": 1782442102.0,
+    "ast_hash": "ce16ad97a4dcd9cbe1b7471f211968c2",
+    "semantic_hash": "ce16ad97a4dcd9cbe1b7471f211968c2"
+  },
+  "RollCall/AppIcon.icon/Assets/Layer 8.png": {
+    "mtime": 1782442102.0,
+    "ast_hash": "d4b3272d79c7e9988d3f06b5a0fff89a",
+    "semantic_hash": "d4b3272d79c7e9988d3f06b5a0fff89a"
+  },
+  "RollCall/AppIcon.icon/Assets/Oval.png": {
+    "mtime": 1782442102.0,
+    "ast_hash": "f36011e6469e3bad952d4e766cb88be5",
+    "semantic_hash": "f36011e6469e3bad952d4e766cb88be5"
+  },
+  "RollCall/Assets.xcassets/AppIcon.appiconset/Icon-1024.png": {
+    "mtime": 1782395335.4755478,
+    "ast_hash": "b2fa4442c1680149b0fa20ba9a1bcf14",
+    "semantic_hash": "b2fa4442c1680149b0fa20ba9a1bcf14"
+  },
+  "RollCall/Assets.xcassets/AppIcon.appiconset/Icon-20@2x.png": {
+    "mtime": 1782395335.4761887,
+    "ast_hash": "5b137d2b9429f045f9083845bf6da513",
+    "semantic_hash": "5b137d2b9429f045f9083845bf6da513"
+  },
+  "RollCall/Assets.xcassets/AppIcon.appiconset/Icon-20@3x.png": {
+    "mtime": 1782395335.476638,
+    "ast_hash": "d0dbf9a26c666027f73ce001a8abbd27",
+    "semantic_hash": "d0dbf9a26c666027f73ce001a8abbd27"
+  },
+  "RollCall/Assets.xcassets/AppIcon.appiconset/Icon-29@2x.png": {
+    "mtime": 1782395335.4770324,
+    "ast_hash": "d73218f0260a22122c9b6603ea21f684",
+    "semantic_hash": "d73218f0260a22122c9b6603ea21f684"
+  },
+  "RollCall/RollCallDocumentIcon-320x320.png": {
+    "mtime": 1782395335.4827886,
+    "ast_hash": "d1532dc54a166e04f3b74fbab57819f4",
+    "semantic_hash": "d1532dc54a166e04f3b74fbab57819f4"
+  },
+  "RollCall/RollCallDocumentIcon-44x58.png": {
+    "mtime": 1782395335.4832442,
+    "ast_hash": "a3e624e1a4f8e195bcf9fe65687d041c",
+    "semantic_hash": "a3e624e1a4f8e195bcf9fe65687d041c"
+  },
+  "RollCall/BuiltInAudio/rhythmic-clap.mp3": {
+    "mtime": 1778722676.3044019,
+    "ast_hash": "8afa92bc4db737e274654a5c0e9425d9",
+    "semantic_hash": "8afa92bc4db737e274654a5c0e9425d9"
+  },
+  "RollCall/BuiltInAudio/small-cheer.mp3": {
+    "mtime": 1778722676.239194,
+    "ast_hash": "fb391420d0e3cb016813f7bbc746aec3",
+    "semantic_hash": "fb391420d0e3cb016813f7bbc746aec3"
+  },
+  "RollCall/BuiltInAudio/stadium-burst.mp3": {
+    "mtime": 1778722676.3033917,
+    "ast_hash": "1409a1ddd93c08312a0462d73e756b5c",
+    "semantic_hash": "1409a1ddd93c08312a0462d73e756b5c"
+  },
+  "RollCall/BuiltInAudio/victory-roar.mp3": {
+    "mtime": 1778722676.2382603,
+    "ast_hash": "ab28c35b23b6ca79d38cfee4f430aca0",
+    "semantic_hash": "ab28c35b23b6ca79d38cfee4f430aca0"
+  },
+  "RollCall/BuiltInAudio/whistle-pop.mp3": {
+    "mtime": 1778722676.2539375,
+    "ast_hash": "4bdc750cb2535b4123f808aa3aaa349d",
+    "semantic_hash": "4bdc750cb2535b4123f808aa3aaa349d"
+  }
+}

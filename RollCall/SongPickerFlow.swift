@@ -34,6 +34,7 @@ struct SongPickerFlow: View {
     @State private var pickerError: String?
     @State private var pendingExplicitLibraryItem: MPMediaItem?
     @State private var showExplicitLibraryConfirmation = false
+    @State private var importPreparationTask: Task<Void, Never>?
 
     var body: some View {
         NavigationStack {
@@ -43,8 +44,15 @@ struct SongPickerFlow: View {
                         savedDraftID = draft.id
                         onSave(cue)
                         dismiss()
-                    }
                 }
+            }
+        }
+        .toolbar {
+            if mode == .files {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }
+                }
+            }
         }
         .task {
             switch mode {
@@ -53,9 +61,16 @@ struct SongPickerFlow: View {
                     showPermissionPrimer = true
                 }
             case .files:
-                guard let importedURL,
-                      let cue = await appModel.makeImportedSongCueDraft(from: importedURL),
-                      !Task.isCancelled else {
+                guard let importedURL else {
+                    dismiss()
+                    return
+                }
+                guard let cue = await appModel.makeImportedSongCueDraft(from: importedURL) else {
+                    dismiss()
+                    return
+                }
+                guard !Task.isCancelled else {
+                    appModel.discardImportedSongCueDraft(cue)
                     dismiss()
                     return
                 }
@@ -72,6 +87,7 @@ struct SongPickerFlow: View {
             appModel.discardImportedSongCueDraft(oldValue.cue)
         }
         .onDisappear {
+            importPreparationTask?.cancel()
             guard let selectedDraft,
                   selectedDraft.isImported,
                   savedDraftID != selectedDraft.id else {
@@ -125,13 +141,13 @@ struct SongPickerFlow: View {
                 )
                 .ignoresSafeArea()
             } else {
-                MusicPermissionWaitingView()
+                MusicPermissionWaitingView(onCancel: { dismiss() })
             }
         case .appleMusic:
             if MusicAuthorization.currentStatus == .authorized {
                 AppleMusicCatalogPicker(appModel: appModel, onSelect: openEditor(for:))
             } else {
-                MusicPermissionWaitingView()
+                MusicPermissionWaitingView(onCancel: { dismiss() })
             }
         case .files:
             ProgressView("Preparing audio...")
@@ -177,8 +193,13 @@ struct SongPickerFlow: View {
             return
         }
 
-        Task {
+        importPreparationTask?.cancel()
+        importPreparationTask = Task { @MainActor in
             guard let cue = await appModel.makeImportedSongCueDraft(from: assetURL) else { return }
+            guard !Task.isCancelled else {
+                appModel.discardImportedSongCueDraft(cue)
+                return
+            }
             openEditor(for: cue, isImported: true)
         }
     }
@@ -199,13 +220,30 @@ struct SongPickerFlow: View {
 }
 
 private struct MusicPermissionWaitingView: View {
+    let onCancel: () -> Void
+
     var body: some View {
-        VStack(spacing: 12) {
-            ProgressView()
-            Text("Waiting for Music access...")
-                .foregroundStyle(.secondary)
+        if MusicAuthorization.currentStatus == .denied || MusicAuthorization.currentStatus == .restricted {
+            ContentUnavailableView {
+                Label("Music Access Is Off", systemImage: "music.note.slash")
+            } description: {
+                Text("You can enable Music access in Settings, or go back and import an audio file instead.")
+            } actions: {
+                Button("Open Settings") {
+                    guard let settingsURL = URL(string: UIApplication.openSettingsURLString) else { return }
+                    UIApplication.shared.open(settingsURL)
+                }
+                Button("Back", action: onCancel)
+            }
+        } else {
+            VStack(spacing: 12) {
+                ProgressView()
+                Text("Waiting for Music access...")
+                    .foregroundStyle(.secondary)
+                Button("Back", action: onCancel)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 }
 

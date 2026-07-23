@@ -779,10 +779,17 @@ struct RootView: View {
                 guard importedTeamID != nil else { return }
                 selectedTab = .teams
             }
-            .onChange(of: appModel.pendingRecoveryNavigationToken) { _, token in
-                guard token != nil else { return }
-                selectedTab = .players
-                appModel.pendingRecoveryNavigationToken = nil
+            .onChange(of: appModel.pendingRecoveryNavigation) { _, destination in
+                guard let destination else { return }
+                switch destination {
+                case .players:
+                    selectedTab = .players
+                case .customClip(let clipID):
+                    selectedTab = .generalClips
+                    showTeamClips = true
+                    customClipManagerInitialClipID = clipID
+                }
+                appModel.pendingRecoveryNavigation = nil
             }
             .onChange(of: canPresentAutomaticWhatsNew) { _, canPresent in
                 if canPresent {
@@ -1581,7 +1588,7 @@ struct RootView: View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: RollCallSpacingTier.large.value) {
-                    if let readiness = appModel.state.lastReadiness {
+                    if let readiness = appModel.selectedTeamReadiness {
                         ReadinessOverviewCard(
                             readiness: readiness,
                             team: appModel.selectedTeam,
@@ -1842,22 +1849,20 @@ struct RootView: View {
             return true
         }
 
-        guard let readiness = appModel.state.lastReadiness else { return false }
+        guard let readiness = appModel.selectedTeamReadiness else { return false }
         return readiness.checks.contains { check in
             guard check.state == .issue else { return false }
-            if check.id.contains("photo-upgrade") || check.id.contains("announcement-upgrade") { return false }
-            if check.id.contains("custom-announcer-issue") {
+            if check.category == .playerPhoto { return false }
+            if check.category == .playerAnnouncement {
                 return team.session.gameDayAnnouncerMode.usesAnnouncer
             }
-            if check.id.hasPrefix("player-") {
-                return presentPlayers.contains { player in
-                    check.id.contains(player.id.uuidString)
-                }
+            if check.category == .playerAudio {
+                return check.playerID.map { playerID in presentPlayers.contains { $0.id == playerID } } ?? false
             }
-            if check.id == "volume" {
+            if check.category == .volume {
                 return !appModel.state.settings.fadeOutVolumeAutomationEnabled
             }
-            return ["route", "network", "music-auth", "lineup"].contains(check.id)
+            return [.audioRoute, .network, .appleMusicAccess, .lineup].contains(check.category)
         }
     }
 
@@ -1908,16 +1913,6 @@ struct RootView: View {
                         }
                         .buttonStyle(.plain)
 
-                        NavigationLink {
-                            SupportRollCallScreen(onManageSubscriptions: manageSupportSubscriptions)
-                        } label: {
-                            SettingsNavigationLabel(
-                                title: "Support Roll Call",
-                                detail: "Optional contributions for maintenance and future improvements.",
-                                systemImage: "heart.fill"
-                            )
-                        }
-                        .buttonStyle(.plain)
                     }
 
                     SettingsSectionGroup(
@@ -2143,17 +2138,6 @@ struct RootView: View {
 
                 SettingsSectionGroup(title: "Support") {
                     VStack(alignment: .leading, spacing: RollCallSpacingTier.standard.value) {
-                        NavigationLink {
-                            SupportRollCallScreen(onManageSubscriptions: manageSupportSubscriptions)
-                        } label: {
-                            SettingsNavigationLabel(
-                                title: "Support Roll Call",
-                                detail: "Optional contributions help keep Roll Call maintained.",
-                                systemImage: "heart.fill"
-                            )
-                        }
-                        .buttonStyle(.plain)
-
                         Link(destination: URL(string: "https://sidelarklabs.com/rollcall/")!) {
                             SettingsRowLabel(
                                 title: "Roll Call Website",
@@ -2221,11 +2205,7 @@ struct RootView: View {
     }
 
     private func playerAudioReadinessChecks(from checks: [ReadinessCheck]) -> [ReadinessCheck] {
-        checks.filter { check in
-            check.id.hasPrefix("player-")
-                && !check.id.contains("announcement-upgrade")
-                && !check.id.contains("photo-upgrade")
-        }
+        checks.filter { $0.category == .playerAudio }
     }
 
     private func openImportedRepair(
@@ -2252,21 +2232,20 @@ struct RootView: View {
     }
 
     private func announcementReadinessChecks(from checks: [ReadinessCheck]) -> [ReadinessCheck] {
-        checks.filter { check in
-            check.id.contains("announcement-upgrade")
-        }
+        checks.filter { $0.category == .playerAnnouncement }
     }
 
     private func optionalUpgradeReadinessChecks(from checks: [ReadinessCheck]) -> [ReadinessCheck] {
-        checks.filter { $0.id.contains("photo-upgrade") }
+        checks.filter { $0.category == .playerPhoto }
     }
 
     private func gameDayReadinessChecks(from checks: [ReadinessCheck]) -> [ReadinessCheck] {
-        checks.filter { ["route", "volume", "network", "music-auth", "lineup"].contains($0.id) }
+        checks.filter { [.audioRoute, .volume, .network, .appleMusicAccess, .lineup].contains($0.category) }
     }
 
     private func playerForReadinessCheck(_ check: ReadinessCheck) -> Player? {
-        appModel.selectedTeam?.players.first { check.id.contains($0.id.uuidString) }
+        guard let playerID = check.playerID else { return nil }
+        return appModel.selectedTeam?.players.first { $0.id == playerID }
     }
 }
 
@@ -2557,6 +2536,16 @@ private struct OnboardingRootView: View {
                         .frame(maxWidth: .infinity)
                 }
                 .rollCallButtonStyle(.secondary)
+
+                if appModel.selectedTeam != nil {
+                    Button {
+                        appModel.startOnboardingReviewCurrentTeam()
+                    } label: {
+                        Label("Review Current Team", systemImage: "checklist")
+                            .frame(maxWidth: .infinity)
+                    }
+                    .rollCallButtonStyle(.secondary)
+                }
 
             }
         }
@@ -3526,7 +3515,7 @@ private struct ReadinessGameDayCheckRow: View {
     }
 
     private var canRequestAppleMusicAccess: Bool {
-        check.id == "music-auth" && check.detail == "Music authorization has not been requested yet."
+        check.action == .requestAppleMusicAccess
     }
 }
 
@@ -4851,7 +4840,7 @@ private struct AttributionsView: View {
                 }
 
                 SettingsSectionGroup(
-                    title: "Bundled General Clips",
+                    title: "Bundled Sound Effects",
                     helperText: "Roll Call includes bundled crowd sound effects from Mixkit."
                 ) {
                     VStack(alignment: .leading, spacing: RollCallSpacingTier.standard.value) {
@@ -5227,7 +5216,8 @@ private struct PackageImportConfirmationSheet: View {
                     PackageImportStatRow(title: "Built-In Cue Fallbacks", value: "\(pending.builtInCueCount)")
                     PackageImportStatRow(title: "Player Photos", value: "\(pending.photoCount)")
                     PackageImportStatRow(title: "Announcement Cues", value: "\(pending.customAnnouncementCount)")
-                    PackageImportStatRow(title: "General Clips", value: "\(pending.team.builtInClips.count)")
+                    PackageImportStatRow(title: "Built-In Sound Effects", value: "\(pending.team.builtInClips.count)")
+                    PackageImportStatRow(title: "Custom Clips", value: "\(pending.customClipCount)")
                 }
 
                 PackageTransferSummarySection(summary: pending.transferSummary)
@@ -5291,6 +5281,10 @@ private struct RosterImportPreviewSheet: View {
         "Importing \(pending.rows.count) players from \(pending.sourceName)"
     }
 
+    private var importButtonTitle: String {
+        duplicateCount > 0 ? "Import Anyway" : "Import"
+    }
+
     var body: some View {
         NavigationStack {
             List {
@@ -5329,7 +5323,7 @@ private struct RosterImportPreviewSheet: View {
                 }
 
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button("Import") {
+                    Button(importButtonTitle) {
                         onImport()
                     }
                 }
@@ -5524,7 +5518,7 @@ private struct GameDayTeamStack: View {
             return GameDayLiveWarning(text: "No present players in the lineup", role: .warning)
         }
 
-        guard let readiness = appModel.state.lastReadiness else { return nil }
+        guard let readiness = appModel.selectedTeamReadiness else { return nil }
         let issues = readiness.checks.filter(isLiveReadinessIssue)
         guard let firstIssue = issues.first else { return nil }
         if issues.count == 1 {
@@ -5547,6 +5541,7 @@ private struct GameDayTeamStack: View {
             if let displayedNowPlayer {
                 GameDayNowBattingHero(
                     appModel: appModel,
+                    teamID: team.id,
                     player: displayedNowPlayer,
                     titleLabel: nowBattingLabel,
                     isActive: isActive(displayedNowPlayer),
@@ -5576,6 +5571,7 @@ private struct GameDayTeamStack: View {
 
             GameDayPlayerGrid(
                 appModel: appModel,
+                teamID: team.id,
                 players: gameDayGridPlayers,
                 nowPlayerID: lineupNowPlayer?.id,
                 onDeckPlayerID: onDeckPlayer?.id,
@@ -5626,19 +5622,17 @@ private struct GameDayTeamStack: View {
 
     private func isLiveReadinessIssue(_ check: ReadinessCheck) -> Bool {
         guard check.state == .issue else { return false }
-        if check.id.contains("photo-upgrade") || check.id.contains("announcement-upgrade") { return false }
-        if check.id.contains("custom-announcer-issue") {
+        if check.category == .playerPhoto { return false }
+        if check.category == .playerAnnouncement {
             return team.session.gameDayAnnouncerMode.usesAnnouncer
         }
-        if check.id.hasPrefix("player-") {
-            return presentPlayers.contains { player in
-                check.id.contains(player.id.uuidString)
-            }
+        if check.category == .playerAudio {
+            return check.playerID.map { playerID in presentPlayers.contains { $0.id == playerID } } ?? false
         }
-        if check.id == "volume" {
+        if check.category == .volume {
             return !appModel.state.settings.fadeOutVolumeAutomationEnabled
         }
-        return ["route", "network", "music-auth", "lineup"].contains(check.id)
+        return [.audioRoute, .network, .appleMusicAccess, .lineup].contains(check.category)
     }
 
     private func willUseFallback(for player: Player) -> Bool {
@@ -5755,6 +5749,7 @@ private struct GameDayWarningStrip: View {
 
 private struct GameDayNowBattingHero: View {
     @ObservedObject var appModel: AppModel
+    let teamID: UUID
     let player: Player
     let titleLabel: String
     let isActive: Bool
@@ -5769,6 +5764,7 @@ private struct GameDayNowBattingHero: View {
         case .announcerOnly:
             return hasCustomAnnouncer ? "Announcer Only" : "Fallback: Small Cheer"
         case .announcerAndSong, .songOnly:
+            if willUseFallback { return "Fallback: Small Cheer" }
             if let cue = appModel.resolvedCue(for: player) {
                 return cue.label
             }
@@ -5777,7 +5773,7 @@ private struct GameDayNowBattingHero: View {
     }
 
     private var cueTitleShowsMusicIcon: Bool {
-        announcerMode != .announcerOnly && appModel.resolvedCue(for: player) != nil
+        announcerMode != .announcerOnly && !willUseFallback && appModel.resolvedCue(for: player) != nil
     }
 
     private var hasCustomAnnouncer: Bool {
@@ -5789,7 +5785,7 @@ private struct GameDayNowBattingHero: View {
         case .announcerOnly:
             return !hasCustomAnnouncer
         case .announcerAndSong, .songOnly:
-            return appModel.resolvedCue(for: player) == nil
+            return appModel.playerWillUseFallback(for: player) || (isActive && appModel.isPlayingFallback(for: player))
         }
     }
 
@@ -5813,7 +5809,7 @@ private struct GameDayNowBattingHero: View {
     }
 
     private var cueIcons: [GameDayTileCueIcon] {
-        let hasSong = appModel.resolvedCue(for: player) != nil
+        let hasSong = appModel.resolvedCue(for: player) != nil && !willUseFallback
         let availableColor = Color.rollCall(.ready, surface: .live)
         let missingColor = Color.rollCall(.destructive, surface: .live)
 
@@ -5864,7 +5860,7 @@ private struct GameDayNowBattingHero: View {
             if isCurrentlyActive {
                 appModel.stopPlayback()
             } else {
-                Task { await appModel.play(player: player) }
+                Task { await appModel.play(player: player, teamID: teamID) }
             }
         } label: {
             heroContent
@@ -6332,6 +6328,7 @@ private struct GameDayStatePill: View {
 private struct GameDayPlayerGrid: View {
     @ObservedObject var appModel: AppModel
     @ObservedObject private var playbackEngine: CuePlaybackEngine
+    let teamID: UUID
     let players: [Player]
     let nowPlayerID: UUID?
     let onDeckPlayerID: UUID?
@@ -6343,6 +6340,7 @@ private struct GameDayPlayerGrid: View {
 
     init(
         appModel: AppModel,
+        teamID: UUID,
         players: [Player],
         nowPlayerID: UUID?,
         onDeckPlayerID: UUID?,
@@ -6350,6 +6348,7 @@ private struct GameDayPlayerGrid: View {
         lineupProgressFocusedPlayerID: UUID?
     ) {
         self.appModel = appModel
+        self.teamID = teamID
         self.players = players
         self.nowPlayerID = nowPlayerID
         self.onDeckPlayerID = onDeckPlayerID
@@ -6369,7 +6368,7 @@ private struct GameDayPlayerGrid: View {
                     if isCurrentlyActive(player) {
                         appModel.stopPlayback()
                     } else {
-                        Task { await appModel.play(player: player) }
+                        Task { await appModel.play(player: player, teamID: teamID) }
                     }
                 } label: {
                     VStack(alignment: .leading, spacing: 5) {
@@ -6467,7 +6466,7 @@ private struct GameDayPlayerGrid: View {
 
     private func tileCueIcons(for player: Player) -> [GameDayTileCueIcon] {
         let hasAnnouncer = appModel.hasStoredCustomAnnouncer(for: player)
-        let hasSong = appModel.resolvedCue(for: player) != nil
+        let hasSong = appModel.resolvedCue(for: player) != nil && !willUseFallback(for: player)
         let availableColor = Color(uiColor: .secondaryLabel)
         let missingColor = Color(uiColor: .tertiaryLabel)
 
@@ -6531,7 +6530,7 @@ private struct GameDayPlayerGrid: View {
         case .announcerOnly:
             return !appModel.hasStoredCustomAnnouncer(for: player)
         case .announcerAndSong, .songOnly:
-            return appModel.resolvedCue(for: player) == nil
+            return appModel.playerWillUseFallback(for: player) || appModel.isPlayingFallback(for: player)
         }
     }
 
@@ -6857,10 +6856,22 @@ private struct RecoveryCenterView: View {
                 Spacer(minLength: 8)
 
                 if canRestore(restorePreparation) {
-                    Button("Restore") {
-                        handleRestore(item)
+                    if case .player(let deletedPlayer) = item.payload, !deletedPlayer.player.isPresent {
+                        Menu("Restore") {
+                            Button("Restore as Absent") {
+                                handleRestore(item)
+                            }
+                            Button("Restore and Mark Present") {
+                                handleRestore(item, markPlayerPresent: true)
+                            }
+                        }
+                        .rollCallButtonStyle(.primary)
+                    } else {
+                        Button("Restore") {
+                            handleRestore(item)
+                        }
+                        .rollCallButtonStyle(.primary)
                     }
-                    .rollCallButtonStyle(.primary)
                 }
             }
 
@@ -6878,10 +6889,10 @@ private struct RecoveryCenterView: View {
         }
     }
 
-    private func handleRestore(_ item: RecentlyDeletedItem) {
+    private func handleRestore(_ item: RecentlyDeletedItem, markPlayerPresent: Bool = false) {
         switch appModel.restorePreparation(for: item) {
         case .ready:
-            appModel.restoreRecentlyDeletedItem(item)
+            appModel.restoreRecentlyDeletedItem(item, markRestoredPlayerPresent: markPlayerPresent)
         case .blocked(let message):
             appModel.lastError = message
         case .partialPrompt(let prompt):
@@ -7825,6 +7836,8 @@ private struct PlayerEditorSheet: View {
     @State private var showDiscardChangesConfirmation = false
     @State private var isStartTrimEditingEnabled = false
     @State private var showExistingClipPicker = false
+    @State private var draftPhotoRelativePaths: Set<String> = []
+    @State private var didCommitDraft = false
     @FocusState private var focusedField: Field?
 
     private let lengthOptions: [Double] = [6, 8, 10, 12, 15]
@@ -7972,8 +7985,8 @@ private struct PlayerEditorSheet: View {
                             Button {
                                 let currentPlayer = player
                                 Task {
-                                    await appModel.stopRecordingCustomAnnouncer(for: currentPlayer)
-                                    await MainActor.run { refreshPlayerFromModel() }
+                                    await appModel.stopRecordingCustomAnnouncer(forPlayerID: currentPlayer.id)
+                                    await MainActor.run { synchronizeCustomAnnouncerFromModel() }
                                 }
                             } label: {
                                 Label("Stop Recording", systemImage: "stop.circle.fill")
@@ -7983,7 +7996,7 @@ private struct PlayerEditorSheet: View {
                             Button {
                                 let currentPlayer = player
                                 Task {
-                                    await appModel.startRecordingCustomAnnouncer(for: currentPlayer)
+                                    await appModel.startRecordingCustomAnnouncer(forPlayerID: currentPlayer.id)
                                 }
                             } label: {
                                 Label(appModel.customAnnouncerButtonTitle(for: player), systemImage: "mic.fill")
@@ -8035,6 +8048,7 @@ private struct PlayerEditorSheet: View {
             .listStyle(.insetGrouped)
             .accentWashListBackground()
             .navigationTitle(player.displayName.isEmpty ? "Player" : player.displayName)
+            .interactiveDismissDisabled(hasUnsavedChanges)
             .scrollDismissesKeyboard(.interactively)
             .dismissesKeyboardOnTap()
             .toolbar {
@@ -8052,14 +8066,21 @@ private struct PlayerEditorSheet: View {
                 normalizeTrimModeForCurrentCue()
             }
             .task {
+                let draftAtRefreshStart = PlayerEditorDraftState(player: player)
                 await appModel.refreshAppleMusicPlaybackCapability()
                 if await appModel.refreshAppleMusicCueMetadata(for: player.id) {
-                    await MainActor.run { refreshPlayerFromModel() }
+                    await MainActor.run {
+                        guard PlayerEditorDraftState(player: player) == draftAtRefreshStart else { return }
+                        synchronizeSongAssignmentFromModel()
+                    }
                 }
             }
             .onDisappear {
                 if appModel.isRecordingCustomAnnouncer(for: player) {
                     appModel.cancelRecordingCustomAnnouncer()
+                }
+                if !didCommitDraft {
+                    discardDraftPhotoAssets()
                 }
             }
             .alert("Are you sure?", isPresented: Binding(
@@ -8078,7 +8099,7 @@ private struct PlayerEditorSheet: View {
             .alert("Discard Changes?", isPresented: $showDiscardChangesConfirmation) {
                 Button("Keep Editing", role: .cancel) { }
                 Button("Discard Changes", role: .destructive) {
-                    dismiss()
+                    discardDraftAndDismiss()
                 }
             } message: {
                 Text("Closing now will lose unsaved name, number, photo, and any unsaved advanced trim edits. Song clips you saved in Make Your Clip and Announcement Cue changes are already saved.")
@@ -8121,7 +8142,7 @@ private struct PlayerEditorSheet: View {
                 )
             }
             .sheet(isPresented: $showExistingClipPicker, onDismiss: {
-                refreshPlayerFromModel()
+                synchronizeSongAssignmentFromModel()
             }) {
                 ExistingClipPickerSheet(appModel: appModel, destination: .player(player.id))
             }
@@ -8390,7 +8411,7 @@ private struct PlayerEditorSheet: View {
                 await MainActor.run {
                     guard !didCropperRender, let pending = pendingPhotoCrop else { return }
                     savePlayerPhoto(pending.image)
-                    appModel.lastError = "Photo crop screen did not load in time. Roll Call saved the original photo instead."
+                    appModel.lastError = "Photo crop screen did not load in time. The original photo is ready in this draft; tap Save to keep it."
                     pendingPhotoCrop = nil
                 }
             }
@@ -8403,7 +8424,13 @@ private struct PlayerEditorSheet: View {
         let fileName = "\(UUID().uuidString).jpg"
         do {
             try jpeg.write(to: assetsDir.appendingPathComponent(fileName), options: .atomic)
+            if let previousPath = player.photoRelativePath,
+               draftPhotoRelativePaths.contains(previousPath) {
+                appModel.discardUncommittedAsset(relativePath: previousPath)
+                draftPhotoRelativePaths.remove(previousPath)
+            }
             player.photoRelativePath = fileName
+            draftPhotoRelativePaths.insert(fileName)
         } catch {
             appModel.lastError = error.localizedDescription
         }
@@ -8415,6 +8442,25 @@ private struct PlayerEditorSheet: View {
         normalizeTrimModeForCurrentCue()
     }
 
+    private func synchronizeSongAssignmentFromModel() {
+        guard let savedPlayer else { return }
+        player.songAssignment = savedPlayer.songAssignment
+        isStartTrimEditingEnabled = false
+        normalizeTrimModeForCurrentCue()
+    }
+
+    private func synchronizeCustomAnnouncerFromModel() {
+        guard let savedPlayer else { return }
+        player.customAnnouncerRelativePath = savedPlayer.customAnnouncerRelativePath
+    }
+
+    private func discardDraftPhotoAssets() {
+        for path in draftPhotoRelativePaths {
+            appModel.discardUncommittedAsset(relativePath: path)
+        }
+        draftPhotoRelativePaths.removeAll()
+    }
+
     private func refreshPlayerFromModel(enableStartTrimForCueReplacing previousCueID: UUID?) {
         player = appModel.selectedTeam?.players.first(where: { $0.id == player.id }) ?? player
         isStartTrimEditingEnabled = editableCue?.id != nil && editableCue?.id != previousCueID
@@ -8424,9 +8470,11 @@ private struct PlayerEditorSheet: View {
     private func performClearAction(_ action: PendingClearAction) {
         switch action {
         case .song:
-            appModel.clearSong(for: player)
+            appModel.clearSong(forPlayerID: player.id)
+            player.songAssignment = nil
         case .customAnnouncer:
-            appModel.clearCustomAnnouncer(for: player)
+            appModel.clearCustomAnnouncer(forPlayerID: player.id)
+            player.customAnnouncerRelativePath = nil
         case .player:
             appModel.removePlayer(player)
             pendingClearAction = nil
@@ -8434,7 +8482,6 @@ private struct PlayerEditorSheet: View {
             return
         }
         pendingClearAction = nil
-        refreshPlayerFromModel()
     }
 
     private var savedPlayer: Player? {
@@ -8451,12 +8498,19 @@ private struct PlayerEditorSheet: View {
         if hasUnsavedChanges {
             showDiscardChangesConfirmation = true
         } else {
-            dismiss()
+            discardDraftAndDismiss()
         }
     }
 
     private func saveAndDismiss() {
-        appModel.updatePlayer(player)
+        appModel.commitPlayerEditorDraft(player)
+        didCommitDraft = true
+        draftPhotoRelativePaths.removeAll()
+        dismiss()
+    }
+
+    private func discardDraftAndDismiss() {
+        discardDraftPhotoAssets()
         dismiss()
     }
 

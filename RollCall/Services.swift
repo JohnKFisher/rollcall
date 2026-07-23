@@ -1858,26 +1858,27 @@ final class ReadinessService {
         return ReadinessStatus(
             generatedAt: .now,
             checks: [
-                ReadinessCheck(id: "route", title: "Audio Route", detail: route == "Unknown" ? "Choose your speaker before live use." : route, state: route == "Unknown" ? .issue : .gameDayCheck),
-                ReadinessCheck(id: "volume", title: "Volume", detail: volume < 0.30 ? "Please check your volume - it appears low." : "\(Int(volume * 100))%", state: volume < 0.30 ? .issue : .gameDayCheck),
-                ReadinessCheck(id: "network", title: "Apple Music Network", detail: appleMusicCount == 0 ? "No Apple Music cues in today's lineup." : (pathStatus == .satisfied ? "Connection available." : "Connection unavailable. Apple Music cues may fail."), state: appleMusicCount == 0 ? .gameDayCheck : (pathStatus == .satisfied ? .gameDayCheck : .issue)),
-                ReadinessCheck(id: "music-auth", title: "Apple Music Access", detail: appleMusicCount == 0 ? "No Apple Music cues assigned." : appleMusicAuthorizationDetail(for: musicAuthStatus), state: readinessStateForMusic(status: musicAuthStatus, appleMusicCount: appleMusicCount)),
-                ReadinessCheck(id: "lineup", title: "Present Players", detail: "\(presentPlayers.count) players marked present", state: team == nil || presentPlayers.isEmpty ? .issue : .gameDayCheck),
-            ] + playerChecks + customChecks + optionalChecks
+                ReadinessCheck(id: "route", title: "Audio Route", detail: route == "Unknown" ? "Choose your speaker before live use." : route, state: route == "Unknown" ? .issue : .gameDayCheck, category: .audioRoute),
+                ReadinessCheck(id: "volume", title: "Volume", detail: volume < 0.30 ? "Please check your volume - it appears low." : "\(Int(volume * 100))%", state: volume < 0.30 ? .issue : .gameDayCheck, category: .volume),
+                ReadinessCheck(id: "network", title: "Apple Music Network", detail: appleMusicCount == 0 ? "No Apple Music cues in today's lineup." : (pathStatus == .satisfied ? "Connection available." : "Connection unavailable. Apple Music cues may fail."), state: appleMusicCount == 0 ? .gameDayCheck : (pathStatus == .satisfied ? .gameDayCheck : .issue), category: .network),
+                ReadinessCheck(id: "music-auth", title: "Apple Music Access", detail: appleMusicCount == 0 ? "No Apple Music cues assigned." : appleMusicAuthorizationDetail(for: musicAuthStatus), state: readinessStateForMusic(status: musicAuthStatus, appleMusicCount: appleMusicCount), category: .appleMusicAccess, action: musicAuthStatus == .notDetermined && appleMusicCount > 0 ? .requestAppleMusicAccess : .none),
+                ReadinessCheck(id: "lineup", title: "Present Players", detail: "\(presentPlayers.count) players marked present", state: team == nil || presentPlayers.isEmpty ? .issue : .gameDayCheck, category: .lineup),
+            ] + playerChecks + customChecks + optionalChecks,
+            teamID: team?.id
         )
     }
 
     private func readinessCheck(for player: Player, team: Team?) -> ReadinessCheck? {
         guard let team else { return nil }
         guard player.songAssignment != nil else {
-            return ReadinessCheck(id: "player-\(player.id)-needs-audio", title: player.displayName, detail: "Add a song or local audio. Game Day can still use Small Cheer fallback.", state: .needsAudio)
+            return ReadinessCheck(id: "player-\(player.id)-needs-audio", title: player.displayName, detail: "Add a song or local audio. Game Day can still use Small Cheer fallback.", state: .needsAudio, category: .playerAudio, playerID: player.id)
         }
         guard let clip = team.songClip(for: player) else {
             return ReadinessCheck(
                 id: "player-\(player.id)-audio-issue",
                 title: player.displayName,
                 detail: "This player references a Team Clip that is no longer available. Choose a replacement.",
-                state: .issue
+                state: .issue, category: .playerAudio, playerID: player.id
             )
         }
 
@@ -1896,14 +1897,14 @@ final class ReadinessService {
                 id: "player-\(player.id)-audio-issue",
                 title: player.displayName,
                 detail: "The song choice is preserved, but Apple Music access is needed on this device.",
-                state: .issue
+                state: .issue, category: .playerAudio, playerID: player.id
             )
         case .needsRepair:
             return ReadinessCheck(
                 id: "player-\(player.id)-audio-issue",
                 title: player.displayName,
                 detail: "The song choice is preserved, but its playable audio needs to be replaced or relinked.",
-                state: .issue
+                state: .issue, category: .playerAudio, playerID: player.id
             )
         case .localClipReady, .sourceBackedReady, .sourceBackedDownloaded:
             break
@@ -1919,7 +1920,7 @@ final class ReadinessService {
             )
         case .localAudio(let source):
             if !audioAssetService.assetExists(relativePath: source.relativePath) {
-                return ReadinessCheck(id: "player-\(player.id)-audio-issue", title: player.displayName, detail: "The selected local cue file is missing from app storage.", state: .issue)
+                return ReadinessCheck(id: "player-\(player.id)-audio-issue", title: player.displayName, detail: "The selected local cue file is missing from app storage.", state: .issue, category: .playerAudio, playerID: player.id)
             }
             return playerReadinessCheck(
                 for: player,
@@ -1927,7 +1928,7 @@ final class ReadinessService {
             )
         case .builtInClip(let source):
             if !audioAssetService.assetExists(relativePath: builtInClipRelativePath(for: source)) {
-                return ReadinessCheck(id: "player-\(player.id)-audio-issue", title: player.displayName, detail: "The selected built-in clip asset is missing.", state: .issue)
+                return ReadinessCheck(id: "player-\(player.id)-audio-issue", title: player.displayName, detail: "The selected built-in clip asset is missing.", state: .issue, category: .playerAudio, playerID: player.id)
             }
             return playerReadinessCheck(
                 for: player,
@@ -1939,7 +1940,7 @@ final class ReadinessService {
     private func playerReadinessCheck(for player: Player, detail: String) -> ReadinessCheck {
         if let customAnnouncerRelativePath = player.customAnnouncerRelativePath,
            !audioAssetService.assetExists(relativePath: customAnnouncerRelativePath) {
-            return ReadinessCheck(id: "player-\(player.id)-custom-announcer-issue", title: player.displayName, detail: "The Announcement Cue file is missing from app storage.", state: .issue)
+            return ReadinessCheck(id: "player-\(player.id)-custom-announcer-issue", title: player.displayName, detail: "The Announcement Cue file is missing from app storage.", state: .issue, category: .playerAnnouncement, playerID: player.id)
         }
 
         if hasStoredCustomAnnouncer(for: player) {
@@ -1947,7 +1948,7 @@ final class ReadinessService {
                 id: "player-\(player.id)-enhanced",
                 title: player.displayName,
                 detail: "\(detail) An Announcement Cue is also ready.",
-                state: .enhanced
+                state: .enhanced, category: .playerAudio, playerID: player.id
             )
         }
 
@@ -1955,7 +1956,7 @@ final class ReadinessService {
             id: "player-\(player.id)-ready",
             title: player.displayName,
             detail: detail,
-            state: .ready
+            state: .ready, category: .playerAudio, playerID: player.id
         )
     }
 
@@ -1975,7 +1976,7 @@ final class ReadinessService {
                 id: "player-\(player.id)-announcement-upgrade",
                 title: player.displayName,
                 detail: "Add an Announcement Cue to make this walkup feel more stadium-like.",
-                state: .optional
+                state: .optional, category: .playerAnnouncement, playerID: player.id
             )
         }
     }
@@ -1993,7 +1994,7 @@ final class ReadinessService {
                     id: "player-\(player.id)-photo-upgrade",
                     title: player.displayName,
                     detail: "A photo can make the live board easier to recognize, but this player can still be ready without one.",
-                    state: .optional
+                    state: .optional, category: .playerPhoto, playerID: player.id
                 )
             }
             if let photoRelativePath = player.photoRelativePath,
@@ -2002,7 +2003,7 @@ final class ReadinessService {
                     id: "player-\(player.id)-photo-upgrade",
                     title: player.displayName,
                     detail: "The saved photo is missing. This only affects presentation, not Game Day audio.",
-                    state: .optional
+                    state: .optional, category: .playerPhoto, playerID: player.id
                 )
             }
             return nil
@@ -2113,15 +2114,29 @@ struct PackageService: Sendable {
         decoder.dateDecodingStrategy = .iso8601
         var manifest = try decoder.decode(TeamPackageManifest.self, from: Data(contentsOf: manifestURL))
         guard manifest.schemaVersion <= AppState.currentSchemaVersion else { throw AppError.unsupportedImportVersion }
+        try validateImportableTeam(manifest.team)
 
+        let packageAssetsURL = packageRootURL.appendingPathComponent("Assets", isDirectory: true)
+        let attachmentIssues = try missingAttachmentAuditItems(for: manifest.team, packageAssetsDirectory: packageAssetsURL)
         if try isDirectory(packageRootURL) {
-            let packageAssetsURL = packageRootURL.appendingPathComponent("Assets", isDirectory: true)
-            manifest.team = try importAssets(for: manifest.team, from: packageAssetsURL, audioAssetService: audioAssetService)
+            var importedAssetPaths: [String] = []
+            do {
+                manifest.team = try importAssets(
+                    for: manifest.team,
+                    from: packageAssetsURL,
+                    audioAssetService: audioAssetService,
+                    importedAssetPaths: &importedAssetPaths
+                )
+            } catch {
+                importedAssetPaths.forEach { audioAssetService.removeAsset(relativePath: $0) }
+                throw error
+            }
         }
         let audit = importAudit(
             for: manifest.team,
             musicAuthorizationStatus: musicAuthorizationStatus,
-            appleMusicPlaybackCapability: appleMusicPlaybackCapability
+            appleMusicPlaybackCapability: appleMusicPlaybackCapability,
+            attachmentIssues: attachmentIssues
         )
         return ImportResult(manifest: manifest, audit: audit)
     }
@@ -2129,7 +2144,8 @@ struct PackageService: Sendable {
     func importAudit(
         for team: Team,
         musicAuthorizationStatus: MusicAuthorization.Status,
-        appleMusicPlaybackCapability: AppleMusicPlaybackCapability
+        appleMusicPlaybackCapability: AppleMusicPlaybackCapability,
+        attachmentIssues: [PackageImportAudit.Item] = []
     ) -> PackageImportAudit {
         var items: [PackageImportAudit.Item] = []
 
@@ -2156,6 +2172,7 @@ struct PackageService: Sendable {
                 )
             )
         }
+        items.append(contentsOf: attachmentIssues)
         return PackageImportAudit(
             teamID: team.id,
             teamName: team.name,
@@ -2181,6 +2198,7 @@ struct PackageService: Sendable {
         decoder.dateDecodingStrategy = .iso8601
         let manifest = try decoder.decode(TeamPackageManifest.self, from: Data(contentsOf: manifestURL))
         guard manifest.schemaVersion <= AppState.currentSchemaVersion else { throw AppError.unsupportedImportVersion }
+        try validateImportableTeam(manifest.team)
         let packageAssetsURL = packageRootURL.appendingPathComponent("Assets", isDirectory: true)
         let states = try uniqueSongClips(in: manifest.team).map {
             try previewTransferState(for: $0, packageAssetsDirectory: packageAssetsURL)
@@ -2195,6 +2213,37 @@ struct PackageService: Sendable {
                 needsRepairCount: states.filter { $0 == .needsRepair }.count
             )
         )
+    }
+
+    private func validateImportableTeam(_ team: Team) throws {
+        let playerIDs = team.players.map(\.id)
+        let teamClipIDs = team.teamClips.map(\.id)
+        let lineupIDs = team.session.battingOrder
+
+        guard Set(playerIDs).count == playerIDs.count,
+              Set(teamClipIDs).count == teamClipIDs.count,
+              Set(lineupIDs).count == lineupIDs.count,
+              Set(lineupIDs).isSubset(of: Set(playerIDs)) else {
+            throw AppError.invalidImport
+        }
+    }
+
+    private func missingAttachmentAuditItems(
+        for team: Team,
+        packageAssetsDirectory: URL
+    ) throws -> [PackageImportAudit.Item] {
+        var items: [PackageImportAudit.Item] = []
+        for player in team.players {
+            if let photoPath = player.photoRelativePath,
+               try packageAssetURLIfPresent(relativePath: photoPath, from: packageAssetsDirectory) == nil {
+                items.append(.init(id: UUID(), destination: .player(player.id), title: "\(player.displayName) — Photo", state: .needsRepair, detail: "The package references a player photo, but its file was not included. Open the player to add it again."))
+            }
+            if let announcementPath = player.customAnnouncerRelativePath,
+               try packageAssetURLIfPresent(relativePath: announcementPath, from: packageAssetsDirectory) == nil {
+                items.append(.init(id: UUID(), destination: .player(player.id), title: "\(player.displayName) — Announcement Cue", state: .needsRepair, detail: "The package references an Announcement Cue, but its audio file was not included. Open the player to record or import it again."))
+            }
+        }
+        return items
     }
 
     func parseRosterCSV(from url: URL) async throws -> [ParsedRosterRow] {
@@ -2469,30 +2518,43 @@ struct PackageService: Sendable {
         try FileManager.default.copyItem(at: sourceURL, to: destinationURL)
     }
 
-    private func importAssets(for team: Team, from packageAssetsDirectory: URL, audioAssetService: AudioAssetService) throws -> Team {
+    private func importAssets(
+        for team: Team,
+        from packageAssetsDirectory: URL,
+        audioAssetService: AudioAssetService,
+        importedAssetPaths: inout [String]
+    ) throws -> Team {
         var importedTeam = team
         importedTeam.teamClips = try importedTeam.teamClips.map {
             try importSongClip(
                 $0,
                 from: packageAssetsDirectory,
-                audioAssetService: audioAssetService
+                audioAssetService: audioAssetService,
+                importedAssetPaths: &importedAssetPaths
             )
         }
         importedTeam.players = try importedTeam.players.map { player in
             var player = player
             if let photoRelativePath = player.photoRelativePath {
                 player.photoRelativePath = try importPhotoIfPresent(relativePath: photoRelativePath, from: packageAssetsDirectory)
+                if let importedPhotoPath = player.photoRelativePath {
+                    importedAssetPaths.append(importedPhotoPath)
+                }
             }
             if case .privateClip(let clip)? = player.songAssignment {
                 player.songAssignment = .privateClip(
                     try importSongClip(
                         clip,
                         from: packageAssetsDirectory,
-                        audioAssetService: audioAssetService
+                        audioAssetService: audioAssetService,
+                        importedAssetPaths: &importedAssetPaths
                     )
                 )
             }
             player.customAnnouncerRelativePath = try importGeneratedAudioIfPresent(relativePath: player.customAnnouncerRelativePath, from: packageAssetsDirectory, audioAssetService: audioAssetService)
+            if let importedAnnouncementPath = player.customAnnouncerRelativePath {
+                importedAssetPaths.append(importedAnnouncementPath)
+            }
             return player
         }
         return importedTeam
@@ -2501,7 +2563,8 @@ struct PackageService: Sendable {
     private func importSongClip(
         _ original: SongClip,
         from packageAssetsDirectory: URL,
-        audioAssetService: AudioAssetService
+        audioAssetService: AudioAssetService,
+        importedAssetPaths: inout [String]
     ) throws -> SongClip {
         var clip = original
         var originalLocalSourceWasRestored = true
@@ -2513,6 +2576,7 @@ struct PackageService: Sendable {
                 audioAssetService: audioAssetService
             ) {
                 clip.originalSource = .localAudio(imported)
+                importedAssetPaths.append(imported.relativePath)
             } else {
                 originalLocalSourceWasRestored = false
                 var missing = source
@@ -2532,6 +2596,7 @@ struct PackageService: Sendable {
                 from: packageAssetsDirectory
            ) {
             clip.generatedAsset.relativePath = importedGeneratedPath
+            importedAssetPaths.append(importedGeneratedPath)
             clip.readinessInputs = SongClipReadinessInputs(
                 playback: .localClipReady,
                 sourceAvailableOnDevice: true,
