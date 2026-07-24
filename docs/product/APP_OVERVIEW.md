@@ -2,8 +2,6 @@
 
 This document gives a non-code AI everything it needs to discuss the Roll Call app at a product level: what it is, who it's for, how the screens fit together, what the user can do on each one, and the principles that constrain future change. It is current as of build 77 / version 1.2.1.
 
-If you are an AI reading this to help with planning: assume the human you are talking to is the sole developer and product owner. They want help thinking through changes, tradeoffs, and priorities — not generating code. Quote back the principles in this document when they conflict with a proposal.
-
 ---
 
 ## 1. What Roll Call Is
@@ -361,82 +359,22 @@ Be very cautious when proposing features that step on these lines.
 
 ---
 
-## 12. Where The Roadmap Points
+## 12. Future direction
 
-1.0 is submitted and is intended as the complete free experience. Post-launch direction (from `docs/product/PRODUCT_ROADMAP.md`):
+The core free experience is established. Future ideas are intentionally exploratory rather than a release commitment. Keep them in [Product Opportunities](./PRODUCT_OPPORTUNITIES.md), where they can be evaluated against real field use, simplicity, and Game Day reliability.
 
-**Near-term (1.x candidates):**
-
-- Team Home (a "what now?" landing screen, currently the Game Day tab serves this role indirectly)
-- Improved Readiness
-- Improved Photo Editing
-- Improved hook-finding (the "suggested" auto-trim heuristic)
-- Better sharing convenience
-- More song-selection and clip-creation polish
-
-**Likely future free feature candidates (later):**
-
-- Presentation styles / Game Day visual themes
-- Announcer Studio (richer announcer authoring — multiple presets, varied templates)
-- Batch editing
-- More portable local generation when public APIs expose readable media
-- Lyric-based song selection
-- Multiple intro/song presets per player
-- Presentation packs
-- Cloud sync (low priority)
-
-**Support framing:**
-
-- Priority order for future feature value: Creativity > Save Time > Pretty > Control.
-- Support contributions exist to support maintenance and compatibility, not to create premium tiers.
-- One-time and recurring support must stay optional and calm.
-- Never gate the real app.
+Support contributions remain optional and maintenance-focused; they never create premium tiers or gate the app.
 
 ---
 
-## 13. Useful Mental Models for Planning Conversations
+## 13. Related current references
 
-When discussing a proposed change, the following framings tend to lead to good decisions:
-
-- **"Does this help the coach feel ready when they tap Start Game?"** — readiness must always answer yes.
-- **"Is this preparation work or live execution work?"** — preparation can be a little tedious; live execution must be smooth and forgiving.
-- **"Does this teach setup as homework, or as discovery?"** — Roll Call prefers discovery (reveal features after the user has had a small win) over front-loaded teaching.
-- **"Who pays the reliability cost if this is half-set-up?"** — anything user-visible at Game Day must degrade gracefully, never break.
-- **"Does this preserve user ownership of their team?"** — import/export, recovery, backups, and the "no required account" stance all support a coach feeling like they own their roster.
-- **"Is this iPhone-first?"** — iPad and other targets are not currently in scope.
-
-When uncertain, the developer's preferred resolution is to surface the conflict, present options with tradeoffs, and wait for approval — not to build silently.
-
----
-
-## 14. Things This Document Does Not Cover
-
-For deeper specifics, the live docs in the repo are:
-
-- `docs/product/NORTH_STAR.md` — the one-page product philosophy
-- `docs/product/PRODUCT_SCOPE.md` — release boundaries and donations/support rules
-- `docs/product/UX_RULEBOOK.md` — onboarding, readiness, missing-data, permissions, confirmations, recovery, ratings
-- `docs/product/READINESS_MODEL.md` — the detailed readiness reasoning
-- `docs/product/PRODUCT_ROADMAP.md` — what is in 1.0, 1.x candidates, future free features, support options, non-goals
-- `docs/product/APPEARANCE_RULES.md` — Light/Dark/Live appearance rules
-- `docs/product/ARCHITECTURE_GUARDRAILS.md` — technical guardrails (the user is unlikely to ask an AI to discuss these without specifically requesting it)
-- `docs/WHERE_WE_STAND.md` — current implementation status snapshot
-- `docs/DECISIONS.md` — append-only decision log
-
-If a planning discussion runs up against a question this overview can't answer, ask the developer whether one of the above is the right source rather than guessing.
-
----
-
-## Appendix: A Suggested Place To Add Screenshots Later
-
-This document is currently text-only because most AI tools cannot follow image references reliably. If you (the developer) want to enrich it with simulator screenshots for human readers, the most useful captures would be:
-
-1. The Welcome screen (full-screen launch image with "Let's Get Started")
-2. The Setup Guide's milestone breadcrumb on each of its four states (Team active, Player active, Audio active, Lineup active, all-complete handoff)
-3. The Game Day live screen with a Now Batting hero and the player grid
-4. The Player Editor sheet at full scroll (Identity → Song Cue → Fine Tune → Announcement Cue)
-5. The Lineup Editor sheet showing the drag handles and Present toggles
-6. The Readiness tab with at least one player in each state (Ready, Enhanced, Optional)
-7. The Teams tab with multiple teams in the list
-
-These can be inlined as `![alt](path)` references next to the relevant section headers.
+- [North Star](./NORTH_STAR.md) — product purpose and non-negotiables.
+- [Product Scope](./PRODUCT_SCOPE.md) — durable boundaries and support rules.
+- [UX Rulebook](./UX_RULEBOOK.md) — current interaction rules.
+- [Readiness Model](./READINESS_MODEL.md) — readiness meanings and tone.
+- [Appearance Rules](./APPEARANCE_RULES.md) — Light/Dark and live-screen behavior.
+- [Architecture Guardrails](./ARCHITECTURE_GUARDRAILS.md) — data, sharing, and reliability constraints.
+- [Product Opportunities](./PRODUCT_OPPORTUNITIES.md) — exploratory future work.
+- [Where We Stand](../WHERE_WE_STAND.md) — current implementation status and verification limits.
+- [Decisions](../DECISIONS.md) — append-only decision history.

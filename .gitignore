@@ -6,3 +6,4 @@ xcuserdata/
 # Local generated artifacts
 tmp/
 .swift-module-cache/
+graphify-out/
