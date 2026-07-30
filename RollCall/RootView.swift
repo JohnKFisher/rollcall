@@ -468,7 +468,7 @@ struct RootView: View {
     }
 
     private var hasBlockingWhatsNewPresentation: Bool {
-        appModel.isBusy
+        appModel.riskyOperationCount > 0
             || appModel.lastError != nil
             || appModel.pendingPackageImport != nil
             || appModel.pendingRosterImport != nil
@@ -540,7 +540,7 @@ struct RootView: View {
         if !isSafeNonLiveTabForWhatsNew {
             return "Blocked on Game Day or Clips"
         }
-        if appModel.isBusy {
+        if appModel.riskyOperationCount > 0 {
             return "Blocked while app is busy"
         }
         if appModel.lastError != nil {
@@ -689,6 +689,9 @@ struct RootView: View {
         updateIdleTimer()
         if newPhase != .active {
             showTeamClips = false
+            if previousPhase == .active {
+                Task { await appModel.flushLatestState() }
+            }
         }
 
         if newPhase == .active, selectedTab == .gameDay {
@@ -802,16 +805,23 @@ struct RootView: View {
                 }
             }
             .overlay(alignment: .top) {
-                VStack(spacing: 8) {
-                    if appModel.isBusy {
+                ZStack(alignment: .top) {
+                    if appModel.riskyOperationCount > 0 {
+                        Color.black.opacity(0.001)
+                            .ignoresSafeArea()
+                            .accessibilityHidden(true)
+
                         ProgressView("Working…")
                             .padding(.horizontal, 16)
                             .padding(.vertical, 10)
                             .background(.ultraThinMaterial, in: Capsule())
+                            .accessibilityAddTraits(.isModal)
                     }
 
-                    if let bannerMessage = appModel.bannerMessage {
-                        AppBannerView(message: bannerMessage)
+                    VStack(spacing: 8) {
+                        if let bannerMessage = appModel.bannerMessage {
+                            AppBannerView(message: bannerMessage)
+                        }
                     }
                 }
                 .padding(.top, 8)
@@ -900,7 +910,9 @@ struct RootView: View {
                 )
             }
             .sheet(item: Binding(get: { appModel.pendingRosterImport }, set: { appModel.pendingRosterImport = $0 })) { pending in
-                let duplicateCount = pending.duplicateCount(comparedTo: appModel.selectedTeam?.players ?? [])
+                let duplicateCount = pending.duplicateCount(
+                    comparedTo: appModel.state.teams.first(where: { $0.id == pending.targetTeamID })?.players ?? []
+                )
                 RosterImportPreviewSheet(
                     pending: pending,
                     duplicateCount: duplicateCount,
@@ -5289,7 +5301,7 @@ private struct RosterImportPreviewSheet: View {
         NavigationStack {
             List {
                 Section {
-                    Text("This will add \(pending.rows.count) players to the selected team. Roll Call will save a backup first.")
+                    Text("This will add \(pending.rows.count) players to the team selected when the import started. Roll Call will save a backup first.")
                         .rollCallText(.body)
                     Text("CSV format: use a header row with name and number, or simple two-column rows. Player number is optional.")
                         .rollCallText(.helperText)

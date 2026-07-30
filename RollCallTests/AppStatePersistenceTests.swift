@@ -1,7 +1,84 @@
 import XCTest
 @testable import RollCall
 
+@MainActor
+private final class DeferredAppleMusicCatalogResolver {
+    private var requestContinuation: CheckedContinuation<Void, Never>?
+    private var resultContinuation: CheckedContinuation<MusicSearchResult, Error>?
+
+    func resolve(_ result: MusicSearchResult) async throws -> MusicSearchResult {
+        requestContinuation?.resume()
+        requestContinuation = nil
+        return try await withCheckedThrowingContinuation { continuation in
+            resultContinuation = continuation
+        }
+    }
+
+    func waitForRequest() async {
+        guard resultContinuation == nil else { return }
+        await withCheckedContinuation { continuation in
+            requestContinuation = continuation
+        }
+    }
+
+    func complete(with result: MusicSearchResult) {
+        resultContinuation?.resume(returning: result)
+        resultContinuation = nil
+    }
+}
+
+@MainActor
+private final class ControlledAppleMusicResultResolver {
+    private var continuations: [String: CheckedContinuation<MusicSearchResult, Error>] = [:]
+    private var requestCountContinuation: CheckedContinuation<Void, Never>?
+    private var requestedSongIDs: [String] = []
+
+    func resolve(_ result: MusicSearchResult) async throws -> MusicSearchResult {
+        requestedSongIDs.append(result.songID)
+        if requestedSongIDs.count >= 2 {
+            requestCountContinuation?.resume()
+            requestCountContinuation = nil
+        }
+        return try await withCheckedThrowingContinuation { continuation in
+            continuations[result.songID] = continuation
+        }
+    }
+
+    func waitForTwoRequests() async {
+        guard requestedSongIDs.count < 2 else { return }
+        await withCheckedContinuation { continuation in
+            requestCountContinuation = continuation
+        }
+    }
+
+    func complete(songID: String, with result: MusicSearchResult) {
+        continuations.removeValue(forKey: songID)?.resume(returning: result)
+    }
+}
+
+@MainActor
+private final class RecordedPreviewPlayback {
+    private(set) var playedSongIDs: [String] = []
+
+    func play(_ cue: Cue) async {
+        guard case .appleMusic(let source) = cue.source else { return }
+        playedSongIDs.append(source.songID)
+    }
+}
+
 final class AppStatePersistenceTests: XCTestCase {
+    private var temp: RollCallTemporaryDirectory!
+
+    override func setUpWithError() throws {
+        temp = try RollCallTemporaryDirectory()
+        AppPaths.testBaseDirectoryOverride = temp.fileURL("AppSupport")
+    }
+
+    override func tearDownWithError() throws {
+        AppPaths.testBaseDirectoryOverride = nil
+        temp = nil
+    }
+
     func testWhatsNewReleaseIdentityStaysWithinMajorMinorFamily() {
         XCTAssertEqual(AppMetadata.releaseFamily(for: "1.2.1"), "1.2")
         XCTAssertTrue(AppMetadata.hasSeenWhatsNewRelease("1.2 (76)", for: "1.2.1"))
@@ -100,6 +177,139 @@ final class AppStatePersistenceTests: XCTestCase {
         XCTAssertTrue(player.isPresent)
         XCTAssertNil(player.cue)
         XCTAssertNil(player.photoRelativePath)
+    }
+
+    @MainActor
+    func testAppleMusicMetadataRefreshDoesNotOverwriteNewerSavedCue() async throws {
+        var originalCue = RollCallTestFixtures.appleMusicCue(
+            songID: "catalog.old",
+            title: "Old Song",
+            artistName: "Old Artist"
+        )
+        guard case .appleMusic(var originalSource) = originalCue.source else {
+            return XCTFail("Expected an Apple Music source.")
+        }
+        originalSource.duration = nil
+        originalCue.source = .appleMusic(originalSource)
+
+        let originalPlayer = RollCallTestFixtures.player(
+            id: RollCallTestFixtures.alexID,
+            name: "Alex Ramirez",
+            number: "12",
+            cue: originalCue
+        )
+        try writeState(RollCallTestFixtures.appState(
+            team: RollCallTestFixtures.team(players: [originalPlayer])
+        ))
+
+        let resolver = DeferredAppleMusicCatalogResolver()
+        let model = AppModel(
+            appleMusicPlaybackCapabilityResolver: { .fullSong },
+            catalogBackedResultResolver: { result in
+                try await resolver.resolve(result)
+            }
+        )
+        let refreshTask = Task { @MainActor in
+            await model.refreshAppleMusicCueMetadata(for: originalPlayer.id)
+        }
+        await resolver.waitForRequest()
+
+        let replacementCue = RollCallTestFixtures.appleMusicCue(
+            songID: "catalog.new",
+            title: "New Song",
+            artistName: "New Artist"
+        )
+        model.saveSongCue(replacementCue, to: originalPlayer.id)
+
+        resolver.complete(with: MusicSearchResult(
+            songID: "catalog.old",
+            title: "Old Song Resolved",
+            artistName: "Old Artist Resolved",
+            duration: 210,
+            previewURL: nil,
+            isCatalogBacked: true
+        ))
+
+        let didRefresh = await refreshTask.value
+        XCTAssertFalse(didRefresh)
+        guard case .appleMusic(let currentSource)? = model.selectedTeam?.players.first?.cue?.source else {
+            return XCTFail("Expected the replacement Apple Music cue to remain saved.")
+        }
+        XCTAssertEqual(currentSource.songID, "catalog.new")
+        XCTAssertEqual(currentSource.title, "New Song")
+        XCTAssertEqual(currentSource.artistName, "New Artist")
+    }
+
+    @MainActor
+    func testAppleMusicPreviewIgnoresOlderResultWhenNewerPreviewFinishesFirst() async throws {
+        try writeState(RollCallTestFixtures.appState())
+
+        let resolver = ControlledAppleMusicResultResolver()
+        let playback = RecordedPreviewPlayback()
+        let model = AppModel(
+            appleMusicPlaybackCapabilityResolver: { .fullSong },
+            catalogBackedResultResolver: { result in
+                try await resolver.resolve(result)
+            },
+            previewPlaybackResolver: { cue in
+                await playback.play(cue)
+            }
+        )
+        let first = MusicSearchResult(
+            songID: "catalog.first",
+            title: "First Song",
+            artistName: "First Artist",
+            duration: nil,
+            previewURL: nil,
+            isCatalogBacked: true
+        )
+        let second = MusicSearchResult(
+            songID: "catalog.second",
+            title: "Second Song",
+            artistName: "Second Artist",
+            duration: nil,
+            previewURL: nil,
+            isCatalogBacked: true
+        )
+
+        let firstTask = Task { @MainActor in
+            await model.previewAppleMusicSearchResult(first)
+        }
+        let secondTask = Task { @MainActor in
+            await model.previewAppleMusicSearchResult(second)
+        }
+        await resolver.waitForTwoRequests()
+
+        resolver.complete(songID: second.songID, with: second)
+        await secondTask.value
+        XCTAssertEqual(playback.playedSongIDs, [second.songID])
+
+        resolver.complete(songID: first.songID, with: first)
+        await firstTask.value
+        XCTAssertEqual(playback.playedSongIDs, [second.songID])
+    }
+
+    @MainActor
+    func testFlushLatestStateWritesTheMostRecentSnapshot() async throws {
+        let team = RollCallTestFixtures.team()
+        try writeState(RollCallTestFixtures.appState(team: team))
+        let model = AppModel()
+        model.state.teams[0].name = "Updated Thunder"
+
+        await model.flushLatestState()
+
+        let data = try Data(contentsOf: AppPaths.stateURL())
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        let savedState = try decoder.decode(AppState.self, from: data)
+        XCTAssertEqual(savedState.teams.first?.name, "Updated Thunder")
+    }
+
+    private func writeState(_ state: AppState) throws {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        encoder.dateEncodingStrategy = .iso8601
+        try encoder.encode(state).write(to: AppPaths.stateURL(), options: .atomic)
     }
 
     func testLegacyPlayerCueDecodesAsPrivateSongAssignment() throws {

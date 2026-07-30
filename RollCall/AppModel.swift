@@ -10,6 +10,7 @@ struct PendingRosterImport: Identifiable {
     let id = UUID()
     let sourceName: String
     let rows: [Player]
+    let targetTeamID: UUID
 
     func duplicateCount(comparedTo existingPlayers: [Player]) -> Int {
         let existingKeys = Set(existingPlayers.map(Self.duplicateKey).filter { !$0.isEmpty })
@@ -37,6 +38,32 @@ struct PendingRosterImport: Identifiable {
         let number = player.uniformNumber.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         guard !name.isEmpty else { return "" }
         return "\(name)#\(number)"
+    }
+}
+
+@MainActor
+private final class RiskyOperationCoordinator {
+    struct Admission {
+        let id: UUID
+        let name: String
+    }
+
+    private(set) var active: Admission?
+
+    var count: Int {
+        active == nil ? 0 : 1
+    }
+
+    func begin(name: String) -> Admission? {
+        guard active == nil else { return nil }
+        let admission = Admission(id: UUID(), name: name)
+        active = admission
+        return admission
+    }
+
+    func end(id: UUID) {
+        guard active?.id == id else { return }
+        active = nil
     }
 }
 
@@ -477,7 +504,7 @@ final class AppModel: ObservableObject {
     private let defaultNoSongFallbackBuiltInClipSourceID = "small-cheer"
 
     @Published var state: AppState
-    @Published var isBusy = false
+    @Published private(set) var isBusy = false
     @Published var lastError: String?
     @Published var bannerMessage: AppBannerMessage?
     @Published var exportURL: URL?
@@ -504,7 +531,9 @@ final class AppModel: ObservableObject {
     @Published private(set) var pendingSongClipPreparationCount = 0
     @Published private(set) var generatedClipCleanupReport: GeneratedClipCleanupReport?
     @Published private(set) var activeFallbackPlayerID: UUID?
+    @Published private(set) var riskyOperationCount = 0
     private var hasFinishedLaunching = false
+    private let riskyOperationCoordinator = RiskyOperationCoordinator()
     private let persistenceWriter = StatePersistenceWriter()
     private var persistSequence = 0
     private var readinessRefreshTask: Task<Void, Never>?
@@ -518,10 +547,15 @@ final class AppModel: ObservableObject {
     private var initialStateLoadWarning: String?
     private var bannerDismissTask: Task<Void, Never>?
     private var songClipPreparationTask: Task<Void, Never>?
+    private var activeSongClipPreparationTask: Task<SongClipPreparationOutcome, Never>?
+    private var activeSongClipPreparationRequest: SongClipPreparationRequest?
     private var songClipPreparationLiveUseThrottled = false
     private var lowPowerModeTask: Task<Void, Never>?
     private var activePlaybackRequestID = UUID()
     private var pendingAssetCleanupPaths = Set<String>()
+    private let appleMusicPlaybackCapabilityResolver: () async -> AppleMusicPlaybackCapability
+    private let catalogBackedResultResolver: (MusicSearchResult) async throws -> MusicSearchResult
+    private let previewPlaybackResolver: ((Cue) async throws -> Void)?
 
     let audioAssetService = AudioAssetService()
     let musicCatalogService = MusicCatalogService()
@@ -534,6 +568,13 @@ final class AppModel: ObservableObject {
     let customAnnouncerRecorder = CustomAnnouncerRecorder()
     let songClipGenerationService = SongClipGenerationService()
     private let songClipGenerationQueue = SongClipGenerationQueue()
+
+    private struct PersistenceRequest {
+        let snapshot: AppState
+        let cleanupPaths: Set<String>
+        let sequence: Int
+        let destinationURL: URL
+    }
 
     var featureFlags: FeatureFlags {
         FeatureFlags(environment: .current, experimental: state.experimental)
@@ -559,7 +600,18 @@ final class AppModel: ObservableObject {
         return "\(count) sessions, attempt \(attempts)/\(RatingRequestPolicy.maxAutomaticPromptAttempts), next auto at \(nextThreshold)"
     }
 
-    init() {
+    init(
+        appleMusicPlaybackCapabilityResolver: @escaping () async -> AppleMusicPlaybackCapability = {
+            await MusicCatalogService().playbackCapability()
+        },
+        catalogBackedResultResolver: @escaping (MusicSearchResult) async throws -> MusicSearchResult = { result in
+            try await MusicCatalogService().catalogBackedResult(for: result)
+        },
+        previewPlaybackResolver: ((Cue) async throws -> Void)? = nil
+    ) {
+        self.appleMusicPlaybackCapabilityResolver = appleMusicPlaybackCapabilityResolver
+        self.catalogBackedResultResolver = catalogBackedResultResolver
+        self.previewPlaybackResolver = previewPlaybackResolver
         FeatureFlags.assertReleaseSafety()
         self.musicRenderProbeService = MusicRenderProbeService(audioAssetService: audioAssetService, musicCatalogService: musicCatalogService)
         self.playbackEngine = CuePlaybackEngine(audioAssetService: audioAssetService, musicCatalogService: musicCatalogService)
@@ -819,6 +871,7 @@ final class AppModel: ObservableObject {
             )
         )
         state.teams.remove(at: teamIndex)
+        Task { await cancelSongClipPreparation(teamID: team.id) }
         normalizeSelectedTeamIfNeeded()
         stopPlayback()
         prewarmNextBatterCue()
@@ -843,6 +896,7 @@ final class AppModel: ObservableObject {
     func updatePlayer(_ player: Player) {
         guard let teamIndex, let playerIndex = state.teams[teamIndex].players.firstIndex(where: { $0.id == player.id }) else { return }
         let previousPlayer = state.teams[teamIndex].players[playerIndex]
+        let teamID = state.teams[teamIndex].id
         state.teams[teamIndex].players[playerIndex] = player
         state.teams[teamIndex].modifiedAt = .now
         normalizeLineup(for: teamIndex)
@@ -851,14 +905,12 @@ final class AppModel: ObservableObject {
         scheduleReadinessRefresh()
         persist()
         if previousPlayer.songAssignment != player.songAssignment {
-            if player.songAssignment == nil {
-                Task {
-                    await songClipGenerationQueue.cancel(teamID: state.teams[teamIndex].id, playerID: player.id)
-                    await refreshPendingSongClipPreparationCount()
-                }
-            } else {
-                scheduleSongClipPreparation(
-                    teamID: state.teams[teamIndex].id,
+            Task { [weak self] in
+                guard let self else { return }
+                await self.cancelSongClipPreparation(teamID: teamID, target: .player(player.id))
+                guard self.songClip(teamID: teamID, target: .player(player.id)) != nil else { return }
+                self.scheduleSongClipPreparation(
+                    teamID: teamID,
                     playerID: player.id,
                     trigger: .assignmentSaved
                 )
@@ -1081,12 +1133,9 @@ final class AppModel: ObservableObject {
             )
         )
         state.teams[teamIndex].modifiedAt = .now
-        Task {
-            await songClipGenerationQueue.cancel(
-                teamID: state.teams[teamIndex].id,
-                teamClipID: clipID
-            )
-            await refreshPendingSongClipPreparationCount()
+        Task { [weak self] in
+            guard let self else { return }
+            await self.cancelSongClipPreparation(teamID: team.id, target: .teamClip(clipID))
         }
         prewarmNextBatterCue()
         scheduleReadinessRefresh()
@@ -1120,6 +1169,10 @@ final class AppModel: ObservableObject {
             )
         )
         state.teams[teamIndex].modifiedAt = .now
+        Task { [weak self] in
+            guard let self else { return }
+            await self.cancelSongClipPreparation(teamID: team.id, target: .player(player.id))
+        }
         normalizeLineup(for: teamIndex)
         prewarmNextBatterCue()
         scheduleReadinessRefresh()
@@ -1240,7 +1293,7 @@ final class AppModel: ObservableObject {
     }
 
     func importMedia(from url: URL, for player: Player) async {
-        await busy {
+        await busy(operationName: "Media import") {
             let source = try await self.audioAssetService.importMedia(from: url)
             var updated = player
             updated.cue = .localDefault(source: source)
@@ -1458,30 +1511,44 @@ final class AppModel: ObservableObject {
 
     func previewCue(_ cue: Cue) async {
         let requestID = beginPlaybackRequest()
+        await previewCue(cue, requestID: requestID)
+    }
+
+    private func previewCue(_ cue: Cue, requestID: UUID) async {
         do {
-            try await playbackEngine.play(
-                cue: cue,
-                fadeOutVolumeAutomationEnabled: state.settings.fadeOutVolumeAutomationEnabled
-            )
+            if let previewPlaybackResolver {
+                try await previewPlaybackResolver(cue)
+            } else {
+                try await playbackEngine.play(
+                    cue: cue,
+                    fadeOutVolumeAutomationEnabled: state.settings.fadeOutVolumeAutomationEnabled
+                )
+            }
             guard isCurrentPlaybackRequest(requestID) else { return }
         } catch {
-            guard isCurrentPlaybackRequest(requestID) else { return }
+            guard isCurrentPlaybackRequest(requestID), !Task.isCancelled else { return }
             lastError = error.localizedDescription
         }
     }
 
     func previewAppleMusicSearchResult(_ result: MusicSearchResult) async {
+        let requestID = beginPlaybackRequest()
         do {
             await refreshAppleMusicPlaybackCapability()
-            let cue = makeDefaultAppleMusicCue(for: try await enrichedAppleMusicSelection(result))
-            await previewCue(cue)
+            guard isCurrentPlaybackRequest(requestID), !Task.isCancelled else { return }
+            let resolvedResult = try await enrichedAppleMusicSelection(result)
+            guard isCurrentPlaybackRequest(requestID), !Task.isCancelled else { return }
+            let cue = makeDefaultAppleMusicCue(for: resolvedResult)
+            await previewCue(cue, requestID: requestID)
         } catch {
+            guard isCurrentPlaybackRequest(requestID), !Task.isCancelled else { return }
+            guard !MusicCatalogService.isCancellation(error) else { return }
             lastError = error.localizedDescription
         }
     }
 
     func refreshAppleMusicPlaybackCapability() async {
-        let capability = await musicCatalogService.playbackCapability()
+        let capability = await appleMusicPlaybackCapabilityResolver()
         appleMusicPlaybackCapability = capability
     }
 
@@ -1667,17 +1734,18 @@ final class AppModel: ObservableObject {
     func refreshAppleMusicCueMetadata(for playerID: UUID) async -> Bool {
         await refreshAppleMusicPlaybackCapability()
         guard appleMusicPlaybackCapability == .fullSong,
-              let teamIndex,
-              let playerIndex = state.teams[teamIndex].players.firstIndex(where: { $0.id == playerID }),
-              var cue = state.teams[teamIndex].players[playerIndex].cue,
-              case .appleMusic(var source) = cue.source,
+              let teamID = state.selectedTeamID,
+              let team = state.teams.first(where: { $0.id == teamID }),
+              let player = team.players.first(where: { $0.id == playerID }),
+              let cue = player.cue,
+              case .appleMusic(let source) = cue.source,
               source.isCatalogBacked != false,
               source.duration == nil else {
             return false
         }
 
         do {
-            let resolved = try await musicCatalogService.catalogBackedResult(for: MusicSearchResult(
+            let resolved = try await catalogBackedResultResolver(MusicSearchResult(
                 songID: source.songID,
                 title: source.title,
                 artistName: source.artistName,
@@ -1685,15 +1753,24 @@ final class AppModel: ObservableObject {
                 previewURL: source.previewURL,
                 isCatalogBacked: true
             ))
-            source.songID = resolved.songID
-            source.title = resolved.title
-            source.artistName = resolved.artistName
-            source.duration = resolved.duration
-            source.previewURL = resolved.previewURL
-            source.isCatalogBacked = true
-            source.libraryPersistentID = nil
-            cue.source = .appleMusic(source)
-            state.teams[teamIndex].players[playerIndex].cue = cue
+            guard let teamIndex = state.teams.firstIndex(where: { $0.id == teamID }),
+                  let playerIndex = state.teams[teamIndex].players.firstIndex(where: { $0.id == playerID }),
+                  var currentCue = state.teams[teamIndex].players[playerIndex].cue,
+                  case .appleMusic(let currentSource) = currentCue.source,
+                  currentSource == source else {
+                return false
+            }
+
+            var refreshedSource = source
+            refreshedSource.songID = resolved.songID
+            refreshedSource.title = resolved.title
+            refreshedSource.artistName = resolved.artistName
+            refreshedSource.duration = resolved.duration
+            refreshedSource.previewURL = resolved.previewURL
+            refreshedSource.isCatalogBacked = true
+            refreshedSource.libraryPersistentID = nil
+            currentCue.source = .appleMusic(refreshedSource)
+            state.teams[teamIndex].players[playerIndex].cue = currentCue
             persist()
             return true
         } catch {
@@ -2000,9 +2077,9 @@ final class AppModel: ObservableObject {
               let team = state.teams.first(where: { $0.id == pendingPackageExport.teamID }) else {
             return
         }
-        self.pendingPackageExport = nil
-        await busy {
+        await busy(operationName: "Package export") {
             self.exportURL = try self.packageService.export(team: team, state: self.state)
+            self.pendingPackageExport = nil
         }
     }
 
@@ -2034,7 +2111,6 @@ final class AppModel: ObservableObject {
 
     func confirmPendingPackageImport() async {
         guard let pendingPackageImport else { return }
-        self.pendingPackageImport = nil
         await performPackageImport(
             from: pendingPackageImport.url,
             opensOnboardingHandoff: pendingPackageImport.opensOnboardingHandoff
@@ -2048,7 +2124,8 @@ final class AppModel: ObservableObject {
     }
 
     private func performPackageImport(from url: URL, opensOnboardingHandoff: Bool) async {
-        await busy {
+        await busy(operationName: "Package import") {
+            self.pendingPackageImport = nil
             let scoped = url.startAccessingSecurityScopedResource()
             defer {
                 if scoped { url.stopAccessingSecurityScopedResource() }
@@ -2110,7 +2187,11 @@ final class AppModel: ObservableObject {
     }
 
     func prepareRosterImport(from url: URL) async {
-        await busy {
+        await busy(operationName: "Roster CSV import") {
+            guard let targetTeamID = self.state.selectedTeamID,
+                  self.state.teams.contains(where: { $0.id == targetTeamID }) else {
+                throw AppError.noSelectedTeam
+            }
             let rows = try await self.packageService.parseRosterCSV(from: url)
             self.pendingRosterImport = PendingRosterImport(
                 sourceName: url.lastPathComponent,
@@ -2124,15 +2205,22 @@ final class AppModel: ObservableObject {
                         cue: nil,
                         isPresent: true
                     )
-                }
+                },
+                targetTeamID: targetTeamID
             )
         }
     }
 
     func applyPendingRosterImport() async {
-        guard !isBusy else { return }
-        await busy {
-            guard let teamIndex = self.teamIndex, let pendingRosterImport = self.pendingRosterImport else { return }
+        guard let pendingRosterImport else {
+            lastError = "This roster import is no longer associated with a team. Choose the CSV again."
+            return
+        }
+        let targetTeamID = pendingRosterImport.targetTeamID
+        await busy(operationName: "Roster CSV apply") {
+            guard let teamIndex = self.state.teams.firstIndex(where: { $0.id == targetTeamID }) else {
+                throw AppError.noSelectedTeam
+            }
             try await self.createBackupBeforeRiskyOperation(reason: "Automatic backup before roster CSV import")
             self.state.teams[teamIndex].players.append(contentsOf: pendingRosterImport.rows)
             self.state.teams[teamIndex].session.battingOrder.append(contentsOf: pendingRosterImport.rows.map(\.id))
@@ -2267,7 +2355,7 @@ final class AppModel: ObservableObject {
     }
 
     func restoreBackup(_ snapshot: SnapshotRecord) async {
-        await busy {
+        await busy(operationName: "Backup restore") {
             guard let snapshotsDirectory = try? AppPaths.snapshotsDirectory() else {
                 throw AppError.invalidImport
             }
@@ -2388,7 +2476,7 @@ final class AppModel: ObservableObject {
     }
 
     func exportSupportBundle() async {
-        await busy {
+        await busy(operationName: "Support bundle export") {
             await self.refreshGeneratedClipCleanupReport()
             let url = try self.packageService.exportSupportBundle(
                 state: self.state,
@@ -3264,15 +3352,51 @@ final class AppModel: ObservableObject {
                 }
 
                 let service = self.songClipGenerationService
-                let outcome = await Task.detached(priority: .utility) {
+                let preparationTask = Task.detached(priority: .utility) {
                     await service.prepare(clip)
-                }.value
+                }
+                self.activeSongClipPreparationRequest = request
+                self.activeSongClipPreparationTask = preparationTask
+                let outcome = await preparationTask.value
+                self.activeSongClipPreparationRequest = nil
+                self.activeSongClipPreparationTask = nil
+                guard !preparationTask.isCancelled else {
+                    if case .generated(let asset) = outcome {
+                        self.audioAssetService.removeAsset(relativePath: asset.relativePath)
+                    }
+                    await self.songClipGenerationQueue.complete(request)
+                    await self.refreshPendingSongClipPreparationCount()
+                    continue
+                }
                 self.applySongClipPreparationOutcome(outcome, request: request)
                 await self.songClipGenerationQueue.complete(request)
                 await self.refreshPendingSongClipPreparationCount()
             }
         }
         await songClipPreparationTask?.value
+    }
+
+    private func cancelSongClipPreparation(
+        teamID: UUID,
+        target: SongClipPreparationRequest.Target? = nil
+    ) async {
+        if let activeRequest = activeSongClipPreparationRequest,
+           activeRequest.teamID == teamID,
+           target == nil || activeRequest.target == target {
+            activeSongClipPreparationTask?.cancel()
+        }
+
+        if let target {
+            switch target {
+            case .player(let playerID):
+                await songClipGenerationQueue.cancel(teamID: teamID, playerID: playerID)
+            case .teamClip(let teamClipID):
+                await songClipGenerationQueue.cancel(teamID: teamID, teamClipID: teamClipID)
+            }
+        } else {
+            await songClipGenerationQueue.cancel(teamID: teamID)
+        }
+        await refreshPendingSongClipPreparationCount()
     }
 
     private func shouldSkipAutomaticSongClipPreparation(
@@ -3489,6 +3613,35 @@ final class AppModel: ObservableObject {
     }
 
     private func persist() {
+        guard let request = makePersistenceRequest() else { return }
+        Task(priority: .utility) { [persistenceWriter] in
+            let result = await persistenceWriter.enqueue(
+                request.snapshot,
+                sequence: request.sequence,
+                destinationURL: request.destinationURL
+            )
+
+            await MainActor.run {
+                self.applyPersistenceResult(result, cleanupPaths: request.cleanupPaths)
+            }
+        }
+    }
+
+    func flushLatestState() async {
+        await withTaskGroup(of: Void.self) { group in
+            group.addTask { [weak self] in
+                guard let self else { return }
+                await self.persistLatestStateAndWait()
+            }
+            group.addTask {
+                try? await Task.sleep(for: .seconds(1))
+            }
+            await group.next()
+            group.cancelAll()
+        }
+    }
+
+    private func makePersistenceRequest() -> PersistenceRequest? {
         let snapshot = state
         let cleanupPaths = pendingAssetCleanupPaths
         pendingAssetCleanupPaths.removeAll()
@@ -3498,28 +3651,39 @@ final class AppModel: ObservableObject {
         } catch {
             pendingAssetCleanupPaths.formUnion(cleanupPaths)
             lastError = error.localizedDescription
-            return
+            return nil
         }
         persistSequence += 1
-        let sequence = persistSequence
-        Task(priority: .utility) { [persistenceWriter] in
-            let result = await persistenceWriter.enqueue(
-                snapshot,
-                sequence: sequence,
-                destinationURL: destinationURL
-            )
+        return PersistenceRequest(
+            snapshot: snapshot,
+            cleanupPaths: cleanupPaths,
+            sequence: persistSequence,
+            destinationURL: destinationURL
+        )
+    }
 
-            await MainActor.run {
-                switch result {
-                case .written:
-                    cleanupPaths.forEach(self.removePersistedAssetIfStillUnreferenced)
-                case .failed(let errorDescription):
-                    self.pendingAssetCleanupPaths.formUnion(cleanupPaths)
-                    self.lastError = errorDescription
-                case .unconfirmed:
-                    self.pendingAssetCleanupPaths.formUnion(cleanupPaths)
-                }
-            }
+    private func persistLatestStateAndWait() async {
+        guard let request = makePersistenceRequest() else { return }
+        let result = await persistenceWriter.enqueueAndWait(
+            request.snapshot,
+            sequence: request.sequence,
+            destinationURL: request.destinationURL
+        )
+        applyPersistenceResult(result, cleanupPaths: request.cleanupPaths)
+    }
+
+    private func applyPersistenceResult(
+        _ result: StatePersistenceResult,
+        cleanupPaths: Set<String>
+    ) {
+        switch result {
+        case .written:
+            cleanupPaths.forEach(removePersistedAssetIfStillUnreferenced)
+        case .failed(let errorDescription):
+            pendingAssetCleanupPaths.formUnion(cleanupPaths)
+            lastError = errorDescription
+        case .unconfirmed:
+            pendingAssetCleanupPaths.formUnion(cleanupPaths)
         }
     }
 
@@ -3580,9 +3744,20 @@ final class AppModel: ObservableObject {
         try encoder.encode(state).write(to: destinationURL, options: .atomic)
     }
 
-    private func busy(_ operation: @escaping () async throws -> Void) async {
+    private func busy(
+        operationName: String = "This operation",
+        _ operation: @escaping () async throws -> Void
+    ) async {
+        guard let admission = riskyOperationCoordinator.begin(name: operationName) else {
+            let activeName = riskyOperationCoordinator.active?.name ?? "another operation"
+            lastError = "\(activeName) is still in progress. Finish it before starting \(operationName.lowercased())."
+            return
+        }
+        riskyOperationCount = riskyOperationCoordinator.count
         isBusy = true
         defer {
+            riskyOperationCoordinator.end(id: admission.id)
+            riskyOperationCount = riskyOperationCoordinator.count
             isBusy = false
             if !pendingIncomingPackageURLs.isEmpty {
                 Task { await self.preparePendingIncomingPackageIfNeeded() }
@@ -3764,7 +3939,7 @@ final class AppModel: ObservableObject {
 
     private func enrichedAppleMusicSelection(_ result: MusicSearchResult) async throws -> MusicSearchResult {
         guard appleMusicPlaybackCapability == .fullSong else { return result }
-        return try await musicCatalogService.catalogBackedResult(for: result)
+        return try await catalogBackedResultResolver(result)
     }
 
     private func rememberAppleMusicSelection(_ result: MusicSearchResult) {
@@ -3974,9 +4149,15 @@ private enum StatePersistenceResult {
 }
 
 private actor StatePersistenceWriter {
+    private struct Waiter {
+        let sequence: Int
+        let continuation: CheckedContinuation<StatePersistenceResult, Never>
+    }
+
     private var latestSequence = 0
     private var pending: (state: AppState, sequence: Int, destinationURL: URL)?
     private var isWriting = false
+    private var waiters: [Waiter] = []
 
     func enqueue(_ state: AppState, sequence: Int, destinationURL: URL) async -> StatePersistenceResult {
         guard sequence >= latestSequence else { return .unconfirmed }
@@ -3984,12 +4165,34 @@ private actor StatePersistenceWriter {
         pending = (state, sequence, destinationURL)
 
         guard !isWriting else { return .unconfirmed }
+        return writePending()
+    }
+
+    func enqueueAndWait(_ state: AppState, sequence: Int, destinationURL: URL) async -> StatePersistenceResult {
+        guard sequence >= latestSequence else { return .unconfirmed }
+        latestSequence = sequence
+        pending = (state, sequence, destinationURL)
+
+        guard isWriting else {
+            return writePending()
+        }
+
+        return await withCheckedContinuation { continuation in
+            waiters.append(Waiter(sequence: sequence, continuation: continuation))
+        }
+    }
+
+    private func writePending() -> StatePersistenceResult {
         isWriting = true
-        defer { isWriting = false }
+        defer {
+            isWriting = false
+        }
 
         var latestError: String?
+        var completedSequence = latestSequence
         while let next = pending {
             pending = nil
+            completedSequence = next.sequence
             do {
                 try AppModel.write(next.state, to: next.destinationURL)
             } catch {
@@ -3997,9 +4200,17 @@ private actor StatePersistenceWriter {
             }
         }
         if let latestError {
+            resumeWaiters(through: completedSequence, result: .failed(latestError))
             return .failed(latestError)
         }
+        resumeWaiters(through: completedSequence, result: .written)
         return .written
+    }
+
+    private func resumeWaiters(through sequence: Int, result: StatePersistenceResult) {
+        let ready = waiters.filter { $0.sequence <= sequence }
+        waiters.removeAll { $0.sequence <= sequence }
+        ready.forEach { $0.continuation.resume(returning: result) }
     }
 }
 

@@ -47,6 +47,10 @@ actor SongClipGenerationQueue {
         pending.removeAll { $0.teamID == teamID && $0.target == .teamClip(teamClipID) }
     }
 
+    func cancel(teamID: UUID) {
+        pending.removeAll { $0.teamID == teamID }
+    }
+
     func setPaused(_ paused: Bool, reason: PauseReason) {
         if paused {
             pauseReasons.insert(reason)

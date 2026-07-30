@@ -7,9 +7,11 @@ final class RosterCSVImportTests: XCTestCase {
 
     override func setUpWithError() throws {
         temp = try RollCallTemporaryDirectory()
+        AppPaths.testBaseDirectoryOverride = temp.fileURL("AppSupport")
     }
 
     override func tearDown() {
+        AppPaths.testBaseDirectoryOverride = nil
         temp = nil
     }
 
@@ -84,7 +86,8 @@ final class RosterCSVImportTests: XCTestCase {
                 RollCallTestFixtures.player(id: RollCallTestFixtures.jordanID, name: " alex ramirez ", number: " 12 "),
                 RollCallTestFixtures.player(id: RollCallTestFixtures.caseyID, name: "Casey Morgan", number: "9"),
                 RollCallTestFixtures.player(id: UUID(), name: "Casey Morgan", number: "9"),
-            ]
+            ],
+            targetTeamID: RollCallTestFixtures.teamID
         )
 
         XCTAssertEqual(pending.duplicateCount(comparedTo: existing), 2)
@@ -92,6 +95,52 @@ final class RosterCSVImportTests: XCTestCase {
             PendingRosterImport.duplicateMessage(count: 2),
             "2 possible duplicate players found by matching name and number."
         )
+    }
+
+    @MainActor
+    func testPendingRosterImportUsesTheTeamConfirmedBeforeApply() async throws {
+        let targetTeam = RollCallTestFixtures.team(players: [
+            RollCallTestFixtures.player(id: RollCallTestFixtures.alexID, name: "Alex Ramirez", number: "12")
+        ])
+        var otherTeam = RollCallTestFixtures.team(players: [
+            RollCallTestFixtures.player(id: RollCallTestFixtures.jordanID, name: "Jordan Lee", number: "4")
+        ])
+        otherTeam.id = UUID()
+        otherTeam.name = "Lightning"
+        try writeState(RollCallTestFixtures.appState(
+            teams: [targetTeam, otherTeam],
+            selectedTeamID: targetTeam.id
+        ))
+
+        let model = AppModel()
+        model.pendingRosterImport = PendingRosterImport(
+            sourceName: "roster.csv",
+            rows: [
+                RollCallTestFixtures.player(id: RollCallTestFixtures.caseyID, name: "Casey Morgan", number: "9")
+            ],
+            targetTeamID: targetTeam.id
+        )
+        model.selectTeam(otherTeam)
+
+        await model.applyPendingRosterImport()
+
+        XCTAssertEqual(
+            model.state.teams.first(where: { $0.id == targetTeam.id })?.players.map(\.displayName),
+            ["Alex Ramirez", "Casey Morgan"]
+        )
+        XCTAssertEqual(
+            model.state.teams.first(where: { $0.id == otherTeam.id })?.players.map(\.displayName),
+            ["Jordan Lee"]
+        )
+        XCTAssertNil(model.pendingRosterImport)
+        XCTAssertFalse(model.isBusy)
+    }
+
+    private func writeState(_ state: AppState) throws {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        encoder.dateEncodingStrategy = .iso8601
+        try encoder.encode(state).write(to: AppPaths.stateURL(), options: .atomic)
     }
 }
 
