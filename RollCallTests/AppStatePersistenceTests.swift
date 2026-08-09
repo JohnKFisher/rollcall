@@ -347,6 +347,27 @@ final class AppStatePersistenceTests: XCTestCase {
         XCTAssertNil(object["cue"])
     }
 
+    func testPlayerDecodesExplicitlyNullSongAssignment() throws {
+        var player = RollCallTestFixtures.player(
+            id: RollCallTestFixtures.alexID,
+            name: "Alex Ramirez",
+            number: "12"
+        )
+        player.songAssignment = nil
+
+        var object = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: JSONEncoder().encode(player)) as? [String: Any]
+        )
+        object["songAssignment"] = NSNull()
+
+        let decoded = try JSONDecoder().decode(
+            Player.self,
+            from: try JSONSerialization.data(withJSONObject: object)
+        )
+
+        XCTAssertNil(decoded.songAssignment)
+    }
+
     func testMigratedAppleMusicClipIsSourceBackedAndNotPortable() {
         let clip = SongClip(
             cue: RollCallTestFixtures.appleMusicCue(
@@ -363,11 +384,10 @@ final class AppStatePersistenceTests: XCTestCase {
         XCTAssertEqual(clip.policy.appleMusicHandlingPolicy, .readableLocalOnly)
     }
 
-    func testSongAssignmentRoundTripsPrivateAndSharedCases() throws {
+    func testSongAssignmentRoundTripsPrivateClipAndPreservesUnresolvedLegacySharedPayload() throws {
         let privateAssignment = SongAssignment.privateClip(
             SongClip(cue: RollCallTestFixtures.localCue())
         )
-        let sharedID = UUID()
         let encoder = JSONEncoder()
         let decoder = JSONDecoder()
 
@@ -375,10 +395,23 @@ final class AppStatePersistenceTests: XCTestCase {
             try decoder.decode(SongAssignment.self, from: encoder.encode(privateAssignment)),
             privateAssignment
         )
-        XCTAssertEqual(
-            try decoder.decode(SongAssignment.self, from: encoder.encode(SongAssignment.sharedTeamClip(sharedID))),
-            .sharedTeamClip(sharedID)
+
+        let legacyPayload = """
+        {"type":"sharedTeamClip","sharedTeamClipID":"\(UUID().uuidString)"}
+        """
+        let unresolved = try decoder.decode(
+            SongAssignment.self,
+            from: Data(legacyPayload.utf8)
         )
+        guard case .unresolvedLegacySharedTeamClip(let sharedID) = unresolved else {
+            return XCTFail("Expected unresolved legacy shared assignment.")
+        }
+        let encoded = try encoder.encode(unresolved)
+        let encodedObject = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: encoded) as? [String: Any]
+        )
+        XCTAssertEqual(encodedObject["type"] as? String, "sharedTeamClip")
+        XCTAssertEqual(encodedObject["sharedTeamClipID"] as? String, sharedID.uuidString)
     }
 
     func testTeamDecodeDefaultsMissingTeamClipsToEmpty() throws {

@@ -3,6 +3,22 @@ import UIKit
 import XCTest
 @testable import RollCall
 
+private actor PreparationProbe {
+    private(set) var didStart = false
+
+    func markStarted() {
+        didStart = true
+    }
+}
+
+private actor PreparationWaitProbe {
+    private(set) var didStart = false
+
+    func markStarted() {
+        didStart = true
+    }
+}
+
 final class SongClipGenerationTests: XCTestCase {
     private var temp: RollCallTemporaryDirectory!
 
@@ -14,6 +30,138 @@ final class SongClipGenerationTests: XCTestCase {
     override func tearDownWithError() throws {
         AppPaths.testBaseDirectoryOverride = nil
         temp = nil
+    }
+
+    func testQueueCancellationMarksActiveRequestBeforePreparationStarts() async {
+        let queue = SongClipGenerationQueue()
+        let request = SongClipPreparationRequest(
+            id: UUID(),
+            teamID: RollCallTestFixtures.teamID,
+            target: .player(RollCallTestFixtures.alexID),
+            clipID: UUID(),
+            generationKey: "generation-key",
+            trigger: .assignmentSaved,
+            isExplicit: false
+        )
+
+        await queue.enqueue(request)
+        let activeRequest = await queue.next()
+        XCTAssertEqual(activeRequest, request)
+
+        let cancelled = await queue.cancel(
+            teamID: request.teamID,
+            target: request.target
+        )
+        let isCancelled = await queue.isCancelled(request)
+        let nextRequestAfterCancellation = await queue.next()
+        XCTAssertTrue(cancelled)
+        XCTAssertTrue(isCancelled)
+        XCTAssertNil(nextRequestAfterCancellation)
+
+        await queue.complete(request)
+        let isCancelledAfterCompletion = await queue.isCancelled(request)
+        XCTAssertFalse(isCancelledAfterCompletion)
+    }
+
+    @MainActor
+    func testCoordinatorCancellationDoesNotApplyLatePreparationOutcome() async {
+        let probe = PreparationProbe()
+        var clip = SongClip(cue: RollCallTestFixtures.localCue())
+        clip.id = UUID()
+        let request = SongClipPreparationRequest(
+            id: UUID(),
+            teamID: RollCallTestFixtures.teamID,
+            target: .teamClip(clip.id),
+            clipID: clip.id,
+            generationKey: clip.generationKey,
+            trigger: .assignmentSaved,
+            isExplicit: false
+        )
+        let coordinator = SongClipPreparationCoordinator(
+            audioAssetService: AudioAssetService(),
+            prepare: { _ in
+                await probe.markStarted()
+                try? await Task.sleep(for: .seconds(30))
+                return .sourceBacked(downloadedOnDevice: true)
+            }
+        )
+        var appliedOutcomes = 0
+
+        await coordinator.enqueue(request)
+        let runner = Task { @MainActor in
+            await coordinator.runIfNeeded(
+                clipFor: { _ in clip },
+                waitForSlot: { true },
+                applyOutcome: { _, _ in appliedOutcomes += 1 }
+            )
+        }
+
+        for _ in 0..<20 {
+            if await probe.didStart { break }
+            try? await Task.sleep(for: .milliseconds(10))
+        }
+        let didStart = await probe.didStart
+        XCTAssertTrue(didStart)
+
+        await coordinator.cancel(teamID: request.teamID, target: request.target)
+        await runner.value
+
+        XCTAssertEqual(appliedOutcomes, 0)
+        let pendingCount = await coordinator.pendingCount()
+        XCTAssertEqual(pendingCount, 0)
+    }
+
+    @MainActor
+    func testCoordinatorCancellationStopsLiveUseWait() async {
+        let waitProbe = PreparationWaitProbe()
+        var mutableClip = SongClip(cue: RollCallTestFixtures.localCue())
+        mutableClip.id = UUID()
+        let clip = mutableClip
+        let request = SongClipPreparationRequest(
+            id: UUID(),
+            teamID: RollCallTestFixtures.teamID,
+            target: .teamClip(clip.id),
+            clipID: clip.id,
+            generationKey: clip.generationKey,
+            trigger: .assignmentSaved,
+            isExplicit: false
+        )
+        let coordinator = SongClipPreparationCoordinator(
+            audioAssetService: AudioAssetService(),
+            prepare: { _ in .sourceBacked(downloadedOnDevice: true) }
+        )
+
+        await coordinator.enqueue(request)
+        let runner = Task { @MainActor in
+            await coordinator.runIfNeeded(
+                clipFor: { _ in clip },
+                waitForSlot: {
+                    await waitProbe.markStarted()
+                    do {
+                        try await Task.sleep(for: .seconds(30))
+                        return true
+                    } catch {
+                        return false
+                    }
+                },
+                applyOutcome: { _, _ in
+                    XCTFail("Cancelled preparation must not apply an outcome.")
+                }
+            )
+        }
+
+        for _ in 0..<20 {
+            if await waitProbe.didStart { break }
+            try? await Task.sleep(for: .milliseconds(10))
+        }
+        let didStart = await waitProbe.didStart
+        XCTAssertTrue(didStart)
+
+        await coordinator.cancel(teamID: request.teamID, target: request.target)
+        await runner.value
+
+        let pendingCount = await coordinator.pendingCount()
+        XCTAssertEqual(pendingCount, 0)
     }
 
     func testGenerationKeyIsStableAndChangesWithCreativeSelection() {
@@ -175,24 +323,71 @@ final class SongClipGenerationTests: XCTestCase {
     func testLegacySharedAssignmentFlattensToIndependentPlayerCopy() throws {
         var clip = SongClip(cue: RollCallTestFixtures.localCue())
         clip.displayName = "Legacy Shared Clip"
-        var player = RollCallTestFixtures.player(
+        var unrelatedClip = SongClip(cue: RollCallTestFixtures.localCue(relativePath: "unrelated.m4a"))
+        unrelatedClip.id = UUID()
+        unrelatedClip.pauseAfterAnnouncer = 0.75
+        let player = RollCallTestFixtures.player(
             id: RollCallTestFixtures.alexID,
             name: "Alex Morgan",
             number: "7"
         )
-        player.songAssignment = .sharedTeamClip(clip.id)
         var team = RollCallTestFixtures.team(players: [player])
-        team.teamClips = [clip]
-        try writeState(RollCallTestFixtures.appState(team: team))
+        team.teamClips = [clip, unrelatedClip]
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        var object = try XCTUnwrap(JSONSerialization.jsonObject(with: encoder.encode(team)) as? [String: Any])
+        var players = try XCTUnwrap(object["players"] as? [[String: Any]])
+        players[0]["songAssignment"] = [
+            "type": "sharedTeamClip",
+            "sharedTeamClipID": clip.id.uuidString
+        ]
+        object["players"] = players
+        let legacyData = try JSONSerialization.data(withJSONObject: object)
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        let migratedTeam = try decoder.decode(Team.self, from: legacyData)
 
-        let model = AppModel()
-        let loadedPlayer = try XCTUnwrap(model.selectedTeam?.players.first)
+        let loadedPlayer = try XCTUnwrap(migratedTeam.players.first)
         guard case .privateClip(let playerClip)? = loadedPlayer.songAssignment else {
             return XCTFail("Expected the legacy shared assignment to flatten.")
         }
         XCTAssertNotEqual(playerClip.id, clip.id)
         XCTAssertEqual(playerClip.sourceLineageClipID, clip.id)
-        XCTAssertEqual(model.selectedTeam?.teamClips.first?.pauseAfterAnnouncer, 0)
+        XCTAssertEqual(migratedTeam.teamClips.first?.pauseAfterAnnouncer, 0)
+        XCTAssertEqual(migratedTeam.teamClips.last?.pauseAfterAnnouncer, 0.75)
+    }
+
+    func testUnresolvedLegacySharedAssignmentSurvivesTeamSave() throws {
+        let player = RollCallTestFixtures.player(
+            id: RollCallTestFixtures.alexID,
+            name: "Alex Morgan",
+            number: "7"
+        )
+        var team = RollCallTestFixtures.team(players: [player])
+        let missingClipID = UUID()
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        var object = try XCTUnwrap(JSONSerialization.jsonObject(with: encoder.encode(team)) as? [String: Any])
+        var players = try XCTUnwrap(object["players"] as? [[String: Any]])
+        players[0]["songAssignment"] = [
+            "type": "sharedTeamClip",
+            "sharedTeamClipID": missingClipID.uuidString
+        ]
+        object["players"] = players
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+
+        team = try decoder.decode(
+            Team.self,
+            from: JSONSerialization.data(withJSONObject: object)
+        )
+        let saved = try encoder.encode(team)
+        let reloaded = try decoder.decode(Team.self, from: saved)
+
+        guard case .unresolvedLegacySharedTeamClip(let reloadedID)? = reloaded.players.first?.songAssignment else {
+            return XCTFail("Expected unresolved legacy assignment to survive save and reload.")
+        }
+        XCTAssertEqual(reloadedID, missingClipID)
     }
 
     @MainActor

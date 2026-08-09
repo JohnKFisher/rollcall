@@ -88,9 +88,10 @@ Use this file as a concise decision log for project-specific architectural, beha
   Rationale: the Phase 0 probe successfully narrowed the public-API reality and did not support the earlier assumption that Apple Music songs could generally be localized, so the product must preserve the easy Apple Music path while reporting readiness and portability honestly.
   Status: approved
 
-- Approved: Roll Call 1.2 persists player songs as private or shared `SongAssignment`s backed by durable `SongClip` creative truth, keeps `Cue` as the internal playback recipe, migrates legacy `Player.cue` values to private assignments while decoding, and writes only the new model on subsequent saves.
+- Approved: Roll Call 1.2 persists player songs as private `SongAssignment`s backed by durable `SongClip` creative truth, keeps `Cue` as the internal playback recipe, migrates legacy `Player.cue` values to private assignments while decoding, and writes resolved assignments in the new model on subsequent saves. Legacy shared assignments are decode-only compatibility data; unresolved references remain preserved until they can be migrated or repaired.
   Rationale: source metadata, selected timing, generated assets, readiness, portability, and retry policy need independent durable state without breaking existing teams, playback, or older `.rollcall` imports.
-  Status: approved
+  Migration ownership: `Team.init(from:)` resolves legacy shared assignments when the team and its `teamClips` are available. `AppModel` separately resolves the same compatibility payload inside `RecentlyDeleted` player records because those records require the owning team lookup; unresolved references remain untouched in both paths.
+  Status: approved; legacy shared assignments are compatibility-only
 
 ## 2026-06-07
 
@@ -354,11 +355,11 @@ Use this file as a concise decision log for project-specific architectural, beha
 
 - Approved: ship an experimental Apple Music local-copy lane behind an advanced off-by-default setting.
   Rationale: keep the supported app behavior App-Store-safe by default while still allowing a removable, isolated power-user conversion path.
-  Status: approved
+  Status: superseded; the experimental local-copy lane was removed and is not part of the supported product.
 
 - Approved: treat successful experimental Apple Music copies as ordinary local audio in the product model.
   Rationale: playback, editing, export, duplication, and restore should not special-case prior Apple Music origin once a local file exists.
-  Status: approved
+  Status: superseded with the removal of the experimental Apple Music local-copy lane.
 
 - Recorded: the working app bootstrap has been moved back onto the intended `RollCall/` and `RollCall.xcodeproj/` names.
   Rationale: the rebuilt tree is now the validated source of truth, and the older broken bootstrap artifacts were removed to keep the repo clean.

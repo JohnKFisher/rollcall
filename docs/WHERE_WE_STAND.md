@@ -4,8 +4,8 @@ Use this file as the concise status snapshot for the current checked-in app. Det
 
 ## Current release
 
-- Version: `1.2.1`
-- Build: `77`
+- Version: `1.2.2`
+- Build: `80`
 - The app is an iPhone-first, on-device walk-up cue app. The full feature set remains free, with optional support contributions in Settings/About.
 
 ## What is in place

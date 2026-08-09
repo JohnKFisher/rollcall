@@ -19,6 +19,7 @@
 		A10000000000000000000010 /* RollCallDocumentIcon-44x58.png in Resources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000111 /* RollCallDocumentIcon-44x58.png */; };
 		A10000000000000000000011 /* RollCallDocumentIcon-320x320.png in Resources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000112 /* RollCallDocumentIcon-320x320.png */; };
 		A10000000000000000000012 /* AppIcon.icon in Resources */ = {isa = PBXBuildFile; fileRef = FE483C282FE2450F005E77A0 /* AppIcon.icon */; };
+		A10000000000000000000013 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000114 /* PrivacyInfo.xcprivacy */; };
 		A20000000000000000000001 /* ZIPFoundation in Frameworks */ = {isa = PBXBuildFile; productRef = A20000000000000000000002 /* ZIPFoundation */; };
 		A30000000000000000000001 /* RollCallDesignSystem.swift in Sources */ = {isa = PBXBuildFile; fileRef = A30000000000000000000101 /* RollCallDesignSystem.swift */; };
 		A30000000000000000000002 /* RollCallColors.swift in Sources */ = {isa = PBXBuildFile; fileRef = A30000000000000000000102 /* RollCallColors.swift */; };
@@ -75,6 +76,7 @@
 		A10000000000000000000111 /* RollCallDocumentIcon-44x58.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "RollCallDocumentIcon-44x58.png"; sourceTree = "<group>"; };
 		A10000000000000000000112 /* RollCallDocumentIcon-320x320.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "RollCallDocumentIcon-320x320.png"; sourceTree = "<group>"; };
 		A10000000000000000000113 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		A10000000000000000000114 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		A30000000000000000000101 /* RollCallDesignSystem.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RollCallDesignSystem.swift; sourceTree = "<group>"; };
 		A30000000000000000000102 /* RollCallColors.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RollCallColors.swift; sourceTree = "<group>"; };
 		A30000000000000000000103 /* RollCallTypography.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RollCallTypography.swift; sourceTree = "<group>"; };
@@ -157,6 +159,7 @@
 				A50000000000000000000103 /* MusicRenderProbeView.swift */,
 				A30000000000000000000142 /* DesignSystem */,
 				A10000000000000000000113 /* Info.plist */,
+				A10000000000000000000114 /* PrivacyInfo.xcprivacy */,
 				A10000000000000000000106 /* Assets.xcassets */,
 				A10000000000000000000108 /* LaunchScreen.storyboard */,
 				A10000000000000000000109 /* BuiltInAudio */,
@@ -311,6 +314,7 @@
 				A10000000000000000000010 /* RollCallDocumentIcon-44x58.png in Resources */,
 				A10000000000000000000011 /* RollCallDocumentIcon-320x320.png in Resources */,
 				A10000000000000000000012 /* AppIcon.icon in Resources */,
+				A10000000000000000000013 /* PrivacyInfo.xcprivacy in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

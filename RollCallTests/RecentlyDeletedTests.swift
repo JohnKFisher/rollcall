@@ -100,6 +100,85 @@ final class RecentlyDeletedTests: XCTestCase {
     }
 
     @MainActor
+    func testLegacySharedAssignmentInRecentlyDeletedPlayerMigratesOnLoad() throws {
+        let sourceClip = SongClip(cue: RollCallTestFixtures.localCue())
+        var deletedPlayer = RollCallTestFixtures.player(
+            id: RollCallTestFixtures.alexID,
+            name: "Alex Ramirez",
+            number: "12"
+        )
+        deletedPlayer.songAssignment = .unresolvedLegacySharedTeamClip(sourceClip.id)
+        let team = RollCallTestFixtures.team(players: [RollCallTestFixtures.player(
+            id: RollCallTestFixtures.jordanID,
+            name: "Jordan Lee",
+            number: "4"
+        )])
+        var state = RollCallTestFixtures.appState(team: team)
+        state.teams[0].teamClips = [sourceClip]
+        state.recentlyDeleted = [
+            RecentlyDeletedItem(
+                id: UUID(),
+                deletedAt: RollCallTestFixtures.now,
+                payload: .player(
+                    DeletedPlayerRecord(
+                        player: deletedPlayer,
+                        originalTeamID: team.id,
+                        originalTeamName: team.name,
+                        previousBattingOrder: [deletedPlayer.id]
+                    )
+                )
+            )
+        ]
+        try writeState(state)
+
+        let model = AppModel()
+
+        guard let firstItem = model.state.recentlyDeleted.first,
+              case .player(let deletedRecord) = firstItem.payload,
+              case .privateClip(let migratedClip)? = deletedRecord.player.songAssignment else {
+            return XCTFail("Expected the recently deleted legacy assignment to migrate.")
+        }
+        XCTAssertEqual(migratedClip.sourceLineageClipID, sourceClip.id)
+    }
+
+    @MainActor
+    func testUnresolvedLegacySharedAssignmentInRecentlyDeletedPlayerSurvivesLoad() throws {
+        var deletedPlayer = RollCallTestFixtures.player(
+            id: RollCallTestFixtures.alexID,
+            name: "Alex Ramirez",
+            number: "12"
+        )
+        let missingClipID = UUID()
+        deletedPlayer.songAssignment = .unresolvedLegacySharedTeamClip(missingClipID)
+        let team = RollCallTestFixtures.team()
+        var state = RollCallTestFixtures.appState(team: team)
+        state.recentlyDeleted = [
+            RecentlyDeletedItem(
+                id: UUID(),
+                deletedAt: RollCallTestFixtures.now,
+                payload: .player(
+                    DeletedPlayerRecord(
+                        player: deletedPlayer,
+                        originalTeamID: team.id,
+                        originalTeamName: team.name,
+                        previousBattingOrder: [deletedPlayer.id]
+                    )
+                )
+            )
+        ]
+        try writeState(state)
+
+        let model = AppModel()
+
+        guard let firstItem = model.state.recentlyDeleted.first,
+              case .player(let deletedRecord) = firstItem.payload,
+              case .unresolvedLegacySharedTeamClip(let reloadedID)? = deletedRecord.player.songAssignment else {
+            return XCTFail("Expected unresolved legacy assignment to remain recoverable.")
+        }
+        XCTAssertEqual(reloadedID, missingClipID)
+    }
+
+    @MainActor
     func testRestoreDeletedTeamRenamesWhenActiveTeamNameAlreadyExists() throws {
         let activeTeam = RollCallTestFixtures.team()
         let deletedTeam = Team(

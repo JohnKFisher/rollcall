@@ -112,8 +112,8 @@ final class BackupRestoreTests: XCTestCase {
         try writeState(currentState)
         let model = AppModel()
 
-        model.createBackup(reason: "Manual backup")
-        let snapshot = try await waitForFirstSnapshot(in: model)
+        try await model.createBackupAndWait(reason: "Manual backup")
+        let snapshot = try XCTUnwrap(model.state.snapshots.first)
 
         let backupState = try readStateSnapshot(snapshot)
         XCTAssertTrue(backupState.recentlyDeleted.isEmpty)
@@ -340,17 +340,6 @@ final class BackupRestoreTests: XCTestCase {
         decoder.dateDecodingStrategy = .iso8601
         let url = try AppPaths.snapshotsDirectory().appendingPathComponent(snapshot.relativeManifestPath)
         return try decoder.decode(AppState.self, from: Data(contentsOf: url))
-    }
-
-    @MainActor
-    private func waitForFirstSnapshot(in model: AppModel) async throws -> SnapshotRecord {
-        for _ in 0..<20 {
-            if let snapshot = model.state.snapshots.first {
-                return snapshot
-            }
-            try await Task.sleep(for: .milliseconds(50))
-        }
-        throw XCTSkip("Timed out waiting for backup snapshot creation.")
     }
 
     private func writeAsset(_ relativePath: String) throws {

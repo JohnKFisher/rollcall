@@ -52,5 +52,7 @@ Before uploading a public build:
 4. Confirm Settings does not show `Advanced / Developer Tools`.
 5. Confirm unfinished tabs, buttons, screens, and coming-soon UI are not visible.
 6. Archive and distribute through the normal App Store Connect upload path.
+7. In App Store Connect, include this functional line in the App Description because Release offers auto-renewable support:
+   `Terms of Use (EULA): https://www.apple.com/legal/internet-services/itunes/dev/stdeula/`
 
 For internal TestFlight-only validation, use `Roll Call Internal` and archive with `Internal`.

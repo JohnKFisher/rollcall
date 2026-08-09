@@ -546,9 +546,6 @@ final class AppModel: ObservableObject {
     private var isPreparingIncomingPackagePreview = false
     private var initialStateLoadWarning: String?
     private var bannerDismissTask: Task<Void, Never>?
-    private var songClipPreparationTask: Task<Void, Never>?
-    private var activeSongClipPreparationTask: Task<SongClipPreparationOutcome, Never>?
-    private var activeSongClipPreparationRequest: SongClipPreparationRequest?
     private var songClipPreparationLiveUseThrottled = false
     private var lowPowerModeTask: Task<Void, Never>?
     private var activePlaybackRequestID = UUID()
@@ -567,7 +564,7 @@ final class AppModel: ObservableObject {
     let playbackEngine: CuePlaybackEngine
     let customAnnouncerRecorder = CustomAnnouncerRecorder()
     let songClipGenerationService = SongClipGenerationService()
-    private let songClipGenerationQueue = SongClipGenerationQueue()
+    private let songClipPreparationCoordinator: SongClipPreparationCoordinator
 
     private struct PersistenceRequest {
         let snapshot: AppState
@@ -612,6 +609,10 @@ final class AppModel: ObservableObject {
         self.appleMusicPlaybackCapabilityResolver = appleMusicPlaybackCapabilityResolver
         self.catalogBackedResultResolver = catalogBackedResultResolver
         self.previewPlaybackResolver = previewPlaybackResolver
+        self.songClipPreparationCoordinator = SongClipPreparationCoordinator(
+            generationService: songClipGenerationService,
+            audioAssetService: audioAssetService
+        )
         FeatureFlags.assertReleaseSafety()
         self.musicRenderProbeService = MusicRenderProbeService(audioAssetService: audioAssetService, musicCatalogService: musicCatalogService)
         self.playbackEngine = CuePlaybackEngine(audioAssetService: audioAssetService, musicCatalogService: musicCatalogService)
@@ -834,15 +835,14 @@ final class AppModel: ObservableObject {
     }
 
     private func duplicatedSongAssignment(from assignment: SongAssignment?) -> SongAssignment? {
-        switch assignment {
-        case .privateClip(var clip):
-            let sourceClipID = clip.id
-            clip.id = UUID()
-            clip.sourceLineageClipID = clip.sourceLineageClipID ?? sourceClipID
-            return .privateClip(clip)
-        case .sharedTeamClip, nil:
-            return assignment
+        guard let assignment else {
+            return nil
         }
+        guard case .privateClip(var clip) = assignment else { return assignment }
+        let sourceClipID = clip.id
+        clip.id = UUID()
+        clip.sourceLineageClipID = clip.sourceLineageClipID ?? sourceClipID
+        return .privateClip(clip)
     }
 
     func renameSelectedTeam(to name: String) {
@@ -2148,7 +2148,6 @@ final class AppModel: ObservableObject {
             let originalImportedTeamID = importResult.manifest.team.id
             self.state.teams.append(imported)
             self.state.selectedTeamID = imported.id
-            self.flattenLegacySharedAssignments(for: self.state.teams.count - 1)
             self.normalizeLineup(for: self.state.teams.count - 1)
             if opensOnboardingHandoff {
                 self.state.onboarding = OnboardingState(
@@ -2282,19 +2281,21 @@ final class AppModel: ObservableObject {
     }
 
     func createBackup(reason: String) {
-        let snapshotState = backupSnapshotState(from: state)
-        Task(priority: .utility) { [weak self] in
-            let result = await self?.writeBackupRecord(for: snapshotState, reason: reason) ?? .failure(AppError.invalidImport)
-
+        Task { @MainActor [weak self] in
             guard let self else { return }
-            switch result {
-            case .success(let snapshotRecord):
-                self.insertBackupRecord(snapshotRecord)
-                self.persist()
-            case .failure(let error):
+            do {
+                try await self.createBackupAndWait(reason: reason)
+            } catch {
                 self.lastError = error.localizedDescription
             }
         }
+    }
+
+    func createBackupAndWait(reason: String) async throws {
+        let snapshotState = backupSnapshotState(from: state)
+        let snapshotRecord = try await writeBackupRecord(for: snapshotState, reason: reason).get()
+        insertBackupRecord(snapshotRecord)
+        persist()
     }
 
     private func createBackupBeforeRiskyOperation(reason: String) async throws {
@@ -2489,7 +2490,7 @@ final class AppModel: ObservableObject {
     }
 
     func refreshGeneratedClipCleanupReport() async {
-        let activeCount = await songClipGenerationQueue.pendingCount()
+        let activeCount = await songClipPreparationCoordinator.pendingCount()
         generatedClipCleanupReport = await runGeneratedClipCleanup(
             activePreparationCount: activeCount,
             shouldRemoveOrphans: false
@@ -2497,7 +2498,7 @@ final class AppModel: ObservableObject {
     }
 
     func cleanGeneratedClipsNow() async {
-        let activeCount = await songClipGenerationQueue.pendingCount()
+        let activeCount = await songClipPreparationCoordinator.pendingCount()
         generatedClipCleanupReport = await runGeneratedClipCleanup(
             activePreparationCount: activeCount,
             shouldRemoveOrphans: true
@@ -2505,7 +2506,7 @@ final class AppModel: ObservableObject {
     }
 
     private func runAutomaticGeneratedClipCleanup() async {
-        let activeCount = await songClipGenerationQueue.pendingCount()
+        let activeCount = await songClipPreparationCoordinator.pendingCount()
         generatedClipCleanupReport = await runGeneratedClipCleanup(
             activePreparationCount: activeCount,
             shouldRemoveOrphans: true
@@ -2668,35 +2669,20 @@ final class AppModel: ObservableObject {
 
     private func normalizeAllTeams() {
         for index in state.teams.indices {
-            flattenLegacySharedAssignments(for: index)
             normalizeLineup(for: index)
         }
         flattenLegacyRecentlyDeletedAssignments()
     }
 
-    private func flattenLegacySharedAssignments(for teamIndex: Int) {
-        let clipsByID = Dictionary(uniqueKeysWithValues: state.teams[teamIndex].teamClips.map { ($0.id, $0) })
-        for playerIndex in state.teams[teamIndex].players.indices {
-            guard case .sharedTeamClip(let clipID)? = state.teams[teamIndex].players[playerIndex].songAssignment,
-                  let clip = clipsByID[clipID] else {
-                continue
-            }
-            state.teams[teamIndex].players[playerIndex].songAssignment = .privateClip(clip.playerSongCopy())
-        }
-        for clipIndex in state.teams[teamIndex].teamClips.indices {
-            state.teams[teamIndex].teamClips[clipIndex].pauseAfterAnnouncer = 0
-        }
-    }
-
     private func flattenLegacyRecentlyDeletedAssignments() {
         for itemIndex in state.recentlyDeleted.indices {
             guard case .player(var deletedPlayer) = state.recentlyDeleted[itemIndex].payload,
-                  case .sharedTeamClip(let clipID)? = deletedPlayer.player.songAssignment,
+                  let legacyClipID = deletedPlayer.player.songAssignment?.legacySharedTeamClipID,
                   let team = state.teams.first(where: { $0.id == deletedPlayer.originalTeamID }),
-                  let clip = team.teamClips.first(where: { $0.id == clipID }) else {
+                  let clip = team.teamClips.first(where: { $0.id == legacyClipID }) else {
                 continue
             }
-            deletedPlayer.player.songAssignment = .privateClip(clip.playerSongCopy())
+            deletedPlayer.player.migrateLegacySharedTeamClip(using: clip)
             state.recentlyDeleted[itemIndex].payload = .player(deletedPlayer)
         }
     }
@@ -3007,7 +2993,6 @@ final class AppModel: ObservableObject {
         restoredTeam.modifiedAt = .now
         state.teams.append(restoredTeam)
         state.selectedTeamID = restoredTeam.id
-        flattenLegacySharedAssignments(for: state.teams.count - 1)
         normalizeLineup(for: state.teams.count - 1)
         state.recentlyDeleted.removeAll { $0.id == item.id }
         scheduleReadinessRefresh()
@@ -3221,7 +3206,7 @@ final class AppModel: ObservableObject {
             guard let self else { return }
             Task {
                 let isLowPowerModeEnabled = ProcessInfo.processInfo.isLowPowerModeEnabled
-                await self.songClipGenerationQueue.setPaused(isLowPowerModeEnabled, reason: .lowPowerMode)
+                await self.songClipPreparationCoordinator.setPaused(isLowPowerModeEnabled, reason: .lowPowerMode)
                 if !isLowPowerModeEnabled {
                     await self.runSongClipPreparationQueueIfNeeded()
                 }
@@ -3328,74 +3313,31 @@ final class AppModel: ObservableObject {
             isExplicit: isExplicit
         )
         Task {
-            await songClipGenerationQueue.enqueue(request)
+            await songClipPreparationCoordinator.enqueue(request)
             await refreshPendingSongClipPreparationCount()
             await runSongClipPreparationQueueIfNeeded()
         }
     }
 
     private func runSongClipPreparationQueueIfNeeded() async {
-        guard songClipPreparationTask == nil else { return }
-        songClipPreparationTask = Task { @MainActor [weak self] in
-            guard let self else { return }
-            defer { self.songClipPreparationTask = nil }
-
-            while !Task.isCancelled, let request = await self.songClipGenerationQueue.next() {
-                await self.waitForSongClipPreparationSlotIfNeeded()
-                guard !Task.isCancelled else {
-                    await self.songClipGenerationQueue.complete(request)
-                    continue
-                }
-                guard let clip = self.songClip(matching: request) else {
-                    await self.songClipGenerationQueue.complete(request)
-                    continue
-                }
-
-                let service = self.songClipGenerationService
-                let preparationTask = Task.detached(priority: .utility) {
-                    await service.prepare(clip)
-                }
-                self.activeSongClipPreparationRequest = request
-                self.activeSongClipPreparationTask = preparationTask
-                let outcome = await preparationTask.value
-                self.activeSongClipPreparationRequest = nil
-                self.activeSongClipPreparationTask = nil
-                guard !preparationTask.isCancelled else {
-                    if case .generated(let asset) = outcome {
-                        self.audioAssetService.removeAsset(relativePath: asset.relativePath)
-                    }
-                    await self.songClipGenerationQueue.complete(request)
-                    await self.refreshPendingSongClipPreparationCount()
-                    continue
-                }
-                self.applySongClipPreparationOutcome(outcome, request: request)
-                await self.songClipGenerationQueue.complete(request)
-                await self.refreshPendingSongClipPreparationCount()
+        await songClipPreparationCoordinator.runIfNeeded(
+            clipFor: { [weak self] request in
+                self?.songClip(matching: request)
+            },
+            waitForSlot: { [weak self] in
+                await self?.waitForSongClipPreparationSlotIfNeeded() ?? false
+            },
+            applyOutcome: { [weak self] outcome, request in
+                self?.applySongClipPreparationOutcome(outcome, request: request)
             }
-        }
-        await songClipPreparationTask?.value
+        )
     }
 
     private func cancelSongClipPreparation(
         teamID: UUID,
         target: SongClipPreparationRequest.Target? = nil
     ) async {
-        if let activeRequest = activeSongClipPreparationRequest,
-           activeRequest.teamID == teamID,
-           target == nil || activeRequest.target == target {
-            activeSongClipPreparationTask?.cancel()
-        }
-
-        if let target {
-            switch target {
-            case .player(let playerID):
-                await songClipGenerationQueue.cancel(teamID: teamID, playerID: playerID)
-            case .teamClip(let teamClipID):
-                await songClipGenerationQueue.cancel(teamID: teamID, teamClipID: teamClipID)
-            }
-        } else {
-            await songClipGenerationQueue.cancel(teamID: teamID)
-        }
+        await songClipPreparationCoordinator.cancel(teamID: teamID, target: target)
         await refreshPendingSongClipPreparationCount()
     }
 
@@ -3429,20 +3371,30 @@ final class AppModel: ObservableObject {
         }
     }
 
-    private func waitForSongClipPreparationSlotIfNeeded() async {
-        guard songClipPreparationLiveUseThrottled else { return }
+    private func waitForSongClipPreparationSlotIfNeeded() async -> Bool {
+        guard songClipPreparationLiveUseThrottled else { return true }
 
         while songClipPreparationLiveUseThrottled {
+            guard !Task.isCancelled else { return false }
             guard playbackEngine.activeCueID == nil else {
-                try? await Task.sleep(for: .milliseconds(250))
+                do {
+                    try await Task.sleep(for: .milliseconds(250))
+                } catch {
+                    return false
+                }
                 continue
             }
 
-            try? await Task.sleep(for: .milliseconds(700))
+            do {
+                try await Task.sleep(for: .milliseconds(700))
+            } catch {
+                return false
+            }
             if playbackEngine.activeCueID == nil {
-                return
+                return true
             }
         }
+        return true
     }
 
     private func songClip(
@@ -3609,7 +3561,7 @@ final class AppModel: ObservableObject {
     }
 
     private func refreshPendingSongClipPreparationCount() async {
-        pendingSongClipPreparationCount = await songClipGenerationQueue.pendingCount()
+        pendingSongClipPreparationCount = await songClipPreparationCoordinator.pendingCount()
     }
 
     private func persist() {

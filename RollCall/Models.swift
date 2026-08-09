@@ -318,7 +318,6 @@ struct Player: Codable, Equatable, Identifiable {
     var isPresent: Bool
     var customAnnouncerRelativePath: String?
     var generatedBuiltInAnnouncerRelativePath: String?
-
     enum CodingKeys: String, CodingKey {
         case id
         case displayName
@@ -361,8 +360,12 @@ struct Player: Codable, Equatable, Identifiable {
         uniformNumber = try container.decodeIfPresent(String.self, forKey: .uniformNumber) ?? ""
         pronunciationOverride = try container.decodeIfPresent(String.self, forKey: .pronunciationOverride) ?? ""
         photoRelativePath = try container.decodeIfPresent(String.self, forKey: .photoRelativePath)
-        if let decodedAssignment = try container.decodeIfPresent(SongAssignment.self, forKey: .songAssignment) {
-            songAssignment = decodedAssignment
+        if container.contains(.songAssignment) {
+            if try container.decodeNil(forKey: .songAssignment) {
+                songAssignment = nil
+            } else {
+                songAssignment = try container.decode(SongAssignment.self, forKey: .songAssignment)
+            }
         } else {
             songAssignment = try container.decodeIfPresent(Cue.self, forKey: .cue)
                 .map { .privateClip(SongClip(cue: $0)) }
@@ -385,10 +388,17 @@ struct Player: Codable, Equatable, Identifiable {
         try container.encode(uniformNumber, forKey: .uniformNumber)
         try container.encode(pronunciationOverride, forKey: .pronunciationOverride)
         try container.encodeIfPresent(photoRelativePath, forKey: .photoRelativePath)
-        try container.encodeIfPresent(songAssignment, forKey: .songAssignment)
+        if let songAssignment {
+            try container.encode(songAssignment, forKey: .songAssignment)
+        }
         try container.encode(isPresent, forKey: .isPresent)
         try container.encodeIfPresent(customAnnouncerRelativePath, forKey: .customAnnouncerRelativePath)
         try container.encodeIfPresent(generatedBuiltInAnnouncerRelativePath, forKey: .generatedBuiltInAnnouncerRelativePath)
+    }
+
+    mutating func migrateLegacySharedTeamClip(using clip: SongClip) {
+        guard songAssignment?.legacySharedTeamClipID != nil else { return }
+        songAssignment = .privateClip(clip.playerSongCopy())
     }
 
     mutating func updatePrivateSongClip(with editedCue: Cue) {
@@ -603,6 +613,9 @@ struct Team: Codable, Equatable, Identifiable {
         } else {
             announcerProfile = LegacyPlayerDecoder.teamAnnouncerProfile(from: legacyPlayers) ?? .default
         }
+        // Team-owned legacy assignments can be resolved here because both the
+        // player payloads and their referenced team clips are available.
+        migrateLegacySharedAssignments()
 
         if try container.decodeIfPresent(TeamAnnouncerProfile.self, forKey: .announcerProfile) == nil,
            LegacyPlayerDecoder.legacyAnnouncerEnabled(in: legacyPlayers) {
@@ -662,26 +675,32 @@ struct Team: Codable, Equatable, Identifiable {
         }
     }
 
-    func songClip(for player: Player) -> SongClip? {
-        switch player.songAssignment {
-        case .privateClip(let clip):
-            return clip
-        case .sharedTeamClip(let clipID):
-            return teamClips.first(where: { $0.id == clipID })
-        case nil:
-            return nil
+    private mutating func migrateLegacySharedAssignments() {
+        var migratedClipIDs: Set<UUID> = []
+        for playerIndex in players.indices {
+            guard let legacyClipID = players[playerIndex].songAssignment?.legacySharedTeamClipID,
+                  let clip = teamClips.first(where: { $0.id == legacyClipID }) else {
+                continue
+            }
+            players[playerIndex].migrateLegacySharedTeamClip(using: clip)
+            migratedClipIDs.insert(clip.id)
         }
+        if !migratedClipIDs.isEmpty {
+            teamClips = teamClips.map { clip in
+                guard migratedClipIDs.contains(clip.id) else { return clip }
+                var migrated = clip
+                migrated.pauseAfterAnnouncer = 0
+                return migrated
+            }
+        }
+    }
+
+    func songClip(for player: Player) -> SongClip? {
+        player.songAssignment?.privateClip
     }
 
     func cue(for player: Player) -> Cue? {
         songClip(for: player)?.playbackCue
-    }
-
-    func playerAssignmentCount(forTeamClipID clipID: UUID) -> Int {
-        players.filter {
-            guard case .sharedTeamClip(let assignedID)? = $0.songAssignment else { return false }
-            return assignedID == clipID
-        }.count
     }
 }
 

@@ -436,8 +436,9 @@ enum SongClipPreparationOutcome: Equatable {
 
 enum SongAssignment: Codable, Equatable {
     case privateClip(SongClip)
-    // Decode-only compatibility for unreleased 1.2 test data.
-    case sharedTeamClip(UUID)
+    // Compatibility-only state for old data whose shared clip cannot currently be resolved.
+    // It remains non-playable but must survive a save rather than being silently discarded.
+    case unresolvedLegacySharedTeamClip(UUID)
 
     private enum CodingKeys: String, CodingKey {
         case type
@@ -455,13 +456,18 @@ enum SongAssignment: Codable, Equatable {
         return clip
     }
 
+    var legacySharedTeamClipID: UUID? {
+        guard case .unresolvedLegacySharedTeamClip(let clipID) = self else { return nil }
+        return clipID
+    }
+
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         switch try container.decode(Kind.self, forKey: .type) {
         case .privateClip:
             self = .privateClip(try container.decode(SongClip.self, forKey: .privateClip))
         case .sharedTeamClip:
-            self = .sharedTeamClip(try container.decode(UUID.self, forKey: .sharedTeamClipID))
+            self = .unresolvedLegacySharedTeamClip(try container.decode(UUID.self, forKey: .sharedTeamClipID))
         }
     }
 
@@ -471,7 +477,7 @@ enum SongAssignment: Codable, Equatable {
         case .privateClip(let clip):
             try container.encode(Kind.privateClip, forKey: .type)
             try container.encode(clip, forKey: .privateClip)
-        case .sharedTeamClip(let clipID):
+        case .unresolvedLegacySharedTeamClip(let clipID):
             try container.encode(Kind.sharedTeamClip, forKey: .type)
             try container.encode(clipID, forKey: .sharedTeamClipID)
         }
