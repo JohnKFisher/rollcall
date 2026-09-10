@@ -477,7 +477,7 @@ Missing recorded-announcement files are identified as repair issues. A present c
 
 The bundled built-in sounds are the five default clips listed in the Clips section. Small Cheer is the default fallback source ID when a player has no song or a selected Apple Music cue fails during playback. The fallback is intended to preserve live-use intent; it does not convert the player’s missing source into a saved song assignment.
 
-The model still contains `TeamAnnouncerProfile`, `AnnouncerTemplate`, `AnnouncerSpeechRenderer`, generated-announcer paths, and legacy migration code. However, the current `saveSelectedTeamAnnouncerProfile` and `previewBuiltInAnnouncer` paths report that Built-in Voice has been removed and direct users to recorded Announcement Cues. This residual model/renderer surface is an implementation ambiguity, detailed below.
+Built-in Voice generation and its renderer are removed. `TeamAnnouncerProfile`, `AnnouncerTemplate`, `AnnouncerConfig`, the generated-announcer player path, and the legacy decoder remain only as compatibility storage/decoding so existing state and recovery assets are not invalidated. Current playback and Player Editor behavior use recorded Announcement Cues.
 
 ### Playback combinations and timing
 
@@ -617,9 +617,9 @@ These are user-editable or user-controlled team-level values, stored inside each
 - batting order and whether it is customized;
 - next-batter index;
 - team-scoped Custom Clips;
-- the persisted `TeamAnnouncerProfile` model.
+- the compatibility-only persisted `TeamAnnouncerProfile` model.
 
-`activeSessionDate` is also stored per team but no active user-facing setter/consumer was found. `TeamAnnouncerProfile` has phrase template, requested/resolved voice IDs, language, rate, pitch, and volume, with default phrase “Now batting, number <number>, <name>”, en-US, rate 0.46, pitch 1.0, volume 1.0. Current visible Built-in Voice actions report that Built-in Voice has been removed, so this is currently legacy/model state rather than a functioning normal settings surface.
+`activeSessionDate` is also stored per team but no active user-facing setter/consumer was found. `TeamAnnouncerProfile` remains legacy/model state rather than a functioning settings surface; no current code generates or previews speech from it.
 
 ### Per-player configuration
 
@@ -637,17 +637,17 @@ Song-editor choices are persisted inside the player’s clip: source, label, tri
 
 ### Trim preferences
 
-The Song Clip Editor exposes suggested-hook/start-at-beginning behavior, waveform selection, advanced trim, and length choices. Current visible player-editor choices are 6, 8, 10, 12, and 15 seconds; the general clip editor also includes 20 seconds. `TrimDefaults.preferredLength` is persisted in `AppState`, defaults to 12 seconds, and is updated when the user selects a preferred length. It is a remembered editing preference, not a Settings-tab toggle.
+The Song Clip Editor exposes waveform selection, advanced timing controls, fade-out adjustment, and length choices of 8, 10, 12, 15, and 20 seconds. `TrimDefaults.preferredLength` is persisted in `AppState`, defaults to 12 seconds, and is updated when the user saves a clip. It is a remembered editing preference, not a Settings-tab toggle.
 
 ### Experimental/developer preferences
 
 `ExperimentalSettings` is stored in `AppState`:
 
 - `showExperimentalFeatures`, default false;
-- `appleMusicTeamPlaylistSyncEnabled`, default false;
+- `appleMusicTeamPlaylistSyncEnabled`, default false (compatibility-only; it does not gate the live playlist feature);
 - acknowledgment timestamps.
 
-Developer/Internal builds can expose a Developer Tools surface. Debug builds may force experimental visibility. These tools include testing controls for What’s New, rating thresholds/prompts, support-bundle generation, Music render probes, duplicate-player-song utilities, and generated-clip inspection/cleanup. Release builds hide developer settings and unfinished features. These are test/diagnostic controls, not normal product settings.
+Developer/Internal builds can expose a Developer Tools surface. Debug builds may force experimental visibility. These tools include testing controls for What’s New, rating thresholds/prompts, support-bundle generation, duplicate-player-song utilities, and generated-clip inspection/cleanup. Release builds hide developer settings and unfinished features. These are test/diagnostic controls, not normal product settings. Music render probes and built-in speech generation are no longer present.
 
 ### Other persisted preference-like state
 
@@ -968,7 +968,7 @@ The following findings should remain explicit for the separate telemetry/product
 
 3. **Current source and tests disagree on rating thresholds.** `AppModel.swift` currently implements 10 sessions, then a retry at 20, while `RollCallTests/RatingRequestTests.swift` expects 5 and 10. `docs/DECISIONS.md` describes 5/10 as superseded by 10/20. The source implementation and the test expectations cannot both describe the same current behavior.
 
-4. **Built-in Voice is partly removed and partly retained in the implementation.** The current visible profile-save/preview methods say Built-in Voice has been removed and direct users to recorded Announcement Cues. At the same time, `TeamAnnouncerProfile`, `AnnouncerTemplate`, speech-rendering code, generated-announcer paths, pronunciation fields, and legacy migration remain in the model/services. The current normal user experience appears to be recorded announcements only, but the retained code makes the exact supported boundary ambiguous.
+4. **Built-in Voice is removed from active behavior, with compatibility storage retained.** Speech-rendering code and the removed profile-save/preview entry points are gone. `TeamAnnouncerProfile`, `AnnouncerTemplate`, `AnnouncerConfig`, generated-announcer paths, and legacy migration remain only to decode and protect older stored state and recovery assets; current behavior uses recorded Announcement Cues.
 
 5. **There is no formal Game Day session despite session-shaped state.** `TeamSessionState.activeSessionDate` is persisted, while the active implementation uses lineup state, the in-memory playback session, and rating visit flags. No current user-facing game-date/session lifecycle was found that sets or consumes `activeSessionDate`.
 

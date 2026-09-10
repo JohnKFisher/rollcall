@@ -4,9 +4,21 @@ Use this file as a concise decision log for project-specific architectural, beha
 
 ## 2026-09-09
 
+- Approved and implemented: use the SF Symbol `baseball` for the Quick Game Day Control Center icon. Preserve the existing intent handoff, remembered-team resolution, safe destinations, and no-autoplay behavior.
+  Rationale: the owner confirmed the control action works but the supplied custom icon renders incorrectly; the system symbol is the smallest targeted correction.
+  Status: implemented and owner-verified for the reported Control Center path and icon; the broader locked/unlocked system-surface matrix remains release evidence.
+
+- Approved and implemented: format Recovery's missing-media lists with one locale-aware helper that supports every item count, including all four player-media types and all four team-level segments. Preserve existing terminology, ordering, restore behavior, and the distinction between compact photo and full photo source.
+  Rationale: fixed three-item joins understated maximally degraded restores, weakening the user's understanding of what a partial restore could not recover.
+  Status: implemented and focused-verified in build 147; formatter and four-type partial-restore tests plus `BackupRestoreTests` passed on the iOS 27 simulator. Physical-device presentation acceptance remains open.
+
+- Approved and implemented: remove unreachable Music Render Probe, Player Editor-only legacy trim UI, and built-in announcer speech generation from the app and test targets. Retain only the explicitly required compatibility storage/decoding for old announcer profiles, nested legacy announcer payloads, generated announcer asset paths, and playlist experiment fields; preserve the current Song Clip Editor, Apple Music playlist behavior, playback paths, Announcement Cue recordings, and package/recovery cleanup semantics.
+  Rationale: disconnected production code and tests increased the Release surface and could obscure the authoritative current flows, while deleting persisted compatibility fields would risk losing access to existing user state or legacy assets.
+  Status: implemented in the working tree; Debug build-for-testing, Release app compile, Internal app compile, three new persistence compatibility tests, and the surviving PackageServiceTests target completed successfully at app build 147. The full-suite harness reached test execution but stalled in Xcode's simulator-diagnostics finalization; physical-device smoke acceptance remains open.
+
 - Approved for implementation: make Custom Announcer recording cancellation authoritative across recording and save phases. Use one lock-protected lifecycle with a per-recording session identity; let exactly one of delegate completion or cancellation claim the terminal transition; synchronize in-memory field clearing under that lock while keeping stop/delete/resume work outside it; preserve committed recordings; ignore expected cancellation as an error; and cancel active sessions when Player Editor is dismissed, including while saving.
   Rationale: the previous cancellation guard returned while a stop continuation was pending, allowing the UI to reset while recorder work remained active and making dismissal unsafe.
-  Status: implemented in the working tree with four focused state-arbiter tests reported passed and build-for-testing passing at build 146; Xcode stalled during simulator diagnostic finalization, and owner/device verification remains open
+  Status: implemented and closed for stabilization. Four focused state-arbiter tests and build-for-testing passed at build 146; the owner verified the save-phase cancellation and dismissal flow and could not reproduce an error.
 
 - Approved for implementation: consolidate Recovery's backup-restore, partial-restore, and permanent-delete confirmations behind one identifiable alert route and one modern SwiftUI alert presenter. Preserve each action's existing destructive/default role, message, cancel behavior, and async backup-restore operation.
   Rationale: stacked legacy alert presenters on the Recovery list can compete or present stale content at the app's destructive/recovery boundary; one explicit route keeps the selected recovery action and confirmation state aligned.

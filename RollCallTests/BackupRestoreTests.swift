@@ -334,60 +334,38 @@ final class BackupRestoreTests: XCTestCase {
     }
 
     @MainActor
-    func testReplacingGeneratedBuiltInAnnouncerRemovesOldUnreferencedFile() async throws {
-        let player = RollCallTestFixtures.player(
+    func testPlayerPartialRestorePromptListsAllFourMissingMediaTypes() throws {
+        var deletedPlayer = RollCallTestFixtures.player(
             id: RollCallTestFixtures.alexID,
             name: "Alex Ramirez",
             number: "12",
-            generatedBuiltInAnnouncerRelativePath: "old-announcer.caf"
+            cue: RollCallTestFixtures.localCue(relativePath: "missing-song.m4a"),
+            photoRelativePath: "missing-photo.jpg",
+            customAnnouncerRelativePath: "missing-announcer.caf"
         )
-        let team = RollCallTestFixtures.team(players: [player])
-        try writeState(RollCallTestFixtures.appState(team: team))
-        try writeAsset("old-announcer.caf")
-        try writeAsset("new-announcer.caf")
+        deletedPlayer.photoSourceRelativePath = "missing-photo-source.jpg"
+        var state = RollCallTestFixtures.appState(team: RollCallTestFixtures.team(players: [deletedPlayer]))
+        let item = RecentlyDeletedItem(
+            id: UUID(),
+            deletedAt: .now,
+            payload: .player(
+                DeletedPlayerRecord(
+                    player: deletedPlayer,
+                    originalTeamID: state.teams[0].id,
+                    originalTeamName: state.teams[0].name,
+                    previousBattingOrder: [deletedPlayer.id]
+                )
+            )
+        )
+        state.recentlyDeleted = [item]
+        try writeState(state)
+
         let model = AppModel()
 
-        model.applyGeneratedBuiltInAnnouncerAsset(
-            GeneratedAnnouncerAsset(
-                relativePath: "new-announcer.caf",
-                resolvedVoiceIdentifier: "voice-id",
-                voiceLanguageCode: "en-US"
-            ),
-            toPlayerID: player.id,
-            onTeamID: team.id
-        )
-
-        // Staged cleanup only runs once a persist lands.
-        await model.flushLatestState()
-
-        XCTAssertEqual(
-            model.state.teams.first?.players.first?.generatedBuiltInAnnouncerRelativePath,
-            "new-announcer.caf"
-        )
-        XCTAssertFalse(assetExists("old-announcer.caf"))
-        XCTAssertTrue(assetExists("new-announcer.caf"))
-    }
-
-    @MainActor
-    func testClearingGeneratedBuiltInAnnouncerRemovesOldFileWhenUnused() async throws {
-        let player = RollCallTestFixtures.player(
-            id: RollCallTestFixtures.alexID,
-            name: "Alex Ramirez",
-            number: "12",
-            generatedBuiltInAnnouncerRelativePath: "old-announcer.caf"
-        )
-        let team = RollCallTestFixtures.team(players: [player])
-        try writeState(RollCallTestFixtures.appState(team: team))
-        try writeAsset("old-announcer.caf")
-        let model = AppModel()
-
-        model.applyGeneratedBuiltInAnnouncerAsset(nil, toPlayerID: player.id, onTeamID: team.id)
-
-        // Staged cleanup only runs once a persist lands.
-        await model.flushLatestState()
-
-        XCTAssertNil(model.state.teams.first?.players.first?.generatedBuiltInAnnouncerRelativePath)
-        XCTAssertFalse(assetExists("old-announcer.caf"))
+        guard case .partialPrompt(let prompt) = model.restorePreparation(for: item) else {
+            return XCTFail("A player missing all four media types should disclose a partial restore.")
+        }
+        XCTAssertTrue(prompt.message.contains("the photo, full photo source, Announcement Cue, and song are missing"))
     }
 
     @MainActor

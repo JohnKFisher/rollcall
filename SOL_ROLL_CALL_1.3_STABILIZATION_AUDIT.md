@@ -138,7 +138,7 @@ Keep the atomic presentation payload. Harden it with visible bounded preparation
 
 **Confidence:** Needs validation
 
-**Status (2026-09-09):** Parked for pending verification. Owner reports the iOS 27 path works, with the supplied Control Center icon still displaying incorrectly; no further changes are being made in this issue until that verification gate is revisited.
+**Status (2026-09-09):** Closed for the reported Control Center issue; owner verified that the iOS 27 control path works and that the `baseball` SF Symbol renders correctly. The broader locked/unlocked system-surface matrix remains release evidence.
 
 **Problem**
 
@@ -183,6 +183,11 @@ First run the physical-device matrix against HEAD. If any system surface still f
 - Keep resolver unit tests but add a test around the public control action rather than invoking only its destination.
 - Add app-level request lifecycle tests for pre-launch queuing, blocking presentation deferral, and exactly-once consumption.
 - A physical iOS 18+ device matrix is mandatory; system controls cannot be accepted from unit tests alone.
+
+**Update (2026-09-09)**
+
+- Owner accepted the current Control Center launch behavior and requested replacing the incorrect supplied asset with `Image(systemName: "baseball")`. No intent, routing, team-resolution, or no-autoplay behavior changed.
+- Owner verified that the `baseball` SF Symbol renders correctly. The broader locked/unlocked Control Center, Lock Screen, and Action Button matrix remains release evidence.
 
 # All Other Priority Findings
 
@@ -721,9 +726,9 @@ Completed in the working tree: replaced the three modifiers with one identifiabl
 
 **Area:** State
 
-**Confidence:** Confirmed; implementation pending runtime validation
+**Confidence:** Confirmed; owner-verified
 
-**Status (2026-09-09):** Implemented in the working tree after owner approval. The recorder now uses one lock-protected recording/stopping lifecycle with per-session identity, cancellation claims the pending stop exactly once, and Player Editor dismissal cancels starting, recording, and saving phases. Engineering verification passed; owner/device acceptance remains open.
+**Status (2026-09-09):** Closed for stabilization and owner-verified. The recorder now uses one lock-protected recording/stopping lifecycle with per-session identity, cancellation claims the pending stop exactly once, and Player Editor dismissal cancels starting, recording, and saving phases. The owner reports the flow could not be made to error during verification.
 
 **Problem**
 
@@ -769,12 +774,12 @@ Make cancellation atomically take either the active recording or pending stop co
 
 **Exact verification still needed**
 
-- On a physical device, start an Announcement Cue, tap Stop Recording, then dismiss the editor while the button says `Saving Recording...`; confirm the pending save cancels cleanly, no error appears, no partial temporary file remains, and an existing saved cue is unchanged.
-- Repeat cancel during active recording, then record again immediately; confirm microphone permission denial behavior, playback audio-session restoration, and successful save behavior are unchanged.
+- Owner verification completed: the save-phase cancellation, editor dismissal, active-recording cancellation, and immediate re-recording paths could not be made to error. No new regression was observed in the tested flow.
 
 **Change log**
 
 - 2026-09-09: Owner approved the cancellation fix. Replaced the pending-stop no-op with an atomic recording/stopping arbiter, added session and recorder identity protection with atomic in-memory cleanup, cleaned failed temporary files, suppressed expected cancellation errors, and made Player Editor dismissal cover starting, recording, and saving phases. Focused simulator tests and build verification passed; runtime/device verification remains open.
+- 2026-09-09: Owner verified the repaired cancellation flow and could not reproduce an error. Closed for stabilization.
 
 ---
 
@@ -783,6 +788,8 @@ Make cancellation atomically take either the active recording or pending stop co
 **Area:** Architecture
 
 **Confidence:** Confirmed
+
+**Status:** Implemented and engineering-verified; full-suite harness completion and physical-device smoke acceptance remain open.
 
 **Problem**
 
@@ -823,6 +830,27 @@ Confirm the already-documented product decisions, then delete unreachable UI/ser
 - Remove tests that only keep dead code alive; retain/add tests around the surviving product behavior and legacy decode fixtures.
 - Compile all configurations and run the full suite after the cleanup.
 
+**Implementation record**
+
+- Removed the Music Render Probe production/test surface, the unreachable Player Editor trim surface and its force unwrap, and built-in announcer speech rendering/regeneration APIs and tests. Moved the unrelated video import/export tests into the surviving `PackageServiceTests.swift` file rather than deleting them.
+- Retained and documented compatibility-only decoding/storage for `TeamAnnouncerProfile`, `AnnouncerConfig`, nested legacy announcer payloads, generated announcer asset paths, and the old playlist experiment fields. Asset-reference cleanup still includes legacy generated announcer paths, and no launch-time destructive cleanup was added.
+- Updated the telemetry inventory to distinguish removed active behavior from retained compatibility state. Build settings moved from build 146 to 147; marketing version remains 1.3.0.
+
+**Verification performed**
+
+- `git diff --check` passed, and repository/Xcode-project search found no remaining Music Render Probe, old trim, built-in speech renderer, removed AppModel API, or removed error/service symbols.
+- Debug `build-for-testing` completed and emitted the app/test products at build 147. Release and Internal app-target compiles completed successfully. The Release test-target build is not a valid configuration check because the existing tests use `@testable import RollCall` while Release builds the module without `-enable-testing`; this produced a test-configuration failure without an app-target compile failure.
+- The three new persistence compatibility tests completed with exit 0, and the surviving `PackageServiceTests` target completed with exit 0 on an iOS 27 simulator. The full test invocation reached test execution but was stopped after Xcode stalled in `simctl diagnose` finalization; it is not recorded as a full-suite pass.
+
+**Exact verification still needed**
+
+- Run the complete test bundle to clean completion in an Xcode/simulator environment that does not hang during diagnostic finalization, or resolve that existing Release `@testable` configuration before treating Release test compilation as covered.
+- On a physical device, smoke-test Player Editor -> choose/change song -> Make Your Clip -> preview/save, custom clip editing, playlist preview/update, and an existing Announcement Cue. Confirm no current flow exposes the removed probe, old trim, or built-in speech UI and that existing teams/packages with legacy fields remain usable.
+
+**Change log**
+
+- 2026-09-09: Owner approved the bounded dead-code cleanup. Removed unreachable production/test surfaces while preserving current Song Clip, playlist, playback, Announcement Cue, package, recovery, and legacy-decoding behavior. Build 147 and focused simulator verification passed; the full-suite Xcode harness stalled during simulator diagnostics, and physical-device acceptance remains open.
+
 ---
 
 ## [P3] Four missing player-media types are formatted as only three
@@ -830,6 +858,8 @@ Confirm the already-documented product decisions, then delete unreachable UI/ser
 **Area:** UI
 
 **Confidence:** Confirmed
+
+**Status:** Implemented and focused-verified; physical-device presentation acceptance remains open.
 
 **Problem**
 
@@ -864,6 +894,25 @@ Use one generic locale-aware list formatter/helper for all counts and singular/p
 **Tests / verification**
 
 - Add table-driven formatter tests for every count/order and a partial-restore message containing all four player types.
+
+**Implementation record**
+
+- Added one Foundation `ListFormatter`-backed Recovery list helper and routed both player-level and team-level missing-media messages through it. Existing terminology and the distinct `photo` / `full photo source` labels remain unchanged.
+- Added table-driven English grammar/order coverage for zero through four items and an end-to-end partial-restore test that exercises all four missing player-media types.
+
+**Verification performed**
+
+- Debug build-for-testing completed successfully at build 147.
+- The two focused formatter/partial-restore tests passed on the iOS 27 simulator. The full `BackupRestoreTests` target also completed successfully.
+- `git diff --check` passed.
+
+**Exact verification still needed**
+
+- On a physical device, create or restore a maximally degraded player/team and confirm the Recovery confirmation and post-restore warning display all missing categories clearly without changing restore behavior.
+
+**Change log**
+
+- 2026-09-09: Owner approved the Recovery list-formatting fix. Replaced fixed three-item joins with a shared locale-aware formatter, added zero-through-four/order coverage and four-type partial-restore coverage, and verified the focused tests plus `BackupRestoreTests` on iOS 27. Physical-device presentation acceptance remains open.
 
 ---
 

@@ -97,6 +97,15 @@ struct PartialRestorePrompt: Identifiable, Equatable {
     let message: String
 }
 
+enum RecoveryListFormatter {
+    static func localizedList(_ items: [String], locale: Locale = .current) -> String {
+        guard !items.isEmpty else { return "" }
+        let formatter = ListFormatter()
+        formatter.locale = locale
+        return formatter.string(from: items) ?? items.joined(separator: ", ")
+    }
+}
+
 enum RestorePreparation: Equatable {
     case ready
     case blocked(String)
@@ -106,24 +115,6 @@ enum RestorePreparation: Equatable {
 enum RecoveryNavigationDestination: Equatable {
     case players
     case customClip(UUID)
-}
-
-struct AnnouncerVoiceOption: Identifiable, Hashable {
-    let id: String
-    let name: String
-    let languageCode: String
-    let qualityRank: Int
-}
-
-struct AnnouncerRegenerationStatus: Equatable {
-    var teamID: UUID
-    var phase: String
-    var completed: Int
-    var total: Int
-
-    var progressText: String {
-        total == 0 ? phase : "\(phase) (\(completed)/\(total))"
-    }
 }
 
 enum StateRecoveryReason: String, Equatable {
@@ -306,12 +297,6 @@ struct GameDayLineupProgressHintEvent: Equatable {
     let id = UUID()
     let teamID: UUID
     let source: GameDayLineupProgressHintSource
-}
-
-fileprivate struct RenderedAnnouncerAudio {
-    var data: Data
-    var resolvedVoiceIdentifier: String?
-    var voiceLanguageCode: String?
 }
 
 private func customAnnouncerTemporaryURL(fileExtension: String) -> URL {
@@ -656,13 +641,6 @@ final class AppModel: ObservableObject {
     @Published var completedPackageImportTeamID: UUID?
     @Published var completedPackageImportAudit: PackageImportAudit?
     @Published var supportBundle: SupportBundleExport?
-    @Published private(set) var musicRenderProbeSamples = MusicRenderProbeScenario.allCases.map { MusicRenderProbeSample(scenario: $0) }
-    @Published private(set) var musicRenderProbeLibraryCandidates: [MusicRenderProbeLibraryCandidate] = []
-    @Published private(set) var musicRenderProbeCatalogCandidates: [MusicRenderProbeCatalogCandidate] = []
-    @Published private(set) var isMusicRenderProbeLoadingLibrary = false
-    @Published private(set) var isMusicRenderProbeSearchingCatalog = false
-    @Published var musicRenderProbeSummaryURL: URL?
-    @Published var announcerRegenerationStatus: AnnouncerRegenerationStatus?
     @Published private(set) var isAppleMusicPlaylistSyncing = false
     @Published private(set) var appleMusicPlaylistSyncStatus: String?
     @Published private(set) var appleMusicPlaylistRecovery: AppleMusicPlaylistRecovery?
@@ -687,7 +665,6 @@ final class AppModel: ObservableObject {
     private var outputVolumeObservation: NSKeyValueObservation?
     private var prewarmTask: Task<Void, Never>?
     private var startupWarmupTask: Task<Void, Never>?
-    private var announcerRegenerationTask: Task<Void, Never>?
     private var pendingIncomingPackageURLs: [URL] = []
     private var isPreparingIncomingPackagePreview = false
     private var initialStateLoadWarning: String?
@@ -703,9 +680,7 @@ final class AppModel: ObservableObject {
 
     let audioAssetService = AudioAssetService()
     let musicCatalogService = MusicCatalogService()
-    let musicRenderProbeService: MusicRenderProbeService
     let packageService = PackageService()
-    let announcerRenderer = AnnouncerSpeechRenderer()
     let haptics = GameDayHaptics()
     let readinessService: ReadinessService
     let playbackEngine: CuePlaybackEngine
@@ -764,7 +739,6 @@ final class AppModel: ObservableObject {
             audioAssetService: audioAssetService
         )
         FeatureFlags.assertReleaseSafety()
-        self.musicRenderProbeService = MusicRenderProbeService(audioAssetService: audioAssetService, musicCatalogService: musicCatalogService)
         self.playbackEngine = CuePlaybackEngine(audioAssetService: audioAssetService, musicCatalogService: musicCatalogService)
         self.readinessService = ReadinessService(audioAssetService: audioAssetService)
         let loadResult = Self.loadInitialState()
@@ -2149,182 +2123,10 @@ final class AppModel: ObservableObject {
         appleMusicPlaybackCapability = capability
     }
 
-    var musicRenderProbeAuthorizationStatusText: String {
-        switch MusicAuthorization.currentStatus {
-        case .authorized:
-            return "Authorized"
-        case .denied:
-            return "Denied"
-        case .restricted:
-            return "Restricted"
-        case .notDetermined:
-            return "Not Determined"
-        @unknown default:
-            return "Unknown"
-        }
-    }
-
-    var musicRenderProbePlaybackCapabilityText: String {
-        switch appleMusicPlaybackCapability {
-        case .unknown:
-            return "Unknown"
-        case .previewOnly:
-            return "Preview Only"
-        case .fullSong:
-            return "Full Song"
-        }
-    }
-
-    var musicRenderProbeLocalCandidates: [MusicRenderProbeLocalCandidate] {
-        var seenRelativePaths = Set<String>()
-        var candidates: [MusicRenderProbeLocalCandidate] = []
-
-        for team in state.teams {
-            for player in team.players {
-                guard let cue = player.cue,
-                      case .localAudio(let source) = cue.source,
-                      seenRelativePaths.insert(source.relativePath).inserted else {
-                    continue
-                }
-
-                candidates.append(
-                    MusicRenderProbeLocalCandidate(
-                        id: player.id,
-                        source: source,
-                        teamName: team.name,
-                        playerName: player.displayName
-                    )
-                )
-            }
-        }
-
-        return candidates.sorted {
-            if $0.source.displayName.localizedCaseInsensitiveCompare($1.source.displayName) == .orderedSame {
-                return $0.playerName.localizedCaseInsensitiveCompare($1.playerName) == .orderedAscending
-            }
-            return $0.source.displayName.localizedCaseInsensitiveCompare($1.source.displayName) == .orderedAscending
-        }
-    }
-
-    var musicRenderProbeSummary: MusicRenderProbeRedactedSummary? {
-        guard musicRenderProbeSamples.contains(where: { $0.selection != nil || $0.result != nil }) else {
-            return nil
-        }
-
-        return MusicRenderProbeRedactedSummary.make(
-            samples: musicRenderProbeSamples,
-            authorizationStatus: musicRenderProbeAuthorizationStatusText,
-            playbackCapability: musicRenderProbePlaybackCapabilityText
-        )
-    }
-
     func searchAppleMusic(term: String) async throws -> [MusicSearchResult] {
         await refreshAppleMusicPlaybackCapability()
         let mode: AppleMusicSearchMode = appleMusicPlaybackCapability == .fullSong ? .catalogOnly : .previewFallback
         return try await musicCatalogService.search(term: term, mode: mode)
-    }
-
-    func loadMusicRenderProbeLibraryCandidates() async {
-        isMusicRenderProbeLoadingLibrary = true
-        defer { isMusicRenderProbeLoadingLibrary = false }
-
-        if MusicAuthorization.currentStatus == .notDetermined {
-            _ = await requestAppleMusicAccess()
-        } else {
-            await refreshAppleMusicPlaybackCapability()
-        }
-
-        guard MusicAuthorization.currentStatus == .authorized else {
-            lastError = AppError.musicAuthorizationRequired.localizedDescription
-            return
-        }
-
-        do {
-            musicRenderProbeLibraryCandidates = try musicRenderProbeService.loadLibraryCandidates()
-        } catch {
-            lastError = error.localizedDescription
-        }
-    }
-
-    func searchMusicRenderProbeCatalog(term: String) async {
-        isMusicRenderProbeSearchingCatalog = true
-        defer { isMusicRenderProbeSearchingCatalog = false }
-
-        do {
-            musicRenderProbeCatalogCandidates = try await searchAppleMusic(term: term).map {
-                MusicRenderProbeCatalogCandidate(
-                    songID: $0.songID,
-                    title: $0.title,
-                    artistName: $0.artistName,
-                    duration: $0.duration,
-                    previewURL: $0.previewURL,
-                    isCatalogBacked: $0.isCatalogBacked
-                )
-            }
-        } catch {
-            lastError = error.localizedDescription
-        }
-    }
-
-    func assignMusicRenderProbeLibraryCandidate(_ candidate: MusicRenderProbeLibraryCandidate, to scenario: MusicRenderProbeScenario) {
-        updateMusicRenderProbeSample(for: scenario) { sample in
-            sample.selection = .library(candidate)
-            sample.result = nil
-        }
-    }
-
-    func assignMusicRenderProbeCatalogCandidate(_ candidate: MusicRenderProbeCatalogCandidate, to scenario: MusicRenderProbeScenario) {
-        updateMusicRenderProbeSample(for: scenario) { sample in
-            sample.selection = .catalog(candidate)
-            sample.result = nil
-        }
-    }
-
-    func assignMusicRenderProbeLocalCandidate(_ candidate: MusicRenderProbeLocalCandidate, to scenario: MusicRenderProbeScenario) {
-        updateMusicRenderProbeSample(for: scenario) { sample in
-            sample.selection = .local(candidate)
-            sample.result = nil
-        }
-    }
-
-    func clearMusicRenderProbeSample(for scenario: MusicRenderProbeScenario) {
-        updateMusicRenderProbeSample(for: scenario) { sample in
-            sample.selection = nil
-            sample.result = nil
-        }
-    }
-
-    func runMusicRenderProbe(for scenario: MusicRenderProbeScenario) async {
-        guard let sample = musicRenderProbeSamples.first(where: { $0.scenario == scenario }) else { return }
-        guard sample.selection != nil else {
-            lastError = "Choose a sample before running the probe."
-            return
-        }
-
-        let result = await musicRenderProbeService.runProbe(for: sample)
-        updateMusicRenderProbeSample(for: scenario) { $0.result = result }
-    }
-
-    func runAllAssignedMusicRenderProbes() async {
-        for sample in musicRenderProbeSamples where sample.selection != nil {
-            await runMusicRenderProbe(for: sample.scenario)
-        }
-    }
-
-    func exportMusicRenderProbeSummary() {
-        guard let summary = musicRenderProbeSummary else { return }
-
-        do {
-            let url = FileManager.default.temporaryDirectory
-                .appendingPathComponent("RollCall-MusicRenderProbe-\(UUID().uuidString).json")
-            let encoder = JSONEncoder()
-            encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-            encoder.dateEncodingStrategy = .iso8601
-            try encoder.encode(summary).write(to: url, options: .atomic)
-            musicRenderProbeSummaryURL = url
-        } catch {
-            lastError = error.localizedDescription
-        }
     }
 
     @discardableResult
@@ -2382,10 +2184,6 @@ final class AppModel: ObservableObject {
             lastError = error.localizedDescription
             return false
         }
-    }
-
-    func previewBuiltInAnnouncer(profile: TeamAnnouncerProfile? = nil) async {
-        lastError = "Built-in Voice has been removed from Roll Call. Use Announcement Cue recordings instead."
     }
 
     func advanceNextBatter() {
@@ -2592,10 +2390,6 @@ final class AppModel: ObservableObject {
         if changed, mode != .announcerAndSong {
             telemetry.recordOnce(.announcerModeFirstChanged, properties: [.newMode: mode.rawValue], teamID: teamID)
         }
-    }
-
-    func saveSelectedTeamAnnouncerProfile(_ profile: TeamAnnouncerProfile) {
-        lastError = "Built-in Voice has been removed from Roll Call. Use Announcement Cue recordings instead."
     }
 
     func setShowExperimentalFeatures(_ isEnabled: Bool) {
@@ -3457,34 +3251,6 @@ final class AppModel: ObservableObject {
             .forEach(removeAssetIfUnreferenced(relativePath:))
     }
 
-    func applyGeneratedBuiltInAnnouncerAsset(
-        _ asset: GeneratedAnnouncerAsset?,
-        toPlayerID playerID: UUID,
-        onTeamID teamID: UUID
-    ) {
-        guard let teamIndex = state.teams.firstIndex(where: { $0.id == teamID }),
-              let playerIndex = state.teams[teamIndex].players.firstIndex(where: { $0.id == playerID }) else {
-            return
-        }
-
-        let previousPlayer = state.teams[teamIndex].players[playerIndex]
-        state.teams[teamIndex].players[playerIndex].generatedBuiltInAnnouncerRelativePath = asset?.relativePath
-        let updatedPlayer = state.teams[teamIndex].players[playerIndex]
-
-        if let asset {
-            state.teams[teamIndex].announcerProfile.applyResolvedVoice(from: asset)
-        }
-
-        state.teams[teamIndex].modifiedAt = .now
-        removeAssetsNoLongerReferenced(from: previousPlayer, to: updatedPlayer)
-        // `removeAssetsNoLongerReferenced` only *stages* paths into
-        // `pendingAssetCleanupPaths`; the files are deleted in
-        // `applyPersistenceResult` once a write lands. Without this persist the
-        // roster change is unsaved and the superseded announcer file leaks. Any
-        // mutation that stages cleanup must persist, not rely on its caller.
-        persist()
-    }
-
     private func removeAssetIfUnreferenced(relativePath: String) {
         guard !assetIsReferenced(relativePath: relativePath) else { return }
         guard !assetIsReferencedByBackupSnapshot(relativePath: relativePath) else { return }
@@ -3703,14 +3469,7 @@ final class AppModel: ObservableObject {
             if customClipCount > 0 {
                 segments.append("\(customClipCount) \(customClipCount == 1 ? "Custom Clip is" : "Custom Clips are") missing audio")
             }
-            guard let first = segments.first else { return "" }
-            if segments.count == 1 {
-                return first
-            }
-            if segments.count == 2 {
-                return "\(first), and \(segments[1])"
-            }
-            return "\(segments[0]), \(segments[1]), and \(segments[2])"
+            return RecoveryListFormatter.localizedList(segments)
         }
     }
 
@@ -3785,10 +3544,7 @@ final class AppModel: ObservableObject {
         if names.count == 1 {
             return "the \(first) is"
         }
-        if names.count == 2 {
-            return "the \(names[0]) and \(names[1]) are"
-        }
-        return "the \(names[0]), \(names[1]), and \(names[2]) are"
+        return "the \(RecoveryListFormatter.localizedList(names)) are"
     }
 
     private func restoreDeletedTeam(_ item: RecentlyDeletedItem, deletedTeam: DeletedTeamRecord, partialSummary: MissingMediaSummary?) {
@@ -4652,17 +4408,6 @@ final class AppModel: ObservableObject {
         }
     }
 
-    private func updateMusicRenderProbeSample(
-        for scenario: MusicRenderProbeScenario,
-        mutate: (inout MusicRenderProbeSample) -> Void
-    ) {
-        guard let index = musicRenderProbeSamples.firstIndex(where: { $0.scenario == scenario }) else { return }
-        var sample = musicRenderProbeSamples[index]
-        mutate(&sample)
-        musicRenderProbeSamples[index] = sample
-        musicRenderProbeSummaryURL = nil
-    }
-
     private func preparePendingIncomingPackageIfNeeded() async {
         guard hasFinishedLaunching,
               !isBusy,
@@ -4712,34 +4457,6 @@ final class AppModel: ObservableObject {
         return FileManager.default.fileExists(atPath: url.appendingPathComponent("manifest.json").path)
     }
 
-    func announcerPreviewText(for team: Team, profile: TeamAnnouncerProfile? = nil) -> String {
-        let previewPlayer = announcerPreviewPlayer(for: team)
-        return announcerText(for: previewPlayer, teamName: team.name, profile: profile ?? team.announcerProfile)
-    }
-
-    func announcerVoiceOptions(includeAllLanguages: Bool) -> [AnnouncerVoiceOption] {
-        AVSpeechSynthesisVoice.speechVoices()
-            .filter { includeAllLanguages || $0.language.hasPrefix("en") }
-            .filter { !isNoveltyVoice($0) }
-            .map { voice in
-                AnnouncerVoiceOption(
-                    id: voice.identifier,
-                    name: voice.name,
-                    languageCode: voice.language,
-                    qualityRank: qualityRank(for: voice.quality)
-                )
-            }
-            .sorted {
-                if $0.qualityRank != $1.qualityRank {
-                    return $0.qualityRank > $1.qualityRank
-                }
-                if $0.languageCode != $1.languageCode {
-                    return $0.languageCode.localizedCaseInsensitiveCompare($1.languageCode) == .orderedAscending
-                }
-                return $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending
-            }
-    }
-
     func isRecordingCustomAnnouncer(for player: Player) -> Bool {
         switch customAnnouncerRecordingPhase {
         case .recording(let playerID):
@@ -4783,13 +4500,6 @@ final class AppModel: ObservableObject {
         let maxStart = max(0, cueTimelineLength(for: updated) - updated.duration)
         let candidateStart = min(max(4, maxStart * 0.45), maxStart)
         updated.startTime = roundedQuarterSecond(candidateStart)
-        return updated
-    }
-
-    func chooseStartAtBeginning(for cue: Cue) -> Cue {
-        var updated = cue
-        updated.startTime = 0
-        updated.duration = min(max(state.trimDefaults.preferredLength, 6), cueDurationLimit(for: updated))
         return updated
     }
 
@@ -4884,50 +4594,8 @@ final class AppModel: ObservableObject {
         }
     }
 
-    func appleMusicTrimHelpText(for cue: Cue) -> String? {
-        guard case .appleMusic = cue.source else { return nil }
-        switch appleMusicPlaybackCapability {
-        case .fullSong:
-            return "Choose up to 20 seconds from anywhere in the full song."
-        case .previewOnly, .unknown:
-            return "No Apple Music playback subscription is active. You can choose up to 20 seconds from the available preview clip."
-        }
-    }
-
     private func roundedQuarterSecond(_ value: TimeInterval) -> TimeInterval {
         (value / 0.25).rounded() * 0.25
-    }
-
-    private func announcerText(for player: Player, teamName: String, profile: TeamAnnouncerProfile) -> String {
-        let name = player.pronunciationOverride.isEmpty ? player.displayName : player.pronunciationOverride
-        let values: [(String, String)] = [
-            ("<number>", player.uniformNumber),
-            ("<name>", name),
-            ("<team>", teamName)
-        ]
-
-        var rendered = profile.phraseTemplate
-        for (token, value) in values {
-            rendered = rendered.replacingOccurrences(of: token, with: value)
-        }
-        return rendered
-            .replacingOccurrences(of: " ,", with: ",")
-            .replacingOccurrences(of: "  ", with: " ")
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-    }
-
-    private func announcerPreviewPlayer(for team: Team) -> Player {
-        team.nextBatter
-        ?? team.players.first
-        ?? Player(
-            id: UUID(),
-            displayName: "Alex Ramirez",
-            uniformNumber: "12",
-            pronunciationOverride: "",
-            photoRelativePath: nil,
-            cue: Cue.localDefault(source: LocalAudioSource(id: UUID(), displayName: "Sample Cue", relativePath: "", duration: nil, importedAt: .now, hiddenOriginNote: nil)),
-            isPresent: true
-        )
     }
 
     private func storedCustomAnnouncerRelativePath(for player: Player) -> String? {
@@ -4998,97 +4666,6 @@ final class AppModel: ObservableObject {
         accent == .rollCallOrange ? "orange" : accent.rawValue
     }
 
-    private func triggerAnnouncerRegeneration(for teamID: UUID, phase: String) {
-        announcerRegenerationTask?.cancel()
-        announcerRegenerationTask = Task { @MainActor [weak self] in
-            guard let self else { return }
-            await self.regenerateBuiltInAnnouncers(for: teamID, phase: phase)
-        }
-    }
-
-    private func regenerateBuiltInAnnouncers(for teamID: UUID, phase: String) async {
-        guard let teamIndex = state.teams.firstIndex(where: { $0.id == teamID }) else { return }
-        let teamName = state.teams[teamIndex].name
-        let profile = state.teams[teamIndex].announcerProfile
-        let players = state.teams[teamIndex].players
-        var firstFailure: String?
-
-        announcerRegenerationStatus = AnnouncerRegenerationStatus(teamID: teamID, phase: phase, completed: 0, total: players.count)
-        for (index, player) in players.enumerated() {
-            guard !Task.isCancelled else { break }
-            do {
-                let asset = try await generateBuiltInAnnouncerAsset(for: player, teamName: teamName, profile: profile)
-                applyGeneratedBuiltInAnnouncerAsset(asset, toPlayerID: player.id, onTeamID: teamID)
-                announcerRegenerationStatus = AnnouncerRegenerationStatus(teamID: teamID, phase: phase, completed: index + 1, total: players.count)
-                persist()
-            } catch {
-                applyGeneratedBuiltInAnnouncerAsset(nil, toPlayerID: player.id, onTeamID: teamID)
-                if firstFailure == nil {
-                    firstFailure = "\(player.displayName): \(error.localizedDescription)"
-                }
-                announcerRegenerationStatus = AnnouncerRegenerationStatus(teamID: teamID, phase: phase, completed: index + 1, total: players.count)
-            }
-        }
-        scheduleReadinessRefresh()
-        announcerRegenerationStatus = nil
-        if let firstFailure {
-            lastError = "Built-in voice clips could not be pre-generated on this device. Roll Call will speak built-in announcers live during playback. First failure: \(firstFailure)"
-        }
-        persist()
-    }
-
-    private func renderBuiltInAnnouncer(for player: Player, teamName: String, profile: TeamAnnouncerProfile) async throws -> RenderedAnnouncerAudio {
-        let phrase = announcerText(for: player, teamName: teamName, profile: profile)
-        guard !phrase.isEmpty else { throw AppError.invalidAnnouncerText }
-        return try await announcerRenderer.renderSpeechAudio(for: phrase, profile: profile)
-    }
-
-    private func generateBuiltInAnnouncerAsset(for player: Player, teamName: String, profile: TeamAnnouncerProfile) async throws -> GeneratedAnnouncerAsset {
-        let rendered = try await renderBuiltInAnnouncer(for: player, teamName: teamName, profile: profile)
-        let asset = try audioAssetService.storeSpeechData(rendered.data, displayName: "\(player.displayName)-built-in-announcer")
-        return GeneratedAnnouncerAsset(
-            relativePath: asset.relativePath,
-            resolvedVoiceIdentifier: rendered.resolvedVoiceIdentifier,
-            voiceLanguageCode: rendered.voiceLanguageCode
-        )
-    }
-
-    private func qualityRank(for quality: AVSpeechSynthesisVoiceQuality) -> Int {
-        switch quality {
-        case .premium:
-            return 3
-        case .enhanced:
-            return 2
-        default:
-            return 1
-        }
-    }
-
-    private func isNoveltyVoice(_ voice: AVSpeechSynthesisVoice) -> Bool {
-        let noveltyNames: Set<String> = [
-            "bad news",
-            "bahh",
-            "bells",
-            "boing",
-            "bubbles",
-            "cellos",
-            "good news",
-            "jester",
-            "organ",
-            "superstar",
-            "trinoids",
-            "whisper",
-            "wobble",
-            "zarvox"
-        ]
-        return noveltyNames.contains(voice.name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased())
-    }
-}
-
-struct GeneratedAnnouncerAsset {
-    var relativePath: String
-    var resolvedVoiceIdentifier: String?
-    var voiceLanguageCode: String?
 }
 
 enum StatePersistenceFailureSemantics {
@@ -5168,161 +4745,5 @@ private actor StatePersistenceWriter {
         let ready = waiters.filter { $0.sequence <= sequence }
         waiters.removeAll { $0.sequence <= sequence }
         ready.forEach { $0.continuation.resume(returning: result) }
-    }
-}
-
-private extension TeamAnnouncerProfile {
-    mutating func applyResolvedVoice(from asset: GeneratedAnnouncerAsset) {
-        resolvedVoiceIdentifier = asset.resolvedVoiceIdentifier
-        voiceLanguageCode = asset.voiceLanguageCode
-    }
-}
-
-@MainActor
-final class AnnouncerSpeechRenderer {
-    private let renderTimeout: Duration = .seconds(12)
-
-    fileprivate func renderSpeechAudio(for text: String, profile: TeamAnnouncerProfile) async throws -> RenderedAnnouncerAudio {
-        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { throw AppError.invalidAnnouncerText }
-
-        let tempURL = FileManager.default.temporaryDirectory.appendingPathComponent("\(UUID().uuidString).caf")
-        let synthesizer = AVSpeechSynthesizer()
-        synthesizer.usesApplicationAudioSession = true
-        let utterance = AVSpeechUtterance(string: trimmed)
-        utterance.rate = profile.rate
-        utterance.pitchMultiplier = profile.pitchMultiplier
-        utterance.volume = profile.volume
-        let resolvedVoice = resolvedVoice(for: profile)
-        utterance.voice = resolvedVoice
-
-        return try await withCheckedThrowingContinuation { continuation in
-            var file: AVAudioFile?
-            var wroteAudioData = false
-            let completionState = AnnouncerRenderCompletionState()
-            var timeoutTask: Task<Void, Never>?
-
-            func finish(with result: Result<RenderedAnnouncerAudio, Error>) {
-                guard completionState.claimCompletion() else { return }
-                timeoutTask?.cancel()
-                continuation.resume(with: result)
-            }
-
-            func loadRenderedAudio() -> Result<RenderedAnnouncerAudio, Error> {
-                do {
-                    guard wroteAudioData, FileManager.default.fileExists(atPath: tempURL.path) else {
-                        return .failure(AppError.invalidAnnouncerAudio)
-                    }
-                    file = nil
-                    let data = try Data(contentsOf: tempURL)
-                    guard !data.isEmpty else {
-                        try? FileManager.default.removeItem(at: tempURL)
-                        return .failure(AppError.invalidAnnouncerAudio)
-                    }
-                    try? FileManager.default.removeItem(at: tempURL)
-                    return .success(
-                        RenderedAnnouncerAudio(
-                            data: data,
-                            resolvedVoiceIdentifier: resolvedVoice?.identifier,
-                            voiceLanguageCode: resolvedVoice?.language
-                        )
-                    )
-                } catch {
-                    return .failure(error)
-                }
-            }
-
-            timeoutTask = Task {
-                try? await Task.sleep(for: renderTimeout)
-                guard completionState.claimCompletion() else { return }
-                synthesizer.stopSpeaking(at: .immediate)
-                try? FileManager.default.removeItem(at: tempURL)
-                continuation.resume(throwing: AppError.announcerGenerationTimedOut)
-            }
-
-            synthesizer.write(utterance) { buffer in
-                guard !completionState.hasFinished() else { return }
-
-                guard let pcmBuffer = buffer as? AVAudioPCMBuffer else {
-                    finish(with: loadRenderedAudio())
-                    return
-                }
-
-                if pcmBuffer.frameLength == 0 {
-                    finish(with: loadRenderedAudio())
-                    return
-                }
-
-                guard self.pcmBufferHasAudioData(pcmBuffer) else { return }
-
-                do {
-                    if file == nil {
-                        let fileSettings = self.audioFileSettings(for: resolvedVoice) ?? pcmBuffer.format.settings
-                        file = try AVAudioFile(forWriting: tempURL, settings: fileSettings)
-                    }
-                    try file?.write(from: pcmBuffer)
-                    wroteAudioData = true
-                } catch {
-                    try? FileManager.default.removeItem(at: tempURL)
-                    finish(with: .failure(error))
-                }
-            }
-        }
-    }
-
-    private func pcmBufferHasAudioData(_ buffer: AVAudioPCMBuffer) -> Bool {
-        UnsafeMutableAudioBufferListPointer(buffer.mutableAudioBufferList).contains { audioBuffer in
-            audioBuffer.mDataByteSize > 0
-        }
-    }
-
-    private func audioFileSettings(for voice: AVSpeechSynthesisVoice?) -> [String: Any]? {
-        guard let voice else { return nil }
-        let settings = voice.audioFileSettings
-        return settings.isEmpty ? nil : settings
-    }
-
-    private func resolvedVoice(for profile: TeamAnnouncerProfile) -> AVSpeechSynthesisVoice? {
-        if let requested = profile.requestedVoiceIdentifier,
-           let voice = AVSpeechSynthesisVoice(identifier: requested) {
-            return voice
-        }
-
-        let voices = AVSpeechSynthesisVoice.speechVoices()
-        if let languageCode = profile.voiceLanguageCode {
-            if let languageMatch = exportPreferredVoices(from: voices)
-                .filter({ $0.language == languageCode })
-                .sorted(by: { qualityRank(for: $0.quality) > qualityRank(for: $1.quality) })
-                .first {
-                return languageMatch
-            }
-        }
-
-        if let usEnglish = exportPreferredVoices(from: voices)
-            .filter({ $0.language.hasPrefix("en-US") || $0.language == "en-US" })
-            .sorted(by: { qualityRank(for: $0.quality) > qualityRank(for: $1.quality) })
-            .first {
-            return usEnglish
-        }
-
-        return exportPreferredVoices(from: voices)
-            .sorted(by: { qualityRank(for: $0.quality) > qualityRank(for: $1.quality) })
-            .first
-    }
-
-    private func exportPreferredVoices(from voices: [AVSpeechSynthesisVoice]) -> [AVSpeechSynthesisVoice] {
-        let exportable = voices.filter { !(self.audioFileSettings(for: $0)?.isEmpty ?? true) }
-        return exportable.isEmpty ? voices : exportable
-    }
-
-    private func qualityRank(for quality: AVSpeechSynthesisVoiceQuality) -> Int {
-        switch quality {
-        case .premium:
-            return 3
-        case .enhanced:
-            return 2
-        default:
-            return 1
-        }
     }
 }

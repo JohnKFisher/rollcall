@@ -25,9 +25,6 @@ enum AppError: LocalizedError {
     case recordingUnavailable
     case recordingCancelled
     case customIntroSaveFailed(String)
-    case invalidAnnouncerText
-    case invalidAnnouncerAudio
-    case announcerGenerationTimedOut
     case missingBuiltInClip
     case appleMusicFullSongCatalogUnavailable
     case noSelectedTeam
@@ -66,12 +63,6 @@ enum AppError: LocalizedError {
             return "Custom announcer recording was cancelled."
         case .customIntroSaveFailed(let detail):
             return "Roll Call could not save that Announcement Cue recording. [\(AppMetadata.appVersion) build \(AppMetadata.buildNumber) \(AppMetadata.customIntroStorageMarker)] \(detail)"
-        case .invalidAnnouncerText:
-            return "Enter announcer text before generating or previewing built-in voice audio."
-        case .invalidAnnouncerAudio:
-            return "Roll Call could not create a usable built-in announcer clip for this voice on this device."
-        case .announcerGenerationTimedOut:
-            return "Built-in voice generation took too long and was stopped. Try a shorter phrase or a different installed voice."
         case .missingBuiltInClip:
             return "A built-in General Clip could not be loaded from the app bundle."
         case .appleMusicFullSongCatalogUnavailable:
@@ -488,18 +479,6 @@ struct AudioAssetService: Sendable {
         try FileManager.default.copyItem(at: tempURL, to: destination)
         let duration = try audioDuration(for: destination)
         return LocalAudioSource(id: UUID(), displayName: displayName, relativePath: destination.lastPathComponent, duration: duration.isFinite ? duration : nil, importedAt: .now, hiddenOriginNote: hiddenOrigin)
-    }
-
-    func storeSpeechData(_ data: Data, displayName: String) throws -> LocalAudioSource {
-        let destination = try AppPaths.assetsDirectory().appendingPathComponent("\(UUID().uuidString).caf")
-        guard !data.isEmpty else { throw AppError.invalidAnnouncerAudio }
-        try data.write(to: destination, options: .atomic)
-        guard FileManager.default.fileExists(atPath: destination.path),
-              let size = try? destination.resourceValues(forKeys: [.fileSizeKey]).fileSize,
-              size > 0 else {
-            throw AppError.invalidAnnouncerAudio
-        }
-        return try localAudioSource(for: destination, displayName: displayName, hiddenOriginNote: nil)
     }
 
     func removeAsset(relativePath: String?) {

@@ -79,6 +79,25 @@ final class AppStatePersistenceTests: XCTestCase {
         temp = nil
     }
 
+    func testRecoveryListFormatterFormatsEveryCountAndPreservesOrder() {
+        let cases: [([String], String)] = [
+            ([], ""),
+            (["photo"], "photo"),
+            (["photo", "song"], "photo and song"),
+            (["photo", "full photo source", "song"], "photo, full photo source, and song"),
+            (["photo", "full photo source", "Announcement Cue", "song"], "photo, full photo source, Announcement Cue, and song")
+        ]
+        let locale = Locale(identifier: "en_US")
+
+        for (items, expected) in cases {
+            XCTAssertEqual(
+                RecoveryListFormatter.localizedList(items, locale: locale),
+                expected,
+                "Unexpected list formatting for \(items)."
+            )
+        }
+    }
+
     func testPersistenceFailureTelemetryOnlyReflectsLatestRequestedSnapshot() {
         XCTAssertFalse(StatePersistenceFailureSemantics.shouldReportFailure(
             failedSequence: 4,
@@ -951,5 +970,65 @@ final class AppStatePersistenceTests: XCTestCase {
         let decoded = try JSONDecoder().decode(AppState.self, from: Data(json.utf8))
 
         XCTAssertFalse(decoded.settings.showLineupProgressHints)
+    }
+
+    func testLegacyBuiltInAnnouncerPayloadStillDecodesForCompatibility() throws {
+        let json = """
+        {
+          "id": "22222222-2222-2222-2222-222222222222",
+          "displayName": "Alex Ramirez",
+          "uniformNumber": "12",
+          "pronunciationOverride": "",
+          "cue": {
+            "id": "55555555-5555-5555-5555-555555555555",
+            "label": "Small Cheer",
+            "source": {
+              "type": "builtInClip",
+              "builtInClip": { "id": "small-cheer", "displayName": "Small Cheer" }
+            },
+            "startTime": 0,
+            "duration": 12,
+            "announcer": {
+              "isEnabled": true,
+              "template": "nowBatting",
+              "customPrefix": "",
+              "generatedAssetRelativePath": "legacy-built-in.caf"
+            }
+          },
+          "isPresent": true
+        }
+        """
+
+        let decoded = try JSONDecoder().decode(Player.self, from: Data(json.utf8))
+
+        XCTAssertEqual(decoded.cue?.label, "Small Cheer")
+        XCTAssertEqual(decoded.generatedBuiltInAnnouncerRelativePath, "legacy-built-in.caf")
+    }
+
+    func testPersistedTeamAnnouncerProfileStillRoundTripsForCompatibility() throws {
+        let team = RollCallTestFixtures.team()
+        let data = try JSONEncoder().encode(team)
+        let decoded = try JSONDecoder().decode(Team.self, from: data)
+
+        XCTAssertEqual(decoded.announcerProfile, team.announcerProfile)
+    }
+
+    func testLegacyPlaylistExperimentFieldsStillDecodeForCompatibility() throws {
+        let json = """
+        {
+          "showExperimentalFeatures": true,
+          "appleMusicTeamPlaylistSyncEnabled": true,
+          "acknowledgedAt": "2026-01-01T00:00:00Z",
+          "appleMusicTeamPlaylistAcknowledgedAt": "2026-01-02T00:00:00Z"
+        }
+        """
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+
+        let decoded = try decoder.decode(ExperimentalSettings.self, from: Data(json.utf8))
+
+        XCTAssertTrue(decoded.showExperimentalFeatures)
+        XCTAssertTrue(decoded.appleMusicTeamPlaylistSyncEnabled)
+        XCTAssertNotNil(decoded.appleMusicTeamPlaylistAcknowledgedAt)
     }
 }

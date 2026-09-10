@@ -53,10 +53,6 @@
 		A90000000000000000000003 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = A90000000000000000000104 /* Assets.xcassets */; };
 		A90000000000000000000004 /* QuickGameDayControlIntent.swift in RollCall Sources */ = {isa = PBXBuildFile; fileRef = A90000000000000000000105 /* QuickGameDayControlIntent.swift */; };
 		A90000000000000000000005 /* QuickGameDayControlIntent.swift in RollCallControls Sources */ = {isa = PBXBuildFile; fileRef = A90000000000000000000106 /* QuickGameDayControlIntent.swift */; };
-		A50000000000000000000001 /* MusicRenderProbeModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A50000000000000000000101 /* MusicRenderProbeModels.swift */; };
-		A50000000000000000000002 /* MusicRenderProbeService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A50000000000000000000102 /* MusicRenderProbeService.swift */; };
-		A50000000000000000000003 /* MusicRenderProbeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A50000000000000000000103 /* MusicRenderProbeView.swift */; };
-		A60000000000000000000001 /* MusicRenderProbeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A60000000000000000000101 /* MusicRenderProbeTests.swift */; };
 		A60000000000000000000002 /* SongClipGenerationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A60000000000000000000102 /* SongClipGenerationTests.swift */; };
 		A60000000000000000000003 /* GeneratedClipCleanupTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A60000000000000000000103 /* GeneratedClipCleanupTests.swift */; };
 		B40000000000000000000001 /* CustomAnnouncerRecorderTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B40000000000000000000101 /* CustomAnnouncerRecorderTests.swift */; };
@@ -147,10 +143,6 @@
 		A90000000000000000000104 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		A90000000000000000000105 /* QuickGameDayControlIntent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuickGameDayControlIntent.swift; sourceTree = "<group>"; };
 		A90000000000000000000106 /* QuickGameDayControlIntent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = QuickGameDayControlIntent.swift; path = "../RollCall/QuickGameDayControlIntent.swift"; sourceTree = "<group>"; };
-		A50000000000000000000101 /* MusicRenderProbeModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MusicRenderProbeModels.swift; sourceTree = "<group>"; };
-		A50000000000000000000102 /* MusicRenderProbeService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MusicRenderProbeService.swift; sourceTree = "<group>"; };
-		A50000000000000000000103 /* MusicRenderProbeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MusicRenderProbeView.swift; sourceTree = "<group>"; };
-		A60000000000000000000101 /* MusicRenderProbeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MusicRenderProbeTests.swift; sourceTree = "<group>"; };
 		A60000000000000000000102 /* SongClipGenerationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SongClipGenerationTests.swift; sourceTree = "<group>"; };
 		A60000000000000000000103 /* GeneratedClipCleanupTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GeneratedClipCleanupTests.swift; sourceTree = "<group>"; };
 		B40000000000000000000101 /* CustomAnnouncerRecorderTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CustomAnnouncerRecorderTests.swift; sourceTree = "<group>"; };
@@ -221,9 +213,6 @@
 				A80000000000000000000103 /* QuickGameDay.swift */,
 				A90000000000000000000105 /* QuickGameDayControlIntent.swift */,
 				A10000000000000000000110 /* BuildEnvironment.swift */,
-				A50000000000000000000101 /* MusicRenderProbeModels.swift */,
-				A50000000000000000000102 /* MusicRenderProbeService.swift */,
-				A50000000000000000000103 /* MusicRenderProbeView.swift */,
 				A30000000000000000000142 /* DesignSystem */,
 				A10000000000000000000113 /* Info.plist */,
 				A10000000000000000000114 /* PrivacyInfo.xcprivacy */,
@@ -278,7 +267,6 @@
 				A80000000000000000000111 /* PlayerPhotoTests.swift */,
 				A80000000000000000000112 /* PlayerCardTests.swift */,
 				A80000000000000000000113 /* QuickGameDayTests.swift */,
-				A60000000000000000000101 /* MusicRenderProbeTests.swift */,
 				A60000000000000000000102 /* SongClipGenerationTests.swift */,
 				A60000000000000000000103 /* GeneratedClipCleanupTests.swift */,
 				B40000000000000000000101 /* CustomAnnouncerRecorderTests.swift */,
@@ -463,9 +451,6 @@
 				A80000000000000000000002 /* PlayerCards.swift in Sources */,
 				A80000000000000000000003 /* QuickGameDay.swift in Sources */,
 				A10000000000000000000009 /* BuildEnvironment.swift in Sources */,
-				A50000000000000000000001 /* MusicRenderProbeModels.swift in Sources */,
-				A50000000000000000000002 /* MusicRenderProbeService.swift in Sources */,
-				A50000000000000000000003 /* MusicRenderProbeView.swift in Sources */,
 				A30000000000000000000001 /* RollCallDesignSystem.swift in Sources */,
 				A30000000000000000000002 /* RollCallColors.swift in Sources */,
 				A30000000000000000000003 /* RollCallTypography.swift in Sources */,
@@ -494,7 +479,6 @@
 				A80000000000000000000011 /* PlayerPhotoTests.swift in Sources */,
 				A80000000000000000000012 /* PlayerCardTests.swift in Sources */,
 				A80000000000000000000013 /* QuickGameDayTests.swift in Sources */,
-				A60000000000000000000001 /* MusicRenderProbeTests.swift in Sources */,
 				A60000000000000000000002 /* SongClipGenerationTests.swift in Sources */,
 				A60000000000000000000003 /* GeneratedClipCleanupTests.swift in Sources */,
 				B40000000000000000000001 /* CustomAnnouncerRecorderTests.swift in Sources */,
@@ -673,7 +657,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = YES;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 146;
+				CURRENT_PROJECT_VERSION = 147;
 				DEVELOPMENT_TEAM = 5Y9T5WZ4J3;
 				ENABLE_DEBUG_DYLIB = NO;
 				ENABLE_PREVIEWS = NO;
@@ -696,7 +680,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = YES;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 146;
+				CURRENT_PROJECT_VERSION = 147;
 				DEVELOPMENT_TEAM = 5Y9T5WZ4J3;
 				ENABLE_DEBUG_DYLIB = NO;
 				ENABLE_PREVIEWS = NO;
@@ -719,7 +703,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = YES;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 146;
+				CURRENT_PROJECT_VERSION = 147;
 				DEVELOPMENT_TEAM = 5Y9T5WZ4J3;
 				ENABLE_DEBUG_DYLIB = NO;
 				ENABLE_PREVIEWS = NO;
@@ -814,7 +798,7 @@
 			buildSettings = {
 				APPLICATION_EXTENSION_API_ONLY = YES;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 146;
+				CURRENT_PROJECT_VERSION = 147;
 				DEVELOPMENT_TEAM = 5Y9T5WZ4J3;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = RollCallControls/Info.plist;
@@ -839,7 +823,7 @@
 			buildSettings = {
 				APPLICATION_EXTENSION_API_ONLY = YES;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 146;
+				CURRENT_PROJECT_VERSION = 147;
 				DEVELOPMENT_TEAM = 5Y9T5WZ4J3;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = RollCallControls/Info.plist;
@@ -864,7 +848,7 @@
 			buildSettings = {
 				APPLICATION_EXTENSION_API_ONLY = YES;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 146;
+				CURRENT_PROJECT_VERSION = 147;
 				DEVELOPMENT_TEAM = 5Y9T5WZ4J3;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = RollCallControls/Info.plist;

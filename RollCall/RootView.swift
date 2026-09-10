@@ -8327,19 +8327,13 @@ private struct PlayerEditorSheet: View {
     @State private var showSongFileImporter = false
     @State private var pendingImportedSongURL: URL?
     @State private var songImportError: String?
-    @State private var trimMode: TrimSuggestionMode = .suggestedHook
-    @State private var showAdvancedTrim = false
-    @State private var liveScrubTask: Task<Void, Never>?
     @State private var pendingClearAction: PendingClearAction?
     @State private var songReadinessExplanation: SongReadinessExplanation?
     @State private var showDiscardChangesConfirmation = false
-    @State private var isStartTrimEditingEnabled = false
     @State private var showExistingClipPicker = false
     @State private var draftPhotoRelativePaths: Set<String> = []
     @State private var didCommitDraft = false
     @FocusState private var focusedField: Field?
-
-    private let lengthOptions: [Double] = [6, 8, 10, 12, 15]
 
     var body: some View {
         let hasStoredCustomIntro = appModel.hasStoredCustomAnnouncer(for: player)
@@ -8613,9 +8607,6 @@ private struct PlayerEditorSheet: View {
             .onChange(of: photoItem) { _, _ in
                 Task { await importPhoto() }
             }
-            .onAppear {
-                normalizeTrimModeForCurrentCue()
-            }
             .task {
                 let draftAtRefreshStart = PlayerEditorDraftState(player: player)
                 await appModel.refreshAppleMusicPlaybackCapability()
@@ -8655,7 +8646,7 @@ private struct PlayerEditorSheet: View {
                     discardDraftAndDismiss()
                 }
             } message: {
-                Text("Closing now will lose unsaved name, number, photo, and any unsaved advanced trim edits. Song clips you saved in Make Your Clip and Announcement Cue changes are already saved.")
+                Text("Closing now will lose unsaved name, number, and photo changes. Song clips you saved in Make Your Clip and Announcement Cue changes are already saved.")
             }
             .fileImporter(
                 isPresented: $showSongFileImporter,
@@ -8699,19 +8690,6 @@ private struct PlayerEditorSheet: View {
             }) {
                 ExistingClipPickerSheet(appModel: appModel, destination: .player(player.id))
             }
-            .sheet(isPresented: $showAdvancedTrim) {
-                if editableCue != nil {
-                    AdvancedTrimSheet(
-                        cue: Binding(
-                            get: { editableCue! },
-                            set: { player.updatePrivateSongClip(with: $0) }
-                        ),
-                        cueTimeLimit: cueTimeLimit,
-                        cueDurationLimit: cueDurationLimit
-                    )
-                    .presentationDetents([.medium])
-                }
-            }
             .sheet(isPresented: $playerCardPreviewPresented) {
                 if let team = appModel.selectedTeam {
                     PlayerCardPreviewSheet(
@@ -8738,11 +8716,6 @@ private struct PlayerEditorSheet: View {
         }
     }
 
-    private var cueTimeLimit: Double {
-        guard let cue = editableCue else { return 30 }
-        return appModel.cueTimelineLength(for: cue)
-    }
-
     private var effectiveSongClip: SongClip? {
         appModel.resolvedSongClip(for: player)
     }
@@ -8751,19 +8724,10 @@ private struct PlayerEditorSheet: View {
         effectiveSongClip?.playbackCue
     }
 
-    private var editableCue: Cue? {
-        player.songAssignment?.privateClip?.editingCue
-    }
-
     private var existingClipSourceCount: Int {
         guard let team = appModel.selectedTeam else { return 0 }
         let otherPlayerSongs = team.players.filter { $0.id != player.id && team.songClip(for: $0) != nil }.count
         return otherPlayerSongs + team.teamClips.count
-    }
-
-    private var cueDurationLimit: Double {
-        guard let cue = editableCue else { return 30 }
-        return appModel.cueDurationLimit(for: cue)
     }
 
     private var setupSummary: (status: String, nextStep: String?, role: StatusChipRole, systemImage: String) {
@@ -9104,17 +9068,9 @@ private struct PlayerEditorSheet: View {
         }
     }
 
-    private func refreshPlayerFromModel() {
-        player = appModel.selectedTeam?.players.first(where: { $0.id == player.id }) ?? player
-        isStartTrimEditingEnabled = false
-        normalizeTrimModeForCurrentCue()
-    }
-
     private func synchronizeSongAssignmentFromModel() {
         guard let savedPlayer else { return }
         player.songAssignment = savedPlayer.songAssignment
-        isStartTrimEditingEnabled = false
-        normalizeTrimModeForCurrentCue()
     }
 
     private func synchronizeCustomAnnouncerFromModel() {
@@ -9127,12 +9083,6 @@ private struct PlayerEditorSheet: View {
             appModel.discardUncommittedAsset(relativePath: path)
         }
         draftPhotoRelativePaths.removeAll()
-    }
-
-    private func refreshPlayerFromModel(enableStartTrimForCueReplacing previousCueID: UUID?) {
-        player = appModel.selectedTeam?.players.first(where: { $0.id == player.id }) ?? player
-        isStartTrimEditingEnabled = editableCue?.id != nil && editableCue?.id != previousCueID
-        normalizeTrimModeForCurrentCue()
     }
 
     private func performClearAction(_ action: PendingClearAction) {
@@ -9194,139 +9144,6 @@ private struct PlayerEditorSheet: View {
         dismiss()
     }
 
-    private func secondsText(_ value: Double) -> String {
-        formattedCueTime(value)
-    }
-
-    @ViewBuilder
-    private func cueTrimSection(for cue: Cue) -> some View {
-        VStack(alignment: .leading, spacing: 12) {
-            if let trimHelpText = appModel.appleMusicTrimHelpText(for: cue) {
-                Text(trimHelpText)
-                    .rollCallText(.helperText)
-                HStack(spacing: 8) {
-                    ForEach(TrimSuggestionMode.allCases) { mode in
-                        Button(mode.title) {
-                            trimMode = mode
-                            applyTrimSuggestion(mode: mode)
-                        }
-                        .buttonStyle(PlayerEditorChipButtonStyle(isSelected: trimMode == mode))
-                    }
-                }
-            }
-
-            Button {
-                guard let cue = editableCue else { return }
-                Task { await appModel.previewCue(cue) }
-            } label: {
-                Label("Preview Clip", systemImage: "play.fill")
-                    .font(.headline)
-                    .frame(maxWidth: .infinity)
-            }
-            .rollCallButtonStyle(.primary)
-
-            VStack(alignment: .leading, spacing: 8) {
-                HStack {
-                    Text("Start")
-                        .rollCallText(.cardTitle)
-                    Spacer()
-                    Button(isStartTrimEditingEnabled ? "Done" : "Enable") {
-                        isStartTrimEditingEnabled.toggle()
-                    }
-                    .rollCallButtonStyle(.quiet)
-                    Text(secondsText(cue.startTime))
-                        .font(.subheadline.monospacedDigit().weight(.semibold))
-                        .foregroundStyle(.secondary)
-                }
-                StartScrubControl(
-                    progress: cueTimeLimit <= 0 ? 0 : cue.startTime / cueTimeLimit,
-                    displayRange: cueTimeLimit,
-                    currentValueText: secondsText(cue.startTime),
-                    onSeek: { progress in
-                        updateCueStart(progress: progress)
-                    },
-                    onLiveScrub: { progress in
-                        updateCueStart(progress: progress)
-                        scheduleLiveScrubPreview()
-                    }
-                )
-                .allowsHitTesting(isStartTrimEditingEnabled)
-                .opacity(isStartTrimEditingEnabled ? 1 : 0.45)
-                .overlay(alignment: .center) {
-                    if !isStartTrimEditingEnabled {
-                        Text("Tap Enable to adjust start")
-                            .font(.caption.weight(.semibold))
-                            .padding(.horizontal, 10)
-                            .padding(.vertical, 6)
-                            .background(.ultraThinMaterial, in: Capsule())
-                    }
-                }
-            }
-
-            VStack(alignment: .leading, spacing: 8) {
-                HStack {
-                    Text("Length")
-                        .rollCallText(.cardTitle)
-                    Spacer()
-                    Text(secondsText(cue.duration))
-                        .font(.subheadline.monospacedDigit().weight(.semibold))
-                        .foregroundStyle(.secondary)
-                }
-                FlowChipRow(options: lengthOptions, selected: cue.duration) { option in
-                    updateCueDuration(option)
-                    appModel.rememberPreferredLength(option)
-                }
-            }
-
-            Button {
-                showAdvancedTrim = true
-            } label: {
-                Label("Advanced", systemImage: "slider.horizontal.3")
-            }
-            .rollCallButtonStyle(.secondary)
-        }
-    }
-
-    private func normalizeTrimModeForCurrentCue() {
-        guard let cue = editableCue, case .appleMusic = cue.source else { return }
-        let beginningCue = appModel.chooseStartAtBeginning(for: cue)
-        trimMode = abs(beginningCue.startTime - cue.startTime) < 0.01 ? .startAtBeginning : .suggestedHook
-    }
-
-    private func applyTrimSuggestion(mode: TrimSuggestionMode) {
-        guard let cue = editableCue, case .appleMusic = cue.source else { return }
-        switch mode {
-        case .suggestedHook:
-            player.updatePrivateSongClip(with: appModel.chooseSuggestedHook(for: cue))
-        case .startAtBeginning:
-            player.updatePrivateSongClip(with: appModel.chooseStartAtBeginning(for: cue))
-        }
-    }
-
-    private func updateCueStart(progress: Double) {
-        guard var cue = editableCue else { return }
-        let maxStart = max(0, cueTimeLimit - cue.duration)
-        cue.startTime = min(max(0, progress * cueTimeLimit), maxStart)
-        player.updatePrivateSongClip(with: cue)
-    }
-
-    private func updateCueDuration(_ duration: Double) {
-        guard var cue = editableCue else { return }
-        cue.duration = min(duration, cueDurationLimit)
-        cue.duration = min(cue.duration, cueTimeLimit - cue.startTime)
-        cue.duration = max(0.5, cue.duration)
-        player.updatePrivateSongClip(with: cue)
-    }
-
-    private func scheduleLiveScrubPreview() {
-        liveScrubTask?.cancel()
-        guard let cue = editableCue else { return }
-        liveScrubTask = Task {
-            try? await Task.sleep(for: .milliseconds(120))
-            guard !Task.isCancelled else { return }
-            await appModel.previewCue(cue)
-        }
-    }
 }
 
 private struct PlayerEditorSectionHeader: View {
@@ -9378,32 +9195,6 @@ private struct PlayerEditorSectionIcon: View {
             .background(color.opacity(0.12))
             .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
             .accessibilityHidden(true)
-    }
-}
-
-private struct PlayerEditorChipButtonStyle: ButtonStyle {
-    let isSelected: Bool
-
-    @Environment(\.rollCallTeamAccentTheme) private var teamAccentTheme
-
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .font(.caption.weight(.semibold))
-            .foregroundStyle(isSelected ? teamAccentTheme.color(.onFill) : Color(uiColor: .label))
-            .padding(.horizontal, 10)
-            .padding(.vertical, 7)
-            .background(background(isPressed: configuration.isPressed))
-            .overlay(
-                Capsule(style: .continuous)
-                    .strokeBorder(teamAccentTheme.color(.primary).opacity(isSelected ? 0 : 0.35), lineWidth: 1)
-            )
-            .clipShape(Capsule(style: .continuous))
-            .scaleEffect(configuration.isPressed ? 0.98 : 1)
-    }
-
-    private func background(isPressed: Bool) -> Color {
-        let base = isSelected ? teamAccentTheme.color(.fill) : Color.rollCall(.neutralSurface)
-        return isPressed ? base.opacity(0.78) : base
     }
 }
 
@@ -9661,22 +9452,6 @@ private extension String {
     }
 }
 
-private enum TrimSuggestionMode: String, CaseIterable, Identifiable {
-    case suggestedHook
-    case startAtBeginning
-
-    var id: String { rawValue }
-
-    var title: String {
-        switch self {
-        case .suggestedHook:
-            return "Suggested Hook"
-        case .startAtBeginning:
-            return "Start at Beginning"
-        }
-    }
-}
-
 private struct AppleMusicPickerSheet: View {
     @Environment(\.dismiss) private var dismiss
     @ObservedObject var appModel: AppModel
@@ -9889,140 +9664,6 @@ private struct AppleMusicRow: View {
             .accessibilityHint("Plays a short preview without selecting this song.")
         }
         .padding(.vertical, 4)
-    }
-}
-
-private struct StartScrubControl: View {
-    let progress: Double
-    let displayRange: Double
-    let currentValueText: String
-    let onSeek: (Double) -> Void
-    let onLiveScrub: (Double) -> Void
-
-    @GestureState private var isPressing = false
-    @GestureState private var isDragging = false
-    @Environment(\.rollCallTeamAccentTheme) private var teamAccentTheme
-
-    var body: some View {
-        GeometryReader { proxy in
-            let width = max(proxy.size.width, 1)
-            let thumbOffset = max(0, min(width - 28, width * progress - 14))
-            ZStack(alignment: .leading) {
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .fill(Color.secondary.opacity(0.18))
-                    .frame(height: 18)
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .fill(teamAccentTheme.color(.fill).opacity(0.82))
-                    .frame(width: max(14, width * progress), height: 18)
-                if isDragging {
-                    Text(currentValueText)
-                        .font(.caption2.weight(.semibold))
-                        .monospacedDigit()
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 5)
-                        .background(.ultraThinMaterial, in: Capsule())
-                        .offset(x: max(0, min(width - 72, width * progress - 36)), y: -30)
-                }
-                Circle()
-                    .fill(teamAccentTheme.color(.fill))
-                    .frame(width: 28, height: 28)
-                    .offset(x: thumbOffset)
-                    .shadow(radius: 2)
-            }
-            .frame(maxWidth: .infinity, minHeight: 36, maxHeight: 36, alignment: .center)
-            .contentShape(Rectangle())
-            .gesture(
-                DragGesture(minimumDistance: 0)
-                    .updating($isDragging) { _, state, _ in
-                        state = true
-                    }
-                    .onChanged { value in
-                        let newProgress = min(max(0, value.location.x / width), 1)
-                        onSeek(newProgress)
-                        if isPressing {
-                            onLiveScrub(newProgress)
-                        }
-                    }
-            )
-            .simultaneousGesture(
-                LongPressGesture(minimumDuration: 0.35)
-                    .updating($isPressing) { current, state, _ in
-                        state = current
-                    }
-            )
-        }
-        .frame(height: 40)
-        .accessibilityValue(Text("\(Int(progress * displayRange)) seconds"))
-    }
-}
-
-private struct FlowChipRow: View {
-    let options: [Double]
-    let selected: Double
-    let onSelect: (Double) -> Void
-
-    var body: some View {
-        HStack(spacing: 8) {
-            ForEach(options, id: \.self) { option in
-                Button("\(Int(option))s") {
-                    onSelect(option)
-                }
-                .buttonStyle(PlayerEditorChipButtonStyle(isSelected: abs(selected - option) < 0.01))
-            }
-        }
-    }
-}
-
-private struct AdvancedTrimSheet: View {
-    @Environment(\.dismiss) private var dismiss
-    @Binding var cue: Cue
-    let cueTimeLimit: Double
-    let cueDurationLimit: Double
-
-    var body: some View {
-        NavigationStack {
-            Form {
-                Section("Fine Tune") {
-                    nudgeRow(title: "Start", value: cue.startTime) { delta in
-                        let maxStart = max(0, cueTimeLimit - cue.duration)
-                        cue.startTime = min(max(0, cue.startTime + delta), maxStart)
-                    }
-                    nudgeRow(title: "Length", value: cue.duration) { delta in
-                        cue.duration = min(max(0.5, cue.duration + delta), cueDurationLimit)
-                        cue.duration = min(cue.duration, cueTimeLimit - cue.startTime)
-                    }
-                }
-
-                Section("Fade Out") {
-                    nudgeRow(title: "Fade", value: cue.fadeOutDuration) { delta in
-                        cue.fadeOutDuration = min(max(0.1, cue.fadeOutDuration + delta), 3.0)
-                    }
-                    Text("Fade timing is baked into generated local clips. For source-backed Apple Music or Music Library songs, it applies when Volume Automation is enabled in Settings.")
-                        .rollCallText(.helperText)
-                }
-            }
-            .navigationTitle("Advanced Trim")
-            .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button("Done") { dismiss() }
-                }
-            }
-        }
-    }
-
-    @ViewBuilder
-    private func nudgeRow(title: String, value: Double, apply: @escaping (Double) -> Void) -> some View {
-        HStack {
-            Text(title)
-            Spacer()
-            Button("-0.25") { apply(-0.25) }
-                .buttonStyle(.bordered)
-            Text(formattedCueTime(value))
-                .monospacedDigit()
-                .frame(minWidth: 68)
-            Button("+0.25") { apply(0.25) }
-                .buttonStyle(.bordered)
-        }
     }
 }
 

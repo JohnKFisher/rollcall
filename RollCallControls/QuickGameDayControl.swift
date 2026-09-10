@@ -10,8 +10,7 @@ struct QuickGameDayControl: ControlWidget {
                 Label {
                     Text("Open Game Day")
                 } icon: {
-                    Image("ControlCenterIcon")
-                        .renderingMode(.template)
+                    Image(systemName: "baseball")
                 }
             }
         }

@@ -203,6 +203,7 @@ enum TeamAccentPreset: String, Codable, CaseIterable, Identifiable, Sendable {
     var id: String { rawValue }
 }
 
+/// Compatibility-only decoder for the removed built-in announcer configuration.
 enum AnnouncerTemplate: String, Codable, CaseIterable, Identifiable {
     case nameOnly
     case numberAndName
@@ -211,6 +212,8 @@ enum AnnouncerTemplate: String, Codable, CaseIterable, Identifiable {
     var id: String { rawValue }
 }
 
+/// Compatibility-only storage for the removed built-in announcer profile.
+/// Roll Call now uses recorded Announcement Cues for announcer audio.
 struct TeamAnnouncerProfile: Codable, Equatable {
     var phraseTemplate: String
     var requestedVoiceIdentifier: String?
@@ -231,6 +234,7 @@ struct TeamAnnouncerProfile: Codable, Equatable {
     )
 }
 
+/// Compatibility-only decoder for the removed legacy built-in announcer payload.
 struct AnnouncerConfig: Codable, Equatable {
     var isEnabled: Bool
     var template: AnnouncerTemplate
@@ -255,6 +259,7 @@ struct Cue: Codable, Equatable, Identifiable {
         case duration
         case fadeOutDuration
         case pauseAfterAnnouncer
+        /// Legacy built-in announcer payload; decoded only for old data compatibility.
         case announcer
     }
 
@@ -322,6 +327,8 @@ struct Player: Codable, Equatable, Identifiable {
     }
     var isPresent: Bool
     var customAnnouncerRelativePath: String?
+    /// Compatibility-only reference retained so old state and recovery cleanup
+    /// continue to protect generated built-in announcer assets.
     var generatedBuiltInAnnouncerRelativePath: String?
     enum CodingKeys: String, CodingKey {
         case id
@@ -581,6 +588,7 @@ struct Team: Codable, Equatable, Identifiable {
     var teamClips: [SongClip]
     var builtInClips: [BuiltInClip]
     var session: TeamSessionState
+    /// Compatibility-only persisted profile for the removed built-in announcer.
     var announcerProfile: TeamAnnouncerProfile
     var accentPreset: TeamAccentPreset
 
@@ -973,8 +981,11 @@ struct RecentlyDeletedItem: Codable, Equatable, Identifiable {
 
 struct ExperimentalSettings: Codable, Equatable {
     var showExperimentalFeatures: Bool
+    /// Compatibility-only setting retained for old state decoding. The live
+    /// playlist feature is intentionally not gated by this value.
     var appleMusicTeamPlaylistSyncEnabled: Bool
     var acknowledgedAt: Date?
+    /// Compatibility-only acknowledgment retained for old state decoding.
     var appleMusicTeamPlaylistAcknowledgedAt: Date?
 
     static let `default` = ExperimentalSettings(
@@ -1549,6 +1560,7 @@ extension Team {
     }
 }
 
+/// Compatibility-only decoder for pre-1.3 player and announcer payloads.
 private enum LegacyPlayerDecoder {
     struct LegacyPlayerPayload: Decodable {
         struct LegacyCuePayload: Decodable {
