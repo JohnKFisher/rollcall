@@ -5119,9 +5119,35 @@ private struct AttributionsView: View {
 
                 SettingsSectionGroup(
                     title: "Third-Party Software",
-                    helperText: "Roll Call uses ZIPFoundation for packages and TelemetryDeck for optional anonymous usage analytics."
+                    helperText: "Roll Call bundles Barlow Condensed for Broadcast cards, ZIPFoundation for packages, and TelemetryDeck for optional anonymous usage analytics."
                 ) {
                     VStack(alignment: .leading, spacing: RollCallSpacingTier.standard.value) {
+                        SettingsRowLabel(
+                            title: "Barlow Condensed",
+                            detail: "SIL Open Font License 1.1. Copyright 2017 The Barlow Project Authors.",
+                            systemImage: "textformat"
+                        )
+
+                        Link(destination: URL(string: "https://github.com/jpt/barlow")!) {
+                            SettingsRowLabel(
+                                title: "Barlow Project Source",
+                                detail: "github.com/jpt/barlow",
+                                systemImage: "link"
+                            )
+                        }
+                        .buttonStyle(.plain)
+
+                        NavigationLink {
+                            BarlowLicenseView()
+                        } label: {
+                            SettingsNavigationLabel(
+                                title: "Barlow Condensed License",
+                                detail: "View the bundled SIL Open Font License 1.1 text.",
+                                systemImage: "doc.text.fill"
+                            )
+                        }
+                        .buttonStyle(.plain)
+
                         SettingsRowLabel(
                             title: "ZIPFoundation 0.9.20",
                             detail: "MIT License. Copyright Thomas Zoechling and contributors.",
@@ -5168,6 +5194,29 @@ private struct AttributionsView: View {
         }
         .accentWashBackground()
         .navigationTitle("Attributions")
+        .navigationBarTitleDisplayMode(.inline)
+    }
+}
+
+private struct BarlowLicenseView: View {
+    private var licenseText: String {
+        let bundle = Bundle.main
+        let url = bundle.url(forResource: "OFL", withExtension: "txt", subdirectory: "BarlowCondensed")
+            ?? bundle.url(forResource: "OFL", withExtension: "txt")
+        return url.flatMap { try? String(contentsOf: $0, encoding: .utf8) }
+            ?? "Barlow Condensed is licensed under the SIL Open Font License, Version 1.1. The bundled license file could not be loaded."
+    }
+
+    var body: some View {
+        ScrollView {
+            Text(licenseText)
+                .font(.system(.footnote, design: .monospaced))
+                .textSelection(.enabled)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 16)
+                .padding(.vertical, RollCallSpacingTier.standard.value)
+        }
+        .navigationTitle("Barlow License")
         .navigationBarTitleDisplayMode(.inline)
     }
 }
@@ -7492,6 +7541,20 @@ private struct DeveloperToolsView: View {
                             isEnabled: flags.showExperimentalFeatures
                         )
                     }
+
+#if DEBUG
+                    Section("Player Card Lab") {
+                        NavigationLink {
+                            PlayerCardLabView()
+                        } label: {
+                            SettingsRowLabel(
+                                title: "Open Player Card Lab",
+                                detail: "Compare Clean, Broadcast, and Spotlight with provisional controls and exports.",
+                                systemImage: "rectangle.3.group"
+                            )
+                        }
+                    }
+#endif
 
                     Section("Runtime Testing Flags") {
                         Toggle(isOn: Binding(

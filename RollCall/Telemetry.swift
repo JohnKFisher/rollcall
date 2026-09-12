@@ -341,8 +341,10 @@ struct TelemetryDeckConfigurationSnapshot: Equatable {
 #if canImport(TelemetryDeck)
 final class TelemetryDeckProvider: RollCallTelemetryProvider {
     private let appID: String
+    private let buildAllowsSending = BuildEnvironment.current.isReleaseBuild
     private var context = TelemetryBuildContext.current
     private var configuration: TelemetryDeck.Config?
+    private var sendingEnabled = false
     private(set) var configurationSnapshot: TelemetryDeckConfigurationSnapshot?
 
     init(appID: String?) {
@@ -352,11 +354,13 @@ final class TelemetryDeckProvider: RollCallTelemetryProvider {
     func configure(enabled: Bool, context: TelemetryBuildContext) {
         guard !appID.isEmpty else { return }
         self.context = context
+        let effectiveEnabled = enabled && buildAllowsSending
         if let configuration {
             // Config is a reference type. Mutating the already initialized
             // instance changes the SDK gate without replacing its manager,
             // preserving the SDK's in-memory and on-disk cache semantics.
-            configuration.analyticsDisabled = !enabled
+            configuration.analyticsDisabled = !effectiveEnabled
+            sendingEnabled = effectiveEnabled
             configurationSnapshot = TelemetryDeckConfigurationSnapshot(
                 appID: appID,
                 analyticsDisabled: configuration.analyticsDisabled,
@@ -370,15 +374,16 @@ final class TelemetryDeckProvider: RollCallTelemetryProvider {
         // Set every Roll Call-required setting before initialization. Leave
         // salt, identity, metadata enrichers, batching, retry, and cache at
         // their SDK defaults.
-        config.analyticsDisabled = !enabled
+        config.analyticsDisabled = !effectiveEnabled
         config.testMode = context.testMode
         config.swiftUIPreviewMode = context.isSwiftUIPreview
         config.sendNewSessionBeganSignal = false
         config.sessionStatsEnabled = false
         configuration = config
+        sendingEnabled = effectiveEnabled
         configurationSnapshot = TelemetryDeckConfigurationSnapshot(
             appID: appID,
-            analyticsDisabled: !enabled,
+            analyticsDisabled: !effectiveEnabled,
             testMode: context.testMode,
             sendNewSessionBeganSignal: config.sendNewSessionBeganSignal,
             sessionStatsEnabled: config.sessionStatsEnabled
@@ -387,7 +392,7 @@ final class TelemetryDeckProvider: RollCallTelemetryProvider {
     }
 
     func send(_ signal: RollCallTelemetrySignal) {
-        guard !appID.isEmpty else { return }
+        guard sendingEnabled, !appID.isEmpty else { return }
         TelemetryDeck.signal(signal.event.rawValue, parameters: signal.properties)
     }
 }

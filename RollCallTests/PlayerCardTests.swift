@@ -120,6 +120,52 @@ final class PlayerCardTests: XCTestCase {
         XCTAssertNotNil(image.cgImage)
     }
 
+    func testBroadcastTypographyFontsAndLicenseAreBundled() throws {
+        XCTAssertTrue(BroadcastCardTypography.fontsAreRegistered)
+        XCTAssertEqual(BroadcastCardTypography.team(size: 12).fontName, "BarlowCondensed-SemiBold")
+        XCTAssertEqual(BroadcastCardTypography.playerLastName(size: 12).fontName, "BarlowCondensed-ExtraBold")
+        XCTAssertEqual(BroadcastCardTypography.jerseyNumber(size: 12).fontName, "BarlowCondensed-Black")
+        XCTAssertEqual(BroadcastCardTypography.decorativeJerseyNumber(size: 12).fontName, "BarlowCondensed-Black")
+        let appBundle = Bundle(identifier: "com.jkfisher.rollcall") ?? .main
+
+        for name in [
+            "BarlowCondensed-SemiBold",
+            "BarlowCondensed-ExtraBold",
+            "BarlowCondensed-Black"
+        ] {
+            let url = try XCTUnwrap(
+                appBundle.url(forResource: name, withExtension: "ttf", subdirectory: "BarlowCondensed")
+                    ?? appBundle.url(forResource: name, withExtension: "ttf")
+            )
+            XCTAssertGreaterThan(try Data(contentsOf: url).count, 10_000)
+        }
+
+        let licenseURL = try XCTUnwrap(
+            appBundle.url(forResource: "OFL", withExtension: "txt", subdirectory: "BarlowCondensed")
+                ?? appBundle.url(forResource: "OFL", withExtension: "txt")
+        )
+        let license = try String(contentsOf: licenseURL, encoding: .utf8)
+        XCTAssertTrue(license.contains("Copyright 2017 The Barlow Project Authors"))
+        XCTAssertTrue(license.contains("SIL OPEN FONT LICENSE Version 1.1"))
+    }
+
+    func testBroadcastTypographyRendersLongContentAndOneTwoThreeDigitNumbers() throws {
+        for number in ["7", "15", "123"] {
+            let content = PlayerCardContent(
+                playerName: "Alexandra Verylongsurname",
+                playerNumber: number,
+                teamName: "P-WAY THUNDER LONG TEAM NAME",
+                songTitle: "A Very Long Walk-Up Song Title That Still Wraps",
+                artistName: "The Very Long Artist Name",
+                accentPreset: .blue
+            )
+
+            let image = PlayerCardRenderer().render(content: content, photo: nil, crop: nil)
+            XCTAssertEqual(image.size, PlayerCardRenderer.outputSize)
+            XCTAssertNotNil(image.pngData())
+        }
+    }
+
     /// The renderer must still produce a complete card when no brand mark can be
     /// loaded at all, rather than drawing the attribution text under a gap.
     func testExplicitlySuppliedBrandIconIsUsedAndZeroSizedIconIsIgnored() throws {

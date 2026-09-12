@@ -92,6 +92,9 @@ Third-party materials remain under their own licenses and are not relicensed by
 Roll Call's project license.
 
 - ZIPFoundation remains under its MIT License.
+- Barlow Condensed remains under the SIL Open Font License 1.1. Its copyright
+  and license text are bundled with the font files and documented in
+  [ATTRIBUTIONS.md](ATTRIBUTIONS.md).
 - Bundled Mixkit sound effects remain under the Mixkit Sound Effects Free
   License and may be used in forks only when Mixkit's terms allow that use.
 

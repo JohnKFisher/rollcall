@@ -57,12 +57,12 @@ The same canvas as Clean allows direct template comparison in the Player Card La
 │               HERO PHOTO                 │
 │                                          │
 │                                   15     │
-│ ╱                                        │
-│╱   ELLIE                                 │
+│                                          │
+│    ELLIE                                 │
 │    FISHER                                │
 │━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━        │
 │                                          │
-│ ╱ ♪ WALK-UP MUSIC                        │
+│   ♪ WALK-UP MUSIC                        │
 │   Can't Back Down                        │
 │   Demi Lovato…            ▂▅▇▃▆▂▅       │
 │                                          │
@@ -74,13 +74,13 @@ The lower-third is not a rounded box. It is a geometric field that enters the he
 
 ## 6. Broadcast Angle
 
-Use one consistent shallow diagonal throughout the template. Initial tuning target: **approximately 12°**.
+Use one consistent shallow diagonal throughout the template. Initial tuning target: **10°**.
 
-Centralize it as `BroadcastCardLayout.broadcastAngle`. The same angle should influence the lower-third leading edge, team accent rule, upper jersey-number framing, lower-third accent edge, music-region lead-in/termination, and any secondary geometric plane. Do not introduce unrelated random angles.
+Centralize it as the Broadcast tuning angle. The same angle should influence the lower-third leading edge, team accent rule, lower-third accent edge, music-region termination, waveform, and any secondary geometric plane. Do not introduce unrelated random angles.
 
 ## 7. Hero Photo
 
-The hero photograph should occupy approximately **68–72%** of the visual composition. Initial targets: starts around `y ≈ 40`; effectively continues to `y ≈ 930`; lower-third begins intruding around `y ≈ 680–720`; lower region becomes effectively opaque charcoal around `y ≈ 880–920`.
+The hero photograph should occupy approximately **68–72%** of the visual composition. Initial targets: starts around `y ≈ 40`; effectively continues to `y ≈ 1060`; lower-third begins intruding around `y ≈ 855`; lower region becomes effectively opaque charcoal around `y ≈ 980–1020`. Player Card Lab exposes a Broadcast-only photo-height control for iterative tuning.
 
 Requirements:
 - use the user's authoritative saved crop;
@@ -117,15 +117,15 @@ The upper portion should retain some underlying photographic texture. The planes
 Preferred lockup:
 
 ```text
-╱ ELLIE
+ELLIE
   FISHER
 ━━━━━━━━━━━━━━
 ```
 
-Initial anchor: `x ≈ 72 px`, `y ≈ 735–860 px`. The diagonal mark is part of the Broadcast geometry, not decorative punctuation.
+Initial anchor: `x ≈ 70 px`, `y ≈ 850 px`. The first name sits approximately 50% closer to the surname, and the name rule remains below the surname with deliberate clearance. These are part of the Broadcast geometry, not decorative punctuation.
 
-- First name: uppercase, medium/semibold, modest tracking.
-- Last name: uppercase, very heavy/black, dominant.
+- First name: Barlow Condensed Semibold, uppercase, modest positive tracking.
+- Last name: Barlow Condensed ExtraBold, uppercase, dominant, neutral or slightly tight tracking.
 - Name text: neutral white/off-white.
 - Do not use team color for player name.
 
@@ -135,9 +135,10 @@ Surname remains single-line and never ellipsized. Adaptation order:
 1. use normal region;
 2. extend toward number zone when collision-free;
 3. reduce font size within bounds;
-4. use slightly condensed system width;
-5. reduce tracking;
-6. use defined minimum size.
+4. reduce tracking;
+5. use defined minimum size.
+
+Do not distort the font horizontally and never ellipsize the surname.
 
 The lower-third does not grow taller. Decorative number yields before player identity. If only one name component exists, use it as the dominant line.
 
@@ -145,28 +146,25 @@ The lower-third does not grow taller. Decorative number yields before player ide
 
 ### 11.1 Upper Readable Number
 
-Use an open geometric frame rather than a pill/badge, conceptually:
-
-```text
-    ━━━
-     15
-       ━
-```
-
-Initial treatment: neutral white number, strong team-derived framing, heavy system typography.
+Broadcast does not render a separate readable jersey number in the upper
+corner. The upper-corner number and its surrounding strokes are intentionally
+removed; the jersey number remains available only as the large decorative
+number below.
 
 ### 11.2 Large Decorative Number
 
-Approximate region: `x: 690 → 1040`, `y: 590 → 900`.
+Default region: `x: 660 → 1100`, `y: 420 → 840`. Player Card Lab exposes a
+Broadcast-only Y-axis control for this number.
 
 - bold translucent fill, restrained outline, or combination;
+- Barlow Condensed Black, using the same jersey-number role as the former readable treatment;
 - visually around 12–22% opacity depending on color/photo;
 - crosses photo/lower-third transition;
 - no segmentation required;
 - Vision bounds may bias placement toward negative space;
 - never preserve the number at the expense of the player's face.
 
-If no jersey number exists, remove both number treatments and number-only framing.
+If no jersey number exists, remove the decorative number treatment.
 
 ## 12. Team Label
 
@@ -177,7 +175,13 @@ P-WAY THUNDER
 ━━━━━━━━
 ```
 
-Uppercase, tracked, modest size, neutral light text, team-derived structural accent rule. Allow two lines for long names, then tighten tracking/reduce size, with ellipsis only as pathological fallback. If absent, omit label and rule without substantially moving other content.
+Barlow Condensed Semibold, uppercase, moderately tracked, slightly larger than
+the earlier treatment, neutral light text, team-derived structural accent
+rule. The underline matches the measured rendered label width and sits below
+the label with approximately half the previous gap, without overlapping it.
+Allow two lines for long names, then tighten
+tracking/reduce size, with ellipsis only as pathological fallback. If absent,
+omit label and rule without substantially moving other content.
 
 ## 13. Dynamic Team-Color System
 
@@ -261,30 +265,33 @@ Broadcast retains a small amount of Clean's team-derived edge illumination for f
 Treat music as structured broadcast information, not a media player.
 
 ```text
-╱ ♪ WALK-UP MUSIC
+♪ WALK-UP MUSIC
 
   Can't Back Down
   Demi Lovato, Alyson Stoner...
 
-                       ▂▄▆█▅▃▂▄▇
+                       ╱▂▄▆█▅▃▂▄▇
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ```
 
-Use a neutral dark base continuous with the lower-third, angled team-derived lead-in, and thin structural line/termination using the Broadcast angle. No rounded panel.
+Use a neutral dark base continuous with the lower-third and a thin structural termination using the Broadcast angle. Do not add a separate short horizontal lead-in line beside or above the music label. No rounded panel.
 
 ## 19. Music Typography
 
-**Label:** small uppercase, tracked, semibold, neutral/light, with small team-derived accent mark.
+**Label:** Barlow Condensed Semibold, small uppercase, positively tracked, neutral/light, with small team-derived accent mark.
 
-**Song:** proper capitalization, neutral white/off-white, semibold/bold, max two lines, wrap before aggressive shrinking, subordinate to last name.
+**Song:** SF Pro Display Semibold, proper capitalization, normal width and tracking, neutral white/off-white, max two lines, wrap before aggressive shrinking, subordinate to last name.
 
-**Artist:** muted gray, regular/medium, max two lines, ellipsis permitted.
+**Artist:** SF Pro Text Regular, normal tracking, muted gray, max two lines, ellipsis permitted.
+
+The default Broadcast music group sits approximately 50% closer to the player
+name lockup than the earlier spacing treatment.
 
 Do not use team color for song/artist.
 
 ## 20. Broadcast Waveform
 
-Decorative, deterministic, tighter/more geometric than Clean. Prefer fixed lower-right region. It may shorten/reduce height before important metadata yields. Team-derived accent. No waveform when no music exists.
+Decorative, deterministic, tighter/more geometric than Clean. Prefer a lower-right region above the bottom structural line, approximately 50% larger than the earlier Broadcast treatment, shifted left enough to keep the rotated waveform fully visible, and rotated to the shared Broadcast angle so it aligns with the diagonal geometry. It may shorten/reduce height before important metadata yields. Team-derived accent. No waveform when no music exists.
 
 ## 21. No-Music State
 
@@ -296,7 +303,7 @@ Remove music label, note, song, artist, and waveform. Template-level Broadcast g
 [Roll Call icon] Made with Roll Call
 ```
 
-Align to Broadcast grid. Small real app icon; `Made with` muted; `Roll Call` brighter/semibold. No large team-color plane, slogan, website, QR code, or App Store badge. Footer region remains fixed.
+Align to Broadcast grid. Small real app icon; `Made with` uses SF Pro Text Regular and stays muted; `Roll Call` uses SF Pro Text Semibold and is slightly brighter. No large team-color plane, slogan, website, QR code, or App Store badge. Footer region remains fixed.
 
 ## 23. Content Collision Priority
 
@@ -305,13 +312,12 @@ Highest to lowest:
 2. player name
 3. song title
 4. team name
-5. readable jersey number
-6. artist
-7. walk-up music label
-8. large decorative number
-9. waveform
-10. secondary accent geometry
-11. atmospheric effects
+5. artist
+6. walk-up music label
+7. large decorative number
+8. waveform
+9. secondary accent geometry
+10. atmospheric effects
 
 Footer is protected in its fixed region. Content may yield; core framework remains stable.
 
@@ -328,7 +334,7 @@ Do not move footer, grow lower-third, change hero height, overlap content, or sh
 
 ## 25. Missing Data
 
-- **No number:** remove both number treatments and number-only framing.
+- **No number:** remove the decorative number treatment.
 - **No team:** remove team label/rule.
 - **No photo:** do not generate Broadcast; production UI explains photo requirement.
 - **One name component:** use as dominant line.
@@ -342,20 +348,42 @@ Very dark charcoal base, nearly imperceptible neutral gradient, subtle grain, an
 
 ## 27. Typography Architecture
 
-Use Apple's system font family and centralized tokens:
+Use centralized Broadcast-specific typography tokens. Barlow Condensed is the
+identity/sports-graphics layer; SF Pro is the natural-language music and Roll
+Call branding layer. This deliberately replaces the earlier system-font-only
+rule while preserving disciplined hierarchy and avoiding a cliché varsity,
+fake-TV, or esports treatment.
 
 ```swift
-BroadcastCardTypography.playerLastName
-BroadcastCardTypography.playerFirstName
-BroadcastCardTypography.songTitle
-BroadcastCardTypography.artist
 BroadcastCardTypography.team
 BroadcastCardTypography.jerseyNumber
+BroadcastCardTypography.decorativeJerseyNumber
+BroadcastCardTypography.playerFirstName
+BroadcastCardTypography.playerLastName
 BroadcastCardTypography.sectionLabel
+BroadcastCardTypography.songTitle
+BroadcastCardTypography.artist
 BroadcastCardTypography.footer
 ```
 
-Character comes from scale, weight, case, tracking, and geometry rather than a custom sports font.
+The Barlow Condensed Semibold, ExtraBold, and Black files are bundled with the
+app and registered for deterministic rendering. Song title, artist, and footer
+use SF Pro tokens; the footer keeps `Made with` Regular and `Roll Call`
+Semibold. Preview, export, and Player Card Lab share these tokens.
+
+Broadcast Player Card Lab defaults and controls include:
+
+- broadcast angle: default `10.0°`;
+- lower-third Y: default `865.00`, range `620` to `900` pixels;
+- photo height: default `1020`, range `800` to `1300` pixels;
+- player-name Y: default `850`, range `720` to `900` pixels;
+- music-block Y: default `1080`, range `980` to `1140` pixels;
+- tinted-plane opacity: default `0.40`, range `0.25` to `0.85`;
+- giant-number opacity: default `0.60`, range `0.10` to `1.0`;
+- giant-number Y: default `650`, range `400` to `1000` pixels.
+
+The default bottom structural line remains fixed while the player-name and
+music-block controls compress the space above it without shrinking the text.
 
 ## 28. Accessibility
 

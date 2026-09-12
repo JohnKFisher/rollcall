@@ -21,12 +21,15 @@
 		A10000000000000000000012 /* AppIcon.icon in Resources */ = {isa = PBXBuildFile; fileRef = FE483C282FE2450F005E77A0 /* AppIcon.icon */; };
 		A10000000000000000000013 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000114 /* PrivacyInfo.xcprivacy */; };
 		A10000000000000000000015 /* AppIcon-iOS-Default-1024@1x.png in Resources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000116 /* AppIcon-iOS-Default-1024@1x.png */; };
+		A10000000000000000000016 /* BarlowCondensed in Resources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000118 /* BarlowCondensed */; };
+		A10000000000000000000017 /* BroadcastCardTypography.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000117 /* BroadcastCardTypography.swift */; };
 		A20000000000000000000001 /* ZIPFoundation in Frameworks */ = {isa = PBXBuildFile; productRef = A20000000000000000000002 /* ZIPFoundation */; };
 		A20000000000000000000004 /* TelemetryDeck in Frameworks */ = {isa = PBXBuildFile; productRef = A20000000000000000000005 /* TelemetryDeck */; };
 		A10000000000000000000014 /* Telemetry.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000115 /* Telemetry.swift */; };
 		A80000000000000000000001 /* PlayerPhotos.swift in Sources */ = {isa = PBXBuildFile; fileRef = A80000000000000000000101 /* PlayerPhotos.swift */; };
 		A80000000000000000000002 /* PlayerCards.swift in Sources */ = {isa = PBXBuildFile; fileRef = A80000000000000000000102 /* PlayerCards.swift */; };
 		A80000000000000000000003 /* QuickGameDay.swift in Sources */ = {isa = PBXBuildFile; fileRef = A80000000000000000000103 /* QuickGameDay.swift */; };
+		A80000000000000000000004 /* PlayerCardLab.swift in Sources */ = {isa = PBXBuildFile; fileRef = A80000000000000000000104 /* PlayerCardLab.swift */; };
 		A30000000000000000000001 /* RollCallDesignSystem.swift in Sources */ = {isa = PBXBuildFile; fileRef = A30000000000000000000101 /* RollCallDesignSystem.swift */; };
 		A30000000000000000000002 /* RollCallColors.swift in Sources */ = {isa = PBXBuildFile; fileRef = A30000000000000000000102 /* RollCallColors.swift */; };
 		A30000000000000000000003 /* RollCallTypography.swift in Sources */ = {isa = PBXBuildFile; fileRef = A30000000000000000000103 /* RollCallTypography.swift */; };
@@ -47,6 +50,7 @@
 		A40000000000000000000010 /* TelemetryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A40000000000000000000111 /* TelemetryTests.swift */; };
 		A80000000000000000000011 /* PlayerPhotoTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A80000000000000000000111 /* PlayerPhotoTests.swift */; };
 		A80000000000000000000012 /* PlayerCardTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A80000000000000000000112 /* PlayerCardTests.swift */; };
+		A80000000000000000000014 /* PlayerCardLabTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A80000000000000000000114 /* PlayerCardLabTests.swift */; };
 		A80000000000000000000013 /* QuickGameDayTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A80000000000000000000113 /* QuickGameDayTests.swift */; };
 		A90000000000000000000001 /* QuickGameDayControl.swift in Sources */ = {isa = PBXBuildFile; fileRef = A90000000000000000000101 /* QuickGameDayControl.swift */; };
 		A90000000000000000000002 /* RollCallControls.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = A90000000000000000000103 /* RollCallControls.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
@@ -112,9 +116,12 @@
 		A10000000000000000000114 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		A10000000000000000000115 /* Telemetry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Telemetry.swift; sourceTree = "<group>"; };
 		A10000000000000000000116 /* AppIcon-iOS-Default-1024@1x.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "AppIcon-iOS-Default-1024@1x.png"; sourceTree = "<group>"; };
+		A10000000000000000000117 /* BroadcastCardTypography.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BroadcastCardTypography.swift; sourceTree = "<group>"; };
+		A10000000000000000000118 /* BarlowCondensed */ = {isa = PBXFileReference; lastKnownFileType = folder; path = "Fonts/BarlowCondensed"; sourceTree = "<group>"; };
 		A80000000000000000000101 /* PlayerPhotos.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlayerPhotos.swift; sourceTree = "<group>"; };
 		A80000000000000000000102 /* PlayerCards.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlayerCards.swift; sourceTree = "<group>"; };
 		A80000000000000000000103 /* QuickGameDay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuickGameDay.swift; sourceTree = "<group>"; };
+		A80000000000000000000104 /* PlayerCardLab.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlayerCardLab.swift; sourceTree = "<group>"; };
 		A30000000000000000000101 /* RollCallDesignSystem.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RollCallDesignSystem.swift; sourceTree = "<group>"; };
 		A30000000000000000000102 /* RollCallColors.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RollCallColors.swift; sourceTree = "<group>"; };
 		A30000000000000000000103 /* RollCallTypography.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RollCallTypography.swift; sourceTree = "<group>"; };
@@ -136,6 +143,7 @@
 		A40000000000000000000111 /* TelemetryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TelemetryTests.swift; sourceTree = "<group>"; };
 		A80000000000000000000111 /* PlayerPhotoTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlayerPhotoTests.swift; sourceTree = "<group>"; };
 		A80000000000000000000112 /* PlayerCardTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlayerCardTests.swift; sourceTree = "<group>"; };
+		A80000000000000000000114 /* PlayerCardLabTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlayerCardLabTests.swift; sourceTree = "<group>"; };
 		A80000000000000000000113 /* QuickGameDayTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuickGameDayTests.swift; sourceTree = "<group>"; };
 		A90000000000000000000101 /* QuickGameDayControl.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuickGameDayControl.swift; sourceTree = "<group>"; };
 		A90000000000000000000102 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
@@ -211,6 +219,8 @@
 				A80000000000000000000101 /* PlayerPhotos.swift */,
 				A80000000000000000000102 /* PlayerCards.swift */,
 				A80000000000000000000103 /* QuickGameDay.swift */,
+				A80000000000000000000104 /* PlayerCardLab.swift */,
+				A10000000000000000000117 /* BroadcastCardTypography.swift */,
 				A90000000000000000000105 /* QuickGameDayControlIntent.swift */,
 				A10000000000000000000110 /* BuildEnvironment.swift */,
 				A30000000000000000000142 /* DesignSystem */,
@@ -222,6 +232,7 @@
 				A10000000000000000000111 /* RollCallDocumentIcon-44x58.png */,
 				A10000000000000000000112 /* RollCallDocumentIcon-320x320.png */,
 				A10000000000000000000116 /* AppIcon-iOS-Default-1024@1x.png */,
+				A10000000000000000000118 /* BarlowCondensed */,
 			);
 			path = RollCall;
 			sourceTree = "<group>";
@@ -266,6 +277,7 @@
 				A40000000000000000000111 /* TelemetryTests.swift */,
 				A80000000000000000000111 /* PlayerPhotoTests.swift */,
 				A80000000000000000000112 /* PlayerCardTests.swift */,
+				A80000000000000000000114 /* PlayerCardLabTests.swift */,
 				A80000000000000000000113 /* QuickGameDayTests.swift */,
 				A60000000000000000000102 /* SongClipGenerationTests.swift */,
 				A60000000000000000000103 /* GeneratedClipCleanupTests.swift */,
@@ -303,6 +315,7 @@
 				A10000000000000000000223 /* Sources */,
 				A10000000000000000000221 /* Frameworks */,
 				A10000000000000000000224 /* Resources */,
+				B90000000000000000000226 /* Copy DEBUG Player Card Lab photos */,
 				A90000000000000000000225 /* Embed Foundation Extensions */,
 			);
 			buildRules = (
@@ -403,6 +416,33 @@
 		};
 /* End PBXProject section */
 
+/* Begin PBXShellScriptBuildPhase section */
+		B90000000000000000000226 /* Copy DEBUG Player Card Lab photos */ = {
+			isa = PBXShellScriptBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputPaths = (
+				"$(SRCROOT)/RollCall/LabPhotos/lab-field-full-body.jpeg",
+				"$(SRCROOT)/RollCall/LabPhotos/lab-field-action-wide.jpeg",
+				"$(SRCROOT)/RollCall/LabPhotos/lab-batting-portrait.jpeg",
+				"$(SRCROOT)/RollCall/LabPhotos/lab-batting-side.jpeg",
+				"$(SRCROOT)/RollCall/LabPhotos/lab-throwing-wide.jpeg",
+			);
+			name = "Copy DEBUG Player Card Lab photos";
+			outputPaths = (
+				"$(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/LabPhotos/lab-field-full-body.jpeg",
+				"$(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/LabPhotos/lab-field-action-wide.jpeg",
+				"$(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/LabPhotos/lab-batting-portrait.jpeg",
+				"$(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/LabPhotos/lab-batting-side.jpeg",
+				"$(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/LabPhotos/lab-throwing-wide.jpeg",
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "if [ \"$CONFIGURATION\" = \"Debug\" ]; then\n  labOutputDir=\"$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/LabPhotos\"\n  mkdir -p \"$labOutputDir\"\n  cp \"$SRCROOT/RollCall/LabPhotos/lab-field-full-body.jpeg\" \"$labOutputDir/\"\n  cp \"$SRCROOT/RollCall/LabPhotos/lab-field-action-wide.jpeg\" \"$labOutputDir/\"\n  cp \"$SRCROOT/RollCall/LabPhotos/lab-batting-portrait.jpeg\" \"$labOutputDir/\"\n  cp \"$SRCROOT/RollCall/LabPhotos/lab-batting-side.jpeg\" \"$labOutputDir/\"\n  cp \"$SRCROOT/RollCall/LabPhotos/lab-throwing-wide.jpeg\" \"$labOutputDir/\"\nfi\n";
+		};
+/* End PBXShellScriptBuildPhase section */
+
 /* Begin PBXResourcesBuildPhase section */
 		A10000000000000000000224 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
@@ -416,6 +456,7 @@
 				A10000000000000000000012 /* AppIcon.icon in Resources */,
 				A10000000000000000000013 /* PrivacyInfo.xcprivacy in Resources */,
 				A10000000000000000000015 /* AppIcon-iOS-Default-1024@1x.png in Resources */,
+				A10000000000000000000016 /* BarlowCondensed in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -450,6 +491,8 @@
 				A80000000000000000000001 /* PlayerPhotos.swift in Sources */,
 				A80000000000000000000002 /* PlayerCards.swift in Sources */,
 				A80000000000000000000003 /* QuickGameDay.swift in Sources */,
+				A80000000000000000000004 /* PlayerCardLab.swift in Sources */,
+				A10000000000000000000017 /* BroadcastCardTypography.swift in Sources */,
 				A10000000000000000000009 /* BuildEnvironment.swift in Sources */,
 				A30000000000000000000001 /* RollCallDesignSystem.swift in Sources */,
 				A30000000000000000000002 /* RollCallColors.swift in Sources */,
@@ -478,6 +521,7 @@
 				A40000000000000000000010 /* TelemetryTests.swift in Sources */,
 				A80000000000000000000011 /* PlayerPhotoTests.swift in Sources */,
 				A80000000000000000000012 /* PlayerCardTests.swift in Sources */,
+				A80000000000000000000014 /* PlayerCardLabTests.swift in Sources */,
 				A80000000000000000000013 /* QuickGameDayTests.swift in Sources */,
 				A60000000000000000000002 /* SongClipGenerationTests.swift in Sources */,
 				A60000000000000000000003 /* GeneratedClipCleanupTests.swift in Sources */,

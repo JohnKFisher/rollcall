@@ -147,6 +147,18 @@ final class TelemetryTests: XCTestCase {
         XCTAssertEqual(provider.configurationSnapshot?.sendNewSessionBeganSignal, false)
         XCTAssertEqual(provider.configurationSnapshot?.sessionStatsEnabled, false)
     }
+
+    func testNonReleaseBuildsKeepTelemetryDeckDisabledEvenWhenPreferenceIsEnabled() {
+        guard !BuildEnvironment.current.isReleaseBuild else { return }
+
+        let provider = TelemetryDeckProvider(appID: "test-app-id")
+        provider.configure(
+            enabled: true,
+            context: TelemetryBuildContext(isAppStoreBuild: false, isTestFlightBuild: false, isDeveloperBuild: true, isSwiftUIPreview: false)
+        )
+
+        XCTAssertEqual(provider.configurationSnapshot?.analyticsDisabled, true)
+    }
     #endif
 
     func testDisabledLaunchAndTransitionsPreserveCachedSemanticsWithoutBackfill() {

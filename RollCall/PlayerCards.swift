@@ -83,28 +83,33 @@ struct PlayerCardRenderer {
         drawGradient(from: .clear, to: UIColor.black.withAlphaComponent(0.94), in: CGRect(x: 54, y: 590, width: 1_092, height: 392), context: context)
 
         if let teamName = content.teamName {
-            drawText(teamName.uppercased(), in: CGRect(x: 92, y: 112, width: 700, height: 42), font: .systemFont(ofSize: 27, weight: .bold), color: .white, alignment: .left, tracking: 2)
+            let teamText = teamName.uppercased()
+            let teamFit = fittedBroadcastFont(text: teamText, maxSize: 32, minimumSize: 24, width: 940, preferredTracking: 2, fontProvider: { BroadcastCardTypography.team(size: $0) })
+            let teamWidth = min(940, NSAttributedString(string: teamText, attributes: [.font: teamFit.font, .kern: teamFit.tracking]).size().width)
+            let teamX: CGFloat = 100
+            drawText(teamText, in: CGRect(x: teamX, y: 104, width: max(1, teamWidth), height: 50), font: teamFit.font, color: .white.withAlphaComponent(0.92), alignment: .left, tracking: teamFit.tracking)
+            context.setStrokeColor(accent.cgColor)
+            context.setLineWidth(4)
+            context.move(to: CGPoint(x: teamX, y: 168))
+            context.addLine(to: CGPoint(x: teamX + max(1, teamWidth), y: 168))
+            context.strokePath()
         }
-        if let number = content.playerNumber {
-            accent.setFill()
-            UIBezierPath(roundedRect: CGRect(x: 936, y: 110, width: 160, height: 90), cornerRadius: 20).fill()
-            drawText(number, in: CGRect(x: 948, y: 118, width: 136, height: 74), font: fittedFont(text: number, maxSize: 58, weight: .black, width: 136), color: readableForeground(over: accent), alignment: .center)
-        }
-        drawText(content.playerName, in: CGRect(x: 90, y: 765, width: 980, height: 164), font: fittedFont(text: content.playerName, maxSize: 86, weight: .black, width: 980), color: .white, alignment: .left)
+        drawPlayerName(content.playerName, in: CGRect(x: 90, y: 755, width: 980, height: 202))
 
-        let songPanel = CGRect(x: 54, y: 1_020, width: 1_092, height: content.songTitle == nil ? 208 : 310)
+        let songPanel = CGRect(x: 54, y: 975, width: 1_092, height: content.songTitle == nil ? 208 : 310)
         UIColor(red: 0.095, green: 0.105, blue: 0.13, alpha: 1).setFill()
         UIBezierPath(roundedRect: songPanel, cornerRadius: 34).fill()
         accent.setFill()
-        UIBezierPath(roundedRect: CGRect(x: 54, y: 1_020, width: 18, height: songPanel.height), byRoundingCorners: [.topLeft, .bottomLeft], cornerRadii: CGSize(width: 34, height: 34)).fill()
-        drawText(content.songTitle == nil ? "READY FOR GAME DAY" : "WALK-UP MUSIC", in: CGRect(x: 100, y: 1_064, width: 900, height: 38), font: .systemFont(ofSize: 25, weight: .bold), color: accent, alignment: .left, tracking: 2.5)
+        UIBezierPath(roundedRect: CGRect(x: 54, y: 975, width: 18, height: songPanel.height), byRoundingCorners: [.topLeft, .bottomLeft], cornerRadii: CGSize(width: 34, height: 34)).fill()
+        drawText(content.songTitle == nil ? "READY FOR GAME DAY" : "WALK-UP MUSIC", in: CGRect(x: 100, y: 1_019, width: 900, height: 38), font: BroadcastCardTypography.sectionLabel(size: 25), color: accent, alignment: .left, tracking: 2.5)
         if let song = content.songTitle {
-            drawText(song, in: CGRect(x: 98, y: 1_116, width: 948, height: 92), font: fittedFont(text: song, maxSize: 52, weight: .bold, width: 948), color: .white, alignment: .left)
+            let songFont = fittedFont(text: song, maxSize: 52, minimumSize: 26, width: 948, fontProvider: { BroadcastCardTypography.songTitle(size: $0) })
+            drawText(song, in: CGRect(x: 98, y: 1_071, width: 948, height: 92), font: songFont, color: .white, alignment: .left)
             if let artist = content.artistName {
-                drawText(artist, in: CGRect(x: 100, y: 1_218, width: 900, height: 48), font: .systemFont(ofSize: 31, weight: .medium), color: .white.withAlphaComponent(0.7), alignment: .left)
+                drawText(artist, in: CGRect(x: 100, y: 1_173, width: 900, height: 48), font: BroadcastCardTypography.artist(size: 31), color: .white.withAlphaComponent(0.7), alignment: .left)
             }
         }
-        drawAttribution(in: CGRect(x: 54, y: 1_382, width: 1_092, height: 66), color: .white.withAlphaComponent(0.7), icon: brandIcon)
+        drawAttribution(in: CGRect(x: 54, y: 1_382, width: 1_092, height: 66), color: .white.withAlphaComponent(0.7), icon: brandIcon, context: context)
     }
 
 
@@ -143,7 +148,7 @@ struct PlayerCardRenderer {
         return image
     }
 
-    private func drawAttribution(in rect: CGRect, color: UIColor, icon: UIImage?) {
+    private func drawAttribution(in rect: CGRect, color: UIColor, icon: UIImage?, context: CGContext) {
         let iconRect = CGRect(x: rect.minX, y: rect.midY - 23, width: 46, height: 46)
         let resolvedIcon = Self.drawableIcon(icon) ?? Self.bundledBrandIcon
         let textInset: CGFloat = resolvedIcon == nil ? 0 : 62
@@ -154,13 +159,41 @@ struct PlayerCardRenderer {
             resolvedIcon.draw(in: iconRect)
             UIGraphicsGetCurrentContext()?.restoreGState()
         }
-        drawText("Made with Roll Call", in: CGRect(x: rect.minX + textInset, y: rect.minY, width: rect.width - textInset, height: rect.height), font: .systemFont(ofSize: 25, weight: .semibold), color: color, alignment: .left)
+        BroadcastCardTypography.drawFooterText(in: CGRect(x: rect.minX + textInset, y: rect.minY, width: rect.width - textInset, height: rect.height), color: color, size: 25, context: context)
     }
 
-    private func drawText(_ text: String, in rect: CGRect, font: UIFont, color: UIColor, alignment: NSTextAlignment, tracking: CGFloat = 0) {
+    private func drawPlayerName(_ displayName: String, in rect: CGRect) {
+        let parts = BroadcastCardTypography.nameParts(displayName)
+        let first = parts.first.uppercased()
+        let last = parts.last.uppercased()
+        let firstFit = fittedBroadcastFont(text: first, maxSize: 49, minimumSize: 30, width: rect.width, preferredTracking: 1.8, fontProvider: { BroadcastCardTypography.playerFirstName(size: $0) })
+        let lastFit = fittedBroadcastFont(text: last, maxSize: 108, minimumSize: 40, width: rect.width, preferredTracking: 0, fontProvider: { BroadcastCardTypography.playerLastName(size: $0) })
+
+        if !first.isEmpty {
+            drawText(first, in: CGRect(x: rect.minX, y: rect.minY, width: rect.width, height: 56), font: firstFit.font, color: .white.withAlphaComponent(0.92), alignment: .left, tracking: firstFit.tracking)
+            drawText(last, in: CGRect(x: rect.minX, y: rect.minY + 50, width: rect.width, height: rect.height - 50), font: lastFit.font, color: .white, alignment: .left, tracking: lastFit.tracking, lineBreakMode: .byClipping)
+        } else {
+            drawText(last, in: rect, font: lastFit.font, color: .white, alignment: .left, tracking: lastFit.tracking, lineBreakMode: .byClipping)
+        }
+    }
+
+    private func fittedBroadcastFont(text: String, maxSize: CGFloat, minimumSize: CGFloat, width: CGFloat, preferredTracking: CGFloat, fontProvider: (CGFloat) -> UIFont) -> (font: UIFont, tracking: CGFloat) {
+        for tracking in [preferredTracking, preferredTracking - 0.5, 0, -0.5] {
+            var size = maxSize
+            while size >= minimumSize {
+                let font = fontProvider(size)
+                let measured = NSAttributedString(string: text, attributes: [.font: font, .kern: tracking]).size().width
+                if measured <= width { return (font, tracking) }
+                size -= 1
+            }
+        }
+        return (fontProvider(minimumSize), -0.8)
+    }
+
+    private func drawText(_ text: String, in rect: CGRect, font: UIFont, color: UIColor, alignment: NSTextAlignment, tracking: CGFloat = 0, lineBreakMode: NSLineBreakMode = .byTruncatingTail) {
         let paragraph = NSMutableParagraphStyle()
         paragraph.alignment = alignment
-        paragraph.lineBreakMode = .byTruncatingTail
+        paragraph.lineBreakMode = lineBreakMode
         let attributes: [NSAttributedString.Key: Any] = [
             .font: font,
             .foregroundColor: color,
@@ -178,6 +211,16 @@ struct PlayerCardRenderer {
             size -= 2
         }
         return .systemFont(ofSize: size, weight: weight)
+    }
+
+    private func fittedFont(text: String, maxSize: CGFloat, minimumSize: CGFloat, width: CGFloat, fontProvider: (CGFloat) -> UIFont) -> UIFont {
+        var size = maxSize
+        while size > minimumSize {
+            let font = fontProvider(size)
+            if NSString(string: text).size(withAttributes: [.font: font]).width <= width { return font }
+            size -= 1
+        }
+        return fontProvider(minimumSize)
     }
 
     private func readableForeground(over color: UIColor) -> UIColor {

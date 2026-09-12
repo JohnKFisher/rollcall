@@ -822,7 +822,7 @@ final class AppModel: ObservableObject {
         let context = TelemetryBuildContext.current
         #if canImport(TelemetryDeck)
         let provider: RollCallTelemetryProvider
-        if context.isSwiftUIPreview {
+        if context.isSwiftUIPreview || !BuildEnvironment.current.isReleaseBuild {
             provider = NullTelemetryProvider()
         } else {
             provider = TelemetryDeckProvider(

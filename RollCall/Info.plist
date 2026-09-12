@@ -59,6 +59,12 @@
 	<string>public.app-category.sports</string>
 	<key>LSSupportsOpeningDocumentsInPlace</key>
 	<true/>
+	<key>UIAppFonts</key>
+	<array>
+		<string>BarlowCondensed/BarlowCondensed-SemiBold.ttf</string>
+		<string>BarlowCondensed/BarlowCondensed-ExtraBold.ttf</string>
+		<string>BarlowCondensed/BarlowCondensed-Black.ttf</string>
+	</array>
 	<key>NSAppleMusicUsageDescription</key>
 	<string>Roll Call can search Apple Music songs, play full tracks when your subscription allows it, and fall back to preview clips when it does not.</string>
 	<key>NSMediaLibraryUsageDescription</key>

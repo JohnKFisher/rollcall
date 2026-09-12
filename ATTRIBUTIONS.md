@@ -21,6 +21,12 @@ applicable third-party license.
 - Sound effects catalog: https://mixkit.co/free-sound-effects/
 - Source pages reviewed for this update state that Mixkit sound effects are royalty-free, ready to use, and can be used without attribution.
 
+## Bundled Fonts
+
+| Family | Version / Source | Bundled Weights | License | Attribution / Distribution Requirement |
+| --- | --- | --- | --- | --- |
+| Barlow Condensed | Upstream `jpt/barlow` commit `b4726ddf91525818e85e5fce111c285b9273d764` (v1.408 source) | SemiBold, ExtraBold, Black | SIL Open Font License 1.1 | Copyright 2017 The Barlow Project Authors (https://github.com/jpt/barlow). The original license is bundled at `RollCall/Fonts/BarlowCondensed/OFL.txt`; the font files may be bundled/embedded with software when this notice and license travel with them. |
+
 ## Bundled General Clips
 
 | App Label | Bundled File | Source Title | Source Page | Preview URL | License | Attribution Requirement |
