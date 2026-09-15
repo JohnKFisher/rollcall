@@ -181,16 +181,75 @@ struct SpotlightPhotoTransform: @unchecked Sendable {
     let crop: NormalizedPhotoCrop
     let destinationFrame: CGRect
 
+    var scale: CGFloat {
+        let cropWidth = max(CGFloat(crop.width) * sourceSize.width, 1)
+        let cropHeight = max(CGFloat(crop.height) * sourceSize.height, 1)
+        return max(destinationFrame.width / cropWidth, destinationFrame.height / cropHeight)
+    }
+
     var fullImageDestination: CGRect {
-        let cropWidth = max(crop.width * sourceSize.width, 1)
-        let cropHeight = max(crop.height * sourceSize.height, 1)
-        let scale = max(destinationFrame.width / cropWidth, destinationFrame.height / cropHeight)
+        let cropCenter = CGPoint(
+            x: (CGFloat(crop.x) + CGFloat(crop.width) / 2) * sourceSize.width,
+            y: (CGFloat(crop.y) + CGFloat(crop.height) / 2) * sourceSize.height
+        )
         return CGRect(
-            x: destinationFrame.minX - crop.x * sourceSize.width * scale,
-            y: destinationFrame.minY - crop.y * sourceSize.height * scale,
+            x: destinationFrame.midX - cropCenter.x * scale,
+            y: destinationFrame.midY - cropCenter.y * scale,
             width: sourceSize.width * scale,
             height: sourceSize.height * scale
         )
+    }
+
+    func projectedSourceRect(_ normalizedRect: CGRect) -> CGRect {
+        let destination = fullImageDestination
+        return CGRect(
+            x: destination.minX + normalizedRect.minX * destination.width,
+            y: destination.minY + normalizedRect.minY * destination.height,
+            width: normalizedRect.width * destination.width,
+            height: normalizedRect.height * destination.height
+        )
+    }
+}
+
+enum SpotlightSegmentationBackend: String, CaseIterable, Hashable, Sendable {
+    case personInstance
+    case foregroundInstance
+
+    var title: String {
+        switch self {
+        case .personInstance: return "Person instances"
+        case .foregroundInstance: return "Foreground instances"
+        }
+    }
+
+    var requestRevision: Int { 1 }
+}
+
+struct SpotlightMaskRasterDiagnostics: Equatable, Sendable {
+    let width: Int
+    let height: Int
+    let bitsPerComponent: Int
+    let bitsPerPixel: Int
+    let bytesPerRow: Int
+    let colorSpace: String
+    let alphaInfo: UInt32
+    let bitmapInfo: UInt32
+    let isMask: Bool
+
+    init(image: CGImage) {
+        width = image.width
+        height = image.height
+        bitsPerComponent = image.bitsPerComponent
+        bitsPerPixel = image.bitsPerPixel
+        bytesPerRow = image.bytesPerRow
+        colorSpace = image.colorSpace.map { String(describing: $0.name) } ?? "unknown"
+        alphaInfo = image.alphaInfo.rawValue
+        bitmapInfo = image.bitmapInfo.rawValue
+        isMask = image.isMask
+    }
+
+    var summary: String {
+        "\(width)×\(height) · \(bitsPerPixel)bpp · row \(bytesPerRow) · \(colorSpace) · alpha \(alphaInfo)"
     }
 }
 
@@ -199,6 +258,7 @@ struct SpotlightAnalysisResult: @unchecked Sendable {
     let processedMask: CGImage
     let rimLightMask: CGImage
     let quality: SpotlightSegmentationQuality
+    let maskMetrics: SpotlightMaskMetrics?
     let maskBounds: CGRect
     let faceBounds: CGRect?
     let personBounds: CGRect?
@@ -206,6 +266,11 @@ struct SpotlightAnalysisResult: @unchecked Sendable {
     let wasCacheHit: Bool
     let candidateCount: Int
     let selectionReason: String?
+    let backend: SpotlightSegmentationBackend
+    let requestRevision: Int
+    let candidateDiagnostics: [SpotlightSubjectCandidate]
+    let selectedInstanceIdentifier: Int?
+    let maskRasterDiagnostics: SpotlightMaskRasterDiagnostics?
 
     init(
         mask: CGImage,
@@ -218,12 +283,19 @@ struct SpotlightAnalysisResult: @unchecked Sendable {
         cacheKey: String,
         wasCacheHit: Bool,
         candidateCount: Int = 0,
-        selectionReason: String? = nil
+        selectionReason: String? = nil,
+        maskMetrics: SpotlightMaskMetrics? = nil,
+        backend: SpotlightSegmentationBackend = .personInstance,
+        requestRevision: Int = 1,
+        candidateDiagnostics: [SpotlightSubjectCandidate] = [],
+        selectedInstanceIdentifier: Int? = nil,
+        maskRasterDiagnostics: SpotlightMaskRasterDiagnostics? = nil
     ) {
         self.mask = mask
         self.processedMask = processedMask
         self.rimLightMask = rimLightMask
         self.quality = quality
+        self.maskMetrics = maskMetrics
         self.maskBounds = maskBounds
         self.faceBounds = faceBounds
         self.personBounds = personBounds
@@ -231,6 +303,11 @@ struct SpotlightAnalysisResult: @unchecked Sendable {
         self.wasCacheHit = wasCacheHit
         self.candidateCount = candidateCount
         self.selectionReason = selectionReason
+        self.backend = backend
+        self.requestRevision = requestRevision
+        self.candidateDiagnostics = candidateDiagnostics
+        self.selectedInstanceIdentifier = selectedInstanceIdentifier
+        self.maskRasterDiagnostics = maskRasterDiagnostics
     }
 }
 
@@ -259,7 +336,7 @@ enum SpotlightAnalysisDiagnostic: Equatable, Sendable {
         case .imageUnavailable: return "Could not create a working CGImage"
         case let .visionRequestFailed(domain, code, message): return "Vision request failed (\(domain) \(code)): \(message)"
         case .noObservation: return "Vision returned no instance-mask observation"
-        case .noInstances: return "Vision returned an observation with no person instances"
+        case .noInstances: return "Vision returned an observation with no foreground instances"
         case let .maskGenerationFailed(domain, code, message): return "Instance mask generation failed (\(domain) \(code)): \(message)"
         case .maskConversionFailed: return "Generated mask could not be converted to CGImage"
         case .emptyMask: return "Generated mask contained no foreground pixels"
@@ -375,6 +452,436 @@ enum SpotlightSubjectSelector {
     static let minimumCandidateArea: CGFloat = 0.003
 }
 
+struct SpotlightMaskMetrics: Equatable, Sendable {
+    let foregroundCoverage: CGFloat
+    let boundsArea: CGFloat
+    let density: CGFloat
+    let rawComponentCount: Int
+    let retainedComponentCount: Int
+    let dominantComponentShare: CGFloat
+    let removedForegroundFraction: CGFloat
+    let boundaryContactRatio: CGFloat
+    let edgeRoughness: CGFloat
+    let rectangularity: CGFloat
+    let faceOverlap: CGFloat
+
+    var touchesBoundary: Bool {
+        boundaryContactRatio > 0 || boundsArea >= 0.98
+    }
+
+    var summary: String {
+        String(
+            format: "coverage %.3f · density %.2f · components %d/%d · removed %.2f · edge %.2f · rect %.2f",
+            foregroundCoverage,
+            density,
+            retainedComponentCount,
+            rawComponentCount,
+            removedForegroundFraction,
+            edgeRoughness,
+            rectangularity
+        )
+    }
+}
+
+struct SpotlightMaskProcessingResult: @unchecked Sendable {
+    let mask: CGImage
+    let bounds: CGRect
+    let metrics: SpotlightMaskMetrics
+    let quality: SpotlightSegmentationQuality
+}
+
+/// Deterministic cleanup for Vision's soft person mattes.
+///
+/// This intentionally operates on a bounded working raster. It uses the raw alpha values for the
+/// final mask, while using a hysteresis support mask only for topology decisions. That prevents
+/// low-confidence background pixels from becoming opaque without turning the result into a hard
+/// silhouette.
+enum SpotlightMaskProcessor {
+    static let strongThreshold: UInt8 = 128
+    static let supportThreshold: UInt8 = 64
+    static let maximumWorkingDimension = 512
+
+    static func process(_ image: CGImage, faceBounds: CGRect? = nil) -> SpotlightMaskProcessingResult? {
+        guard let raster = Raster(image: image, maximumDimension: maximumWorkingDimension) else { return nil }
+
+        let originalSupport = raster.pixels.map { $0 >= supportThreshold }
+        let strongSupport = raster.pixels.map { $0 >= strongThreshold }
+        guard originalSupport.contains(true), strongSupport.contains(true) else { return nil }
+
+        let closedSupport = close(originalSupport, width: raster.width, height: raster.height)
+        let minimumComponentArea = max(4, Int(Double(raster.width * raster.height) * 0.00015))
+        let allComponents = components(in: closedSupport, strongSupport: strongSupport, width: raster.width, height: raster.height)
+        let credibleComponents = allComponents.filter { $0.area >= minimumComponentArea && $0.containsStrongSupport }
+        guard let primary = primaryComponent(in: credibleComponents, faceBounds: faceBounds, width: raster.width, height: raster.height) else { return nil }
+
+        let attachmentRadius = max(2, Int(ceil(Double(min(raster.width, raster.height)) * 0.018)))
+        let attachmentBounds = primary.bounds.insetBy(dx: -CGFloat(attachmentRadius), dy: -CGFloat(attachmentRadius))
+        var retainedComponents = [primary]
+        for component in credibleComponents where component.id != primary.id {
+            let isSubordinate = Double(component.area) <= max(12, Double(primary.area) * 0.18)
+            let isAttached = attachmentBounds.intersects(component.bounds)
+            if isSubordinate && isAttached {
+                retainedComponents.append(component)
+            }
+        }
+
+        var cleanedSupport = [Bool](repeating: false, count: raster.width * raster.height)
+        for component in retainedComponents {
+            for index in component.pixels {
+                cleanedSupport[index] = true
+            }
+        }
+        let filledPixels = fillSmallHoles(in: &cleanedSupport, width: raster.width, height: raster.height)
+        guard let cleanedBounds = normalizedBounds(of: cleanedSupport, width: raster.width, height: raster.height) else { return nil }
+
+        let retainedSupportCount = cleanedSupport.reduce(into: 0) { count, isForeground in
+            if isForeground { count += 1 }
+        }
+        guard retainedSupportCount > 0 else { return nil }
+
+        let baseAlpha = raster.pixels.enumerated().map { index, value in
+            guard cleanedSupport[index] else { return UInt8(0) }
+            // Pixels added by small-hole filling have no source alpha. Make them solid enough to
+            // close the hole, while retaining the original matte everywhere else.
+            return filledPixels[index] ? UInt8(220) : value
+        }
+        let featheredAlpha = feather(baseAlpha, support: cleanedSupport, width: raster.width, height: raster.height)
+        guard let workingImage = makeGrayImage(bytes: featheredAlpha, width: raster.width, height: raster.height),
+              let outputImage = raster.resizeToOriginal(workingImage) else { return nil }
+
+        let rawSupportCount = originalSupport.reduce(into: 0) { count, isForeground in
+            if isForeground { count += 1 }
+        }
+        let primaryShare = CGFloat(primary.area) / CGFloat(max(rawSupportCount, 1))
+        let removedFraction = CGFloat(max(0, rawSupportCount - retainedSupportCount)) / CGFloat(max(rawSupportCount, 1))
+        let boundaryCount = cleanedSupport.enumerated().reduce(into: 0) { count, item in
+            guard item.element else { return }
+            let x = item.offset % raster.width
+            let y = item.offset / raster.width
+            if x == 0 || y == 0 || x == raster.width - 1 || y == raster.height - 1 { count += 1 }
+        }
+        let edgeCount = cleanedSupport.enumerated().reduce(into: 0) { count, item in
+            guard item.element else { return }
+            let x = item.offset % raster.width
+            let y = item.offset / raster.width
+            if neighbors(x: x, y: y, width: raster.width, height: raster.height).contains(where: { !cleanedSupport[$0] }) {
+                count += 1
+            }
+        }
+        let boundsArea = cleanedBounds.width * cleanedBounds.height
+        let coverage = CGFloat(retainedSupportCount) / CGFloat(raster.width * raster.height)
+        let rectangularity = edgeOccupancy(of: cleanedSupport, bounds: cleanedBounds, width: raster.width, height: raster.height)
+        let metrics = SpotlightMaskMetrics(
+            foregroundCoverage: coverage,
+            boundsArea: boundsArea,
+            density: coverage / max(boundsArea, 0.0001),
+            rawComponentCount: allComponents.count,
+            retainedComponentCount: retainedComponents.count,
+            dominantComponentShare: min(max(primaryShare, 0), 1),
+            removedForegroundFraction: min(max(removedFraction, 0), 1),
+            boundaryContactRatio: CGFloat(boundaryCount) / CGFloat(max(retainedSupportCount, 1)),
+            edgeRoughness: CGFloat(edgeCount) / CGFloat(max(retainedSupportCount, 1)),
+            rectangularity: rectangularity,
+            faceOverlap: faceBounds.map { overlap($0, cleanedBounds) } ?? 1
+        )
+        return SpotlightMaskProcessingResult(
+            mask: outputImage,
+            bounds: cleanedBounds,
+            metrics: metrics,
+            quality: classify(metrics)
+        )
+    }
+
+    private struct Raster {
+        let width: Int
+        let height: Int
+        let originalWidth: Int
+        let originalHeight: Int
+        let pixels: [UInt8]
+
+        init?(image: CGImage, maximumDimension: Int) {
+            let originalWidth = image.width
+            let originalHeight = image.height
+            guard originalWidth > 0, originalHeight > 0 else { return nil }
+            let scale = min(1, CGFloat(maximumDimension) / CGFloat(max(originalWidth, originalHeight)))
+            let width = max(1, Int((CGFloat(originalWidth) * scale).rounded()))
+            let height = max(1, Int((CGFloat(originalHeight) * scale).rounded()))
+            var pixels = [UInt8](repeating: 0, count: width * height)
+            guard let context = CGContext(
+                data: &pixels,
+                width: width,
+                height: height,
+                bitsPerComponent: 8,
+                bytesPerRow: width,
+                space: CGColorSpaceCreateDeviceGray(),
+                bitmapInfo: CGImageAlphaInfo.none.rawValue
+            ) else { return nil }
+            context.interpolationQuality = .high
+            context.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
+            self.width = width
+            self.height = height
+            self.originalWidth = originalWidth
+            self.originalHeight = originalHeight
+            self.pixels = pixels
+        }
+
+        func resizeToOriginal(_ image: CGImage) -> CGImage? {
+            guard width != originalWidth || height != originalHeight else { return image }
+            var pixels = [UInt8](repeating: 0, count: originalWidth * originalHeight)
+            guard let context = CGContext(
+                data: &pixels,
+                width: originalWidth,
+                height: originalHeight,
+                bitsPerComponent: 8,
+                bytesPerRow: originalWidth,
+                space: CGColorSpaceCreateDeviceGray(),
+                bitmapInfo: CGImageAlphaInfo.none.rawValue
+            ) else { return nil }
+            context.interpolationQuality = .high
+            context.draw(image, in: CGRect(x: 0, y: 0, width: originalWidth, height: originalHeight))
+            return context.makeImage()
+        }
+    }
+
+    private struct Component {
+        let id: Int
+        let pixels: [Int]
+        let bounds: CGRect
+        let containsStrongSupport: Bool
+
+        var area: Int { pixels.count }
+    }
+
+    private static func components(in mask: [Bool], strongSupport: [Bool], width: Int, height: Int) -> [Component] {
+        var visited = [Bool](repeating: false, count: mask.count)
+        var result: [Component] = []
+        var nextID = 0
+        for start in mask.indices where mask[start] && !visited[start] {
+            var queue = [start]
+            var pixels: [Int] = []
+            var cursor = 0
+            var minX = width
+            var minY = height
+            var maxX = 0
+            var maxY = 0
+            var containsStrong = false
+            visited[start] = true
+            while cursor < queue.count {
+                let index = queue[cursor]
+                cursor += 1
+                pixels.append(index)
+                let x = index % width
+                let y = index / width
+                minX = min(minX, x)
+                minY = min(minY, y)
+                maxX = max(maxX, x)
+                maxY = max(maxY, y)
+                containsStrong = containsStrong || strongSupport[index]
+                for neighbor in neighbors(x: x, y: y, width: width, height: height) where mask[neighbor] && !visited[neighbor] {
+                    visited[neighbor] = true
+                    queue.append(neighbor)
+                }
+            }
+            result.append(Component(id: nextID, pixels: pixels, bounds: CGRect(x: minX, y: minY, width: maxX - minX + 1, height: maxY - minY + 1), containsStrongSupport: containsStrong))
+            nextID += 1
+        }
+        return result
+    }
+
+    private static func primaryComponent(in components: [Component], faceBounds: CGRect?, width: Int, height: Int) -> Component? {
+        guard !components.isEmpty else { return nil }
+        if let faceBounds {
+            let center = CGPoint(x: faceBounds.midX * CGFloat(width), y: faceBounds.midY * CGFloat(height))
+            if let anchored = components.min(by: { distance(from: center, to: $0.bounds) < distance(from: center, to: $1.bounds) }) {
+                let maximumFaceDistance = CGFloat(max(width, height)) * 0.16
+                if distance(from: center, to: anchored.bounds) <= maximumFaceDistance {
+                    return anchored
+                }
+            }
+        }
+        return components.max { lhs, rhs in lhs.area < rhs.area }
+    }
+
+    private static func close(_ mask: [Bool], width: Int, height: Int) -> [Bool] {
+        let dilated = morphological(mask, width: width, height: height, requireAll: false)
+        return morphological(dilated, width: width, height: height, requireAll: true)
+    }
+
+    private static func morphological(_ mask: [Bool], width: Int, height: Int, requireAll: Bool) -> [Bool] {
+        mask.indices.map { index in
+            let x = index % width
+            let y = index / width
+            let samples = [index] + neighbors(x: x, y: y, width: width, height: height)
+            return requireAll ? samples.allSatisfy { mask[$0] } : samples.contains { mask[$0] }
+        }
+    }
+
+    private static func fillSmallHoles(in mask: inout [Bool], width: Int, height: Int) -> [Bool] {
+        let maximumHoleArea = max(8, Int(Double(width * height) * 0.008))
+        var visited = [Bool](repeating: false, count: mask.count)
+        var filled = [Bool](repeating: false, count: mask.count)
+        for start in mask.indices where !mask[start] && !visited[start] {
+            var queue = [start]
+            var cursor = 0
+            var touchesBoundary = false
+            visited[start] = true
+            while cursor < queue.count {
+                let index = queue[cursor]
+                cursor += 1
+                let x = index % width
+                let y = index / width
+                touchesBoundary = touchesBoundary || x == 0 || y == 0 || x == width - 1 || y == height - 1
+                for neighbor in orthogonalNeighbors(x: x, y: y, width: width, height: height) where !mask[neighbor] && !visited[neighbor] {
+                    visited[neighbor] = true
+                    queue.append(neighbor)
+                }
+            }
+            if !touchesBoundary && queue.count <= maximumHoleArea {
+                for index in queue {
+                    mask[index] = true
+                    filled[index] = true
+                }
+            }
+        }
+        return filled
+    }
+
+    private static func feather(_ alpha: [UInt8], support: [Bool], width: Int, height: Int) -> [UInt8] {
+        let weights = [1, 2, 1, 2, 4, 2, 1, 2, 1]
+        return alpha.indices.map { index in
+            guard support[index] else { return UInt8(0) }
+            let x = index % width
+            let y = index / width
+            var weightedTotal = 0
+            var weightTotal = 0
+            for (offset, weight) in weights.enumerated() {
+                let dx = (offset % 3) - 1
+                let dy = (offset / 3) - 1
+                let sampleX = x + dx
+                let sampleY = y + dy
+                guard sampleX >= 0, sampleY >= 0, sampleX < width, sampleY < height else { continue }
+                let sample = sampleY * width + sampleX
+                weightedTotal += Int(alpha[sample]) * weight
+                weightTotal += weight
+            }
+            return UInt8(min(255, max(0, Int((Double(weightedTotal) / Double(max(weightTotal, 1))).rounded()))))
+        }
+    }
+
+    private static func makeGrayImage(bytes: [UInt8], width: Int, height: Int) -> CGImage? {
+        var bytes = bytes
+        guard let context = CGContext(
+            data: &bytes,
+            width: width,
+            height: height,
+            bitsPerComponent: 8,
+            bytesPerRow: width,
+            space: CGColorSpaceCreateDeviceGray(),
+            bitmapInfo: CGImageAlphaInfo.none.rawValue
+        ) else { return nil }
+        return context.makeImage()
+    }
+
+    private static func normalizedBounds(of mask: [Bool], width: Int, height: Int) -> CGRect? {
+        var minX = width
+        var minY = height
+        var maxX = 0
+        var maxY = 0
+        var count = 0
+        for index in mask.indices where mask[index] {
+            let x = index % width
+            let y = index / width
+            minX = min(minX, x)
+            minY = min(minY, y)
+            maxX = max(maxX, x)
+            maxY = max(maxY, y)
+            count += 1
+        }
+        guard count > 0 else { return nil }
+        return CGRect(x: CGFloat(minX) / CGFloat(width), y: CGFloat(minY) / CGFloat(height), width: CGFloat(maxX - minX + 1) / CGFloat(width), height: CGFloat(maxY - minY + 1) / CGFloat(height))
+    }
+
+    private static func edgeOccupancy(of mask: [Bool], bounds: CGRect, width: Int, height: Int) -> CGFloat {
+        let minX = min(width - 1, max(0, Int(bounds.minX * CGFloat(width))))
+        let minY = min(height - 1, max(0, Int(bounds.minY * CGFloat(height))))
+        let maxX = min(width - 1, max(minX, Int(ceil(bounds.maxX * CGFloat(width))) - 1))
+        let maxY = min(height - 1, max(minY, Int(ceil(bounds.maxY * CGFloat(height))) - 1))
+        var top = 0
+        var bottom = 0
+        var left = 0
+        var right = 0
+        for x in minX...maxX {
+            if mask[minY * width + x] { top += 1 }
+            if mask[maxY * width + x] { bottom += 1 }
+        }
+        for y in minY...maxY {
+            if mask[y * width + minX] { left += 1 }
+            if mask[y * width + maxX] { right += 1 }
+        }
+        let horizontalLength = max(1, maxX - minX + 1)
+        let verticalLength = max(1, maxY - minY + 1)
+        return (CGFloat(top + bottom) / CGFloat(horizontalLength * 2) + CGFloat(left + right) / CGFloat(verticalLength * 2)) / 2
+    }
+
+    private static func classify(_ metrics: SpotlightMaskMetrics) -> SpotlightSegmentationQuality {
+        guard metrics.foregroundCoverage >= 0.004,
+              metrics.boundsArea >= 0.01,
+              metrics.boundsArea < 0.98,
+              metrics.density >= 0.10,
+              metrics.dominantComponentShare >= 0.45,
+              metrics.removedForegroundFraction <= 0.72,
+              metrics.edgeRoughness <= 0.42,
+              metrics.faceOverlap >= 0.08 else {
+            return .fallback
+        }
+        if metrics.rawComponentCount > 12 {
+            return .fallback
+        }
+        if metrics.density >= 0.75 && metrics.rectangularity >= 0.90 {
+            return .fallback
+        }
+        let coherent = metrics.density >= 0.18 && metrics.dominantComponentShare >= 0.70 && metrics.removedForegroundFraction <= 0.35 && metrics.edgeRoughness <= 0.32 && metrics.retainedComponentCount <= 3
+        guard coherent else { return .usable }
+        if metrics.boundsArea > 0.10 && metrics.boundsArea < 0.86 && metrics.boundaryContactRatio == 0 && metrics.retainedComponentCount == 1 {
+            return .excellent
+        }
+        return .usable
+    }
+
+    private static func overlap(_ lhs: CGRect, _ rhs: CGRect) -> CGFloat {
+        let intersection = lhs.intersection(rhs)
+        guard !intersection.isNull else { return 0 }
+        return min(max(intersection.width * intersection.height / max(lhs.width * lhs.height, 0.0001), 0), 1)
+    }
+
+    private static func distance(from point: CGPoint, to rect: CGRect) -> CGFloat {
+        let dx = max(max(rect.minX - point.x, point.x - rect.maxX), 0)
+        let dy = max(max(rect.minY - point.y, point.y - rect.maxY), 0)
+        return hypot(dx, dy)
+    }
+
+    private static func neighbors(x: Int, y: Int, width: Int, height: Int) -> [Int] {
+        var result: [Int] = []
+        for dy in -1...1 {
+            for dx in -1...1 where dx != 0 || dy != 0 {
+                let sampleX = x + dx
+                let sampleY = y + dy
+                if sampleX >= 0, sampleY >= 0, sampleX < width, sampleY < height {
+                    result.append(sampleY * width + sampleX)
+                }
+            }
+        }
+        return result
+    }
+
+    private static func orthogonalNeighbors(x: Int, y: Int, width: Int, height: Int) -> [Int] {
+        [(x - 1, y), (x + 1, y), (x, y - 1), (x, y + 1)].compactMap { sampleX, sampleY in
+            guard sampleX >= 0, sampleY >= 0, sampleX < width, sampleY < height else { return nil }
+            return sampleY * width + sampleX
+        }
+    }
+}
+
 enum SpotlightSegmentationMode: String, CaseIterable, Sendable {
     case auto
     case forceExcellent
@@ -397,6 +904,7 @@ enum SpotlightDiagnosticState: Equatable, Sendable {
     case fallbackNoUsableMask
     case enhancedUsable
     case enhancedExcellent
+    case enhancedMaskOnly
     case forcedFallback
     case forcedUsable
     case forcedExcellent
@@ -408,7 +916,8 @@ enum SpotlightDiagnosticState: Equatable, Sendable {
         analysis: SpotlightAnalysisResult?,
         isAnalyzing: Bool,
         hasPhoto: Bool,
-        diagnostic: SpotlightAnalysisDiagnostic? = nil
+        diagnostic: SpotlightAnalysisDiagnostic? = nil,
+        breakoutMetrics: SpotlightBreakoutGeometry.Metrics? = nil
     ) -> SpotlightDiagnosticState {
         guard hasPhoto else { return .noPhoto }
         if isAnalyzing && analysis == nil { return .fallbackAnalyzing }
@@ -422,8 +931,8 @@ enum SpotlightDiagnosticState: Equatable, Sendable {
         switch mode {
         case .auto:
             switch analysis.quality {
-            case .excellent: return .enhancedExcellent
-            case .usable: return .enhancedUsable
+            case .excellent: return breakoutMetrics?.hasMeaningfulEscape == true ? .enhancedExcellent : .enhancedMaskOnly
+            case .usable: return breakoutMetrics?.hasMeaningfulEscape == true ? .enhancedUsable : .enhancedMaskOnly
             case .fallback: return .fallbackNoUsableMask
             }
         case .forceExcellent: return .forcedExcellent
@@ -439,6 +948,7 @@ enum SpotlightDiagnosticState: Equatable, Sendable {
         case .fallbackNoUsableMask: return "Fallback · No usable mask"
         case .enhancedUsable: return "Enhanced · Usable"
         case .enhancedExcellent: return "Enhanced · Excellent"
+        case .enhancedMaskOnly: return "Mask good · no visible escape"
         case .forcedFallback: return "Forced Fallback"
         case .forcedUsable: return "Forced Usable"
         case .forcedExcellent: return "Forced Excellent"
@@ -450,7 +960,7 @@ enum SpotlightDiagnosticState: Equatable, Sendable {
     var role: StatusChipRole {
         switch self {
         case .enhancedExcellent, .forcedExcellent: return .live
-        case .enhancedUsable, .forcedUsable: return .ready
+        case .enhancedUsable, .forcedUsable, .enhancedMaskOnly: return .ready
         case .noPhoto: return .disabled
         case .notAnalyzed, .fallbackAnalyzing, .fallbackNoUsableMask, .forcedFallback, .fallbackDiagnostic: return .neutral
         }
@@ -463,6 +973,7 @@ enum SpotlightDiagnosticState: Equatable, Sendable {
         case .fallbackNoUsableMask: return "rectangle.on.rectangle"
         case .enhancedUsable: return "checkmark.circle"
         case .enhancedExcellent: return "sparkles"
+        case .enhancedMaskOnly: return "viewfinder"
         case .forcedFallback, .forcedUsable, .forcedExcellent: return "wand.and.stars"
         case .fallbackDiagnostic(let diagnostic): return diagnostic == .analyzing ? "hourglass" : "exclamationmark.triangle"
         case .noPhoto: return "photo"
@@ -670,22 +1181,37 @@ enum PlayerCardArtworkRenderer {
     static func drawMaskedPhoto(_ image: UIImage, mask: CGImage, crop: NormalizedPhotoCrop, in rect: CGRect, context: CGContext, envelope: CGRect) {
         guard let source = image.rollCallNormalizedUpImage().cgImage else { return }
         context.saveGState()
-        context.clip(to: envelope)
         let transform = SpotlightPhotoTransform(sourceSize: CGSize(width: source.width, height: source.height), crop: crop, destinationFrame: rect)
         context.interpolationQuality = .high
-        context.clip(to: transform.fullImageDestination, mask: mask)
+        clipToSpotlightMask(mask, imageDestination: transform.fullImageDestination, envelope: envelope, context: context)
         UIImage(cgImage: source, scale: 1, orientation: .up).draw(in: transform.fullImageDestination)
         context.restoreGState()
     }
 
     static func drawMaskedColor(mask: CGImage, sourceSize: CGSize, crop: NormalizedPhotoCrop, in rect: CGRect, color: UIColor, alpha: CGFloat, context: CGContext, envelope: CGRect) {
         context.saveGState()
-        context.clip(to: envelope)
         let transform = SpotlightPhotoTransform(sourceSize: sourceSize, crop: crop, destinationFrame: rect)
-        context.clip(to: transform.fullImageDestination, mask: mask)
+        clipToSpotlightMask(mask, imageDestination: transform.fullImageDestination, envelope: envelope, context: context)
         context.setFillColor(color.withAlphaComponent(alpha).cgColor)
         context.fill(transform.fullImageDestination)
         context.restoreGState()
+    }
+
+    /// Installs the same envelope-plus-source mask clip for every Spotlight foreground layer.
+    /// Keeping this in one primitive prevents the rim and the cutout from drifting into different
+    /// coordinate systems as the Lab renderer evolves.
+    private static func clipToSpotlightMask(_ mask: CGImage, imageDestination: CGRect, envelope: CGRect, context: CGContext) {
+        context.clip(to: envelope)
+        // UIGraphicsImageRenderer uses UIKit's top-left coordinate system for the source photo,
+        // while CGContext's image-mask installation uses the image's Core Graphics orientation.
+        // Reflect only while installing the mask, then restore the drawing transform so the source
+        // photo and the mask remain pixel-aligned in the final card.
+        let reflection = imageDestination.minY + imageDestination.maxY
+        context.translateBy(x: 0, y: reflection)
+        context.scaleBy(x: 1, y: -1)
+        context.clip(to: imageDestination, mask: mask)
+        context.translateBy(x: 0, y: reflection)
+        context.scaleBy(x: 1, y: -1)
     }
 
     static func drawText(_ text: String, in rect: CGRect, font: UIFont, color: UIColor, alignment: NSTextAlignment, tracking: CGFloat = 0, lineBreakMode: NSLineBreakMode = .byClipping, context: CGContext) {
@@ -1166,6 +1692,26 @@ private enum BroadcastPlayerCardRenderer {
 struct SpotlightBreakoutGeometry {
     static let protectedNameTop: CGFloat = 900
 
+    struct Metrics: Equatable, Sendable {
+        let sampledForegroundFraction: CGFloat
+        let outsidePhotoFraction: CGFloat
+        let outsideEnvelopeFraction: CGFloat
+        let protectedZoneFraction: CGFloat
+
+        var hasMeaningfulEscape: Bool {
+            outsidePhotoFraction >= 0.02 && outsideEnvelopeFraction <= 0.02 && protectedZoneFraction <= 0.01
+        }
+
+        var summary: String {
+            String(
+                format: "outside photo %.1f%% · clipped %.1f%% · protected %.1f%%",
+                outsidePhotoFraction * 100,
+                outsideEnvelopeFraction * 100,
+                protectedZoneFraction * 100
+            )
+        }
+    }
+
     static func envelope(
         photoRect: CGRect,
         breakout: CGFloat,
@@ -1182,6 +1728,67 @@ struct SpotlightBreakoutGeometry {
             y: raw.minY,
             width: raw.width,
             height: max(0, cappedMaxY - raw.minY)
+        )
+    }
+
+    static func measure(
+        mask: CGImage,
+        crop: NormalizedPhotoCrop,
+        photoRect: CGRect,
+        envelope: CGRect,
+        protectedZones: [CGRect] = [],
+        maximumDimension: Int = 192
+    ) -> Metrics? {
+        let width = mask.width
+        let height = mask.height
+        guard width > 0, height > 0 else { return nil }
+        let scale = min(1, CGFloat(maximumDimension) / CGFloat(max(width, height)))
+        let sampleWidth = max(1, Int((CGFloat(width) * scale).rounded()))
+        let sampleHeight = max(1, Int((CGFloat(height) * scale).rounded()))
+        var pixels = [UInt8](repeating: 0, count: sampleWidth * sampleHeight)
+        guard let context = CGContext(
+            data: &pixels,
+            width: sampleWidth,
+            height: sampleHeight,
+            bitsPerComponent: 8,
+            bytesPerRow: sampleWidth,
+            space: CGColorSpaceCreateDeviceGray(),
+            bitmapInfo: CGImageAlphaInfo.none.rawValue
+        ) else { return nil }
+        context.interpolationQuality = .low
+        context.draw(mask, in: CGRect(x: 0, y: 0, width: sampleWidth, height: sampleHeight))
+
+        let transform = SpotlightPhotoTransform(
+            sourceSize: CGSize(width: width, height: height),
+            crop: crop,
+            destinationFrame: photoRect
+        )
+        var foreground = 0
+        var outsidePhoto = 0
+        var outsideEnvelope = 0
+        var protected = 0
+        for index in pixels.indices where pixels[index] > 32 {
+            foreground += 1
+            let x = index % sampleWidth
+            let y = index / sampleWidth
+            let normalizedPoint = CGPoint(
+                x: (CGFloat(x) + 0.5) / CGFloat(sampleWidth),
+                y: (CGFloat(y) + 0.5) / CGFloat(sampleHeight)
+            )
+            let projectedPoint = CGPoint(
+                x: transform.fullImageDestination.minX + normalizedPoint.x * transform.fullImageDestination.width,
+                y: transform.fullImageDestination.minY + normalizedPoint.y * transform.fullImageDestination.height
+            )
+            if !photoRect.contains(projectedPoint) { outsidePhoto += 1 }
+            if !envelope.contains(projectedPoint) { outsideEnvelope += 1 }
+            if protectedZones.contains(where: { $0.contains(projectedPoint) }) { protected += 1 }
+        }
+        guard foreground > 0 else { return nil }
+        return Metrics(
+            sampledForegroundFraction: CGFloat(foreground) / CGFloat(pixels.count),
+            outsidePhotoFraction: CGFloat(outsidePhoto) / CGFloat(foreground),
+            outsideEnvelopeFraction: CGFloat(outsideEnvelope) / CGFloat(foreground),
+            protectedZoneFraction: CGFloat(protected) / CGFloat(foreground)
         )
     }
 }
@@ -1264,7 +1871,9 @@ final class SpotlightAnalysisService: @unchecked Sendable {
     static let shared = SpotlightAnalysisService()
     private let lock = NSLock()
     private var cache: [String: SpotlightAnalysisResult] = [:]
-    static let analysisVersion = "spotlight-mask-v3"
+    private var cacheOrder: [String] = []
+    private static let maximumCachedResults = 4
+    static let analysisVersion = "spotlight-mask-v5"
 
     static func sourceIdentity(for photo: UIImage) -> String {
         guard let data = photo.pngData() else {
@@ -1276,33 +1885,66 @@ final class SpotlightAnalysisService: @unchecked Sendable {
         return "png-\(String(checksum, radix: 16))"
     }
 
-    func analyze(photo: UIImage, crop: NormalizedPhotoCrop, identity: String) async -> SpotlightAnalysisReport {
-        let key = [identity, String(crop.x), String(crop.y), String(crop.width), String(crop.height), Self.analysisVersion].joined(separator: "|")
+    static func cacheKey(for identity: String, crop: NormalizedPhotoCrop, backend: SpotlightSegmentationBackend) -> String {
+        [identity, String(crop.x), String(crop.y), String(crop.width), String(crop.height), backend.rawValue, String(backend.requestRevision), analysisVersion].joined(separator: "|")
+    }
+
+    func analyze(photo: UIImage, crop: NormalizedPhotoCrop, identity: String, backend: SpotlightSegmentationBackend = .personInstance) async -> SpotlightAnalysisReport {
+        let key = Self.cacheKey(for: identity, crop: crop, backend: backend)
         if let cached = cachedResult(for: key) {
-            return SpotlightAnalysisReport(
-                result: SpotlightAnalysisResult(mask: cached.mask, processedMask: cached.processedMask, rimLightMask: cached.rimLightMask, quality: cached.quality, maskBounds: cached.maskBounds, faceBounds: cached.faceBounds, personBounds: cached.personBounds, cacheKey: key, wasCacheHit: true, candidateCount: cached.candidateCount, selectionReason: cached.selectionReason),
-                diagnostic: .completed
-            )
+            return SpotlightAnalysisReport(result: SpotlightAnalysisResult(
+                mask: cached.mask,
+                processedMask: cached.processedMask,
+                rimLightMask: cached.rimLightMask,
+                quality: cached.quality,
+                maskBounds: cached.maskBounds,
+                faceBounds: cached.faceBounds,
+                personBounds: cached.personBounds,
+                cacheKey: key,
+                wasCacheHit: true,
+                candidateCount: cached.candidateCount,
+                selectionReason: cached.selectionReason,
+                maskMetrics: cached.maskMetrics,
+                backend: cached.backend,
+                requestRevision: cached.requestRevision,
+                candidateDiagnostics: cached.candidateDiagnostics,
+                selectedInstanceIdentifier: cached.selectedInstanceIdentifier,
+                maskRasterDiagnostics: cached.maskRasterDiagnostics
+            ), diagnostic: .completed)
         }
 
-        return await Task.detached(priority: .userInitiated) { [photo] in
+        return await Task.detached(priority: .userInitiated) { [photo, backend] in
             guard let image = photo.rollCallNormalizedUpImage().cgImage else {
                 return SpotlightAnalysisReport(result: nil, diagnostic: .imageUnavailable)
             }
             let handler = VNImageRequestHandler(cgImage: image, orientation: .up)
-            let request = VNGeneratePersonInstanceMaskRequest()
             let faceRequest = VNDetectFaceRectanglesRequest()
+            let observation: VNInstanceMaskObservation
             do {
-                try handler.perform([request, faceRequest])
+                switch backend {
+                case .personInstance:
+                    let request = VNGeneratePersonInstanceMaskRequest()
+                    request.revision = VNGeneratePersonInstanceMaskRequestRevision1
+                    try handler.perform([request, faceRequest])
+                    guard let result = request.results?.first else {
+                        return SpotlightAnalysisReport(result: nil, diagnostic: .noObservation)
+                    }
+                    observation = result
+                case .foregroundInstance:
+                    let request = VNGenerateForegroundInstanceMaskRequest()
+                    request.revision = VNGenerateForegroundInstanceMaskRequestRevision1
+                    try handler.perform([request, faceRequest])
+                    guard let result = request.results?.first else {
+                        return SpotlightAnalysisReport(result: nil, diagnostic: .noObservation)
+                    }
+                    observation = result
+                }
             } catch {
                 let error = error as NSError
                 return SpotlightAnalysisReport(
                     result: nil,
                     diagnostic: .visionRequestFailed(domain: error.domain, code: error.code, message: error.localizedDescription)
                 )
-            }
-            guard let observation = request.results?.first else {
-                return SpotlightAnalysisReport(result: nil, diagnostic: .noObservation)
             }
             guard !observation.allInstances.isEmpty else {
                 return SpotlightAnalysisReport(result: nil, diagnostic: .noInstances)
@@ -1312,7 +1954,7 @@ final class SpotlightAnalysisService: @unchecked Sendable {
                 let box = result.boundingBox
                 return CGRect(x: box.minX, y: 1 - box.maxY, width: box.width, height: box.height)
             } ?? []
-            var candidates: [(identifier: Int, mask: CGImage, bounds: CGRect, foregroundCoverage: CGFloat)] = []
+            var candidates: [(identifier: Int, mask: CGImage, processed: SpotlightMaskProcessingResult, rasterDiagnostics: SpotlightMaskRasterDiagnostics)] = []
             var firstMaskFailure: SpotlightAnalysisDiagnostic?
             for identifier in observation.allInstances {
                 let maskBuffer: CVPixelBuffer
@@ -1331,14 +1973,24 @@ final class SpotlightAnalysisService: @unchecked Sendable {
                     firstMaskFailure = firstMaskFailure ?? .emptyMask
                     continue
                 }
-                candidates.append((identifier: identifier, mask: mask, bounds: maskStatistics.normalizedBounds, foregroundCoverage: maskStatistics.foregroundCoverage))
+                let nearestFace = faces.max { lhs, rhs in
+                    Self.overlap(lhs, maskStatistics.normalizedBounds) < Self.overlap(rhs, maskStatistics.normalizedBounds)
+                }
+                let faceAnchor = nearestFace.flatMap { face in
+                    Self.overlap(face, maskStatistics.normalizedBounds) >= 0.05 ? face : nil
+                }
+                guard let processed = SpotlightMaskProcessor.process(mask, faceBounds: faceAnchor) else {
+                    firstMaskFailure = firstMaskFailure ?? .emptyMask
+                    continue
+                }
+                candidates.append((identifier: identifier, mask: mask, processed: processed, rasterDiagnostics: SpotlightMaskRasterDiagnostics(image: mask)))
             }
             let rankedCandidates = candidates.map { candidate in
                 SpotlightSubjectCandidate(
                     identifier: candidate.identifier,
-                    bounds: candidate.bounds,
-                    faceOverlap: faces.map { Self.overlap($0, candidate.bounds) }.max() ?? 0,
-                    foregroundCoverage: candidate.foregroundCoverage
+                    bounds: candidate.processed.bounds,
+                    faceOverlap: faces.map { Self.overlap($0, candidate.processed.bounds) }.max() ?? 0,
+                    foregroundCoverage: candidate.processed.metrics.foregroundCoverage
                 )
             }
             guard !candidates.isEmpty else {
@@ -1365,16 +2017,34 @@ final class SpotlightAnalysisService: @unchecked Sendable {
                 )
             }
 
-            let normalizedBounds = selected.bounds
-            let face = faces.max { lhs, rhs in
+            let normalizedBounds = selected.processed.bounds
+            let nearestFace = faces.max { lhs, rhs in
                 Self.overlap(lhs, normalizedBounds) < Self.overlap(rhs, normalizedBounds)
             }
-            let area = normalizedBounds.width * normalizedBounds.height
-            let touchesBoundary = normalizedBounds.minX < 0.02 || normalizedBounds.minY < 0.02 || normalizedBounds.maxX > 0.98 || normalizedBounds.maxY > 0.98
-            let quality: SpotlightSegmentationQuality = area > 0.10 && area < 0.86 && !touchesBoundary ? .excellent : (area > 0.025 && area < 0.96 ? .usable : .fallback)
-            let processedMask = Self.processedMask(from: selected.mask) ?? selected.mask
+            let face = nearestFace.flatMap { face in
+                Self.overlap(face, normalizedBounds) >= 0.05 ? face : nil
+            }
+            let processedMask = selected.processed.mask
             let rimLightMask = Self.rimLightMask(from: processedMask) ?? processedMask
-            let result = SpotlightAnalysisResult(mask: selected.mask, processedMask: processedMask, rimLightMask: rimLightMask, quality: quality, maskBounds: normalizedBounds, faceBounds: face, personBounds: normalizedBounds, cacheKey: key, wasCacheHit: false, candidateCount: rankedCandidates.count, selectionReason: selection.reason)
+            let result = SpotlightAnalysisResult(
+                mask: selected.mask,
+                processedMask: processedMask,
+                rimLightMask: rimLightMask,
+                quality: selected.processed.quality,
+                maskBounds: normalizedBounds,
+                faceBounds: face,
+                personBounds: normalizedBounds,
+                cacheKey: key,
+                wasCacheHit: false,
+                candidateCount: rankedCandidates.count,
+                selectionReason: selection.reason,
+                maskMetrics: selected.processed.metrics,
+                backend: backend,
+                requestRevision: backend.requestRevision,
+                candidateDiagnostics: rankedCandidates,
+                selectedInstanceIdentifier: selection.identifier,
+                maskRasterDiagnostics: selected.rasterDiagnostics
+            )
             Self.shared.store(result)
             return SpotlightAnalysisReport(result: result, diagnostic: .completed)
         }.value
@@ -1383,13 +2053,22 @@ final class SpotlightAnalysisService: @unchecked Sendable {
     private func store(_ result: SpotlightAnalysisResult) {
         lock.lock()
         cache[result.cacheKey] = result
+        cacheOrder.removeAll { $0 == result.cacheKey }
+        cacheOrder.append(result.cacheKey)
+        while cacheOrder.count > Self.maximumCachedResults {
+            let evictedKey = cacheOrder.removeFirst()
+            cache.removeValue(forKey: evictedKey)
+        }
         lock.unlock()
     }
 
     private func cachedResult(for key: String) -> SpotlightAnalysisResult? {
         lock.lock()
         defer { lock.unlock() }
-        return cache[key]
+        guard let result = cache[key] else { return nil }
+        cacheOrder.removeAll { $0 == key }
+        cacheOrder.append(key)
+        return result
     }
 
     private static func cgImage(from buffer: CVPixelBuffer) -> CGImage? {
@@ -1404,19 +2083,6 @@ final class SpotlightAnalysisService: @unchecked Sendable {
         return min(max(intersection.width * intersection.height / denominator, 0), 1)
     }
 
-    private static func processedMask(from image: CGImage) -> CGImage? {
-        let width = image.width
-        let height = image.height
-        var bytes = [UInt8](repeating: 0, count: width * height)
-        guard let context = CGContext(data: &bytes, width: width, height: height, bitsPerComponent: 8, bytesPerRow: width, space: CGColorSpaceCreateDeviceGray(), bitmapInfo: CGImageAlphaInfo.none.rawValue) else { return nil }
-        context.interpolationQuality = .high
-        context.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
-        for index in bytes.indices {
-            bytes[index] = bytes[index] > 24 ? 255 : 0
-        }
-        return context.makeImage()
-    }
-
     private static func rimLightMask(from image: CGImage) -> CGImage? {
         let width = image.width
         let height = image.height
@@ -1426,7 +2092,7 @@ final class SpotlightAnalysisService: @unchecked Sendable {
         context.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
         let radius = max(2, min(width, height) / 120)
         for y in 0..<height {
-            for x in 0..<width where source[y * width + x] > 0 {
+            for x in 0..<width where source[y * width + x] > 96 {
                 let touchesBackground = stride(from: -radius, through: radius, by: max(1, radius / 2)).contains { offsetY in
                     stride(from: -radius, through: radius, by: max(1, radius / 2)).contains { offsetX in
                         let sampleX = x + offsetX
@@ -1448,7 +2114,7 @@ final class SpotlightAnalysisService: @unchecked Sendable {
         guard let raw = outputContext.makeImage() else { return nil }
         let rawImage = CIImage(cgImage: raw)
         let softened = rawImage
-            .applyingFilter("CIGaussianBlur", parameters: [kCIInputRadiusKey: 1.5])
+            .applyingFilter("CIGaussianBlur", parameters: [kCIInputRadiusKey: 0.8])
             .cropped(to: rawImage.extent)
         return CIContext(options: [.useSoftwareRenderer: true]).createCGImage(softened, from: rawImage.extent)
     }
@@ -1653,12 +2319,17 @@ struct PlayerCardLabView: View {
     @State private var teamColor = CardRGBColor.rollCallOrange
     @State private var tuning = PlayerCardLabTuning.default
     @State private var segmentationMode: SpotlightSegmentationMode = .auto
+    @State private var segmentationBackend: SpotlightSegmentationBackend = .personInstance
     @State private var importedPhoto: UIImage?
     @State private var automaticPhotoCrop: NormalizedPhotoCrop?
     @State private var selectedLabPhotoID: String?
     @State private var photoPickerItem: PhotosPickerItem?
     @State private var spotlightAnalysis: SpotlightAnalysisResult?
     @State private var spotlightAnalysisDiagnostic: SpotlightAnalysisDiagnostic?
+    @State private var spotlightBreakoutMetrics: SpotlightBreakoutGeometry.Metrics?
+    @State private var spotlightAnalysisAttemptKey: String?
+    @State private var spotlightAnalysisRetryGeneration = 0
+    @State private var activeSpotlightRenderToken: UUID?
     @State private var renderedSpotlightDiagnosticState: SpotlightDiagnosticState?
     @State private var renderedImage: UIImage?
     @State private var exportedURL: URL?
@@ -1669,6 +2340,7 @@ struct PlayerCardLabView: View {
     @State private var showTuning = true
     @State private var showDiagnostics = true
     @State private var showSpotlightOverlays = true
+    @State private var showPinnedPreview = true
 
     private var currentFixture: PlayerCardFixture {
         CardFixtureLibrary.fixture(
@@ -1686,7 +2358,7 @@ struct PlayerCardLabView: View {
     private var renderIdentity: String {
         let colorIdentity = [String(describing: teamColor.red), String(describing: teamColor.green), String(describing: teamColor.blue)].joined(separator: ",")
         let analysisIdentity = [spotlightAnalysis?.cacheKey ?? "no-analysis", spotlightAnalysis?.quality.rawValue ?? "none"].joined(separator: ",")
-        return [template.title, String(template.version), fixtureID, colorIdentity, String(describing: tuning), segmentationMode.rawValue, analysisIdentity, photoIdentity, String(describing: automaticPhotoCrop)].joined(separator: "|")
+        return [template.title, String(template.version), fixtureID, colorIdentity, String(describing: tuning), segmentationMode.rawValue, segmentationBackend.rawValue, String(spotlightAnalysisRetryGeneration), analysisIdentity, photoIdentity, String(describing: automaticPhotoCrop)].joined(separator: "|")
     }
 
     private var photoIdentity: String {
@@ -1722,16 +2394,18 @@ struct PlayerCardLabView: View {
             .padding(16)
         }
         .safeAreaInset(edge: .top, spacing: 0) {
-            previewSection(isPinned: true)
-                .padding(.horizontal, 16)
-                .padding(.top, 8)
-                .padding(.bottom, 12)
-                .background(.regularMaterial)
-                .allowsHitTesting(false)
-                .overlay(alignment: .bottom) {
-                    Divider()
+            if showPinnedPreview {
+                previewSection(isPinned: true)
+                    .padding(.horizontal, 16)
+                    .padding(.top, 8)
+                    .padding(.bottom, 12)
+                    .background(.regularMaterial)
+                    .allowsHitTesting(false)
+                    .overlay(alignment: .bottom) {
+                        Divider()
+                    }
                 }
-        }
+            }
         .navigationTitle("Player Card Lab")
         .navigationBarTitleDisplayMode(.inline)
         .navigationBarBackButtonHidden(true)
@@ -1743,6 +2417,16 @@ struct PlayerCardLabView: View {
                     Image(systemName: "chevron.left")
                 }
                 .accessibilityLabel("Back")
+            }
+            ToolbarItem(placement: .topBarTrailing) {
+                Button {
+                    showPinnedPreview.toggle()
+                } label: {
+                    Image(systemName: showPinnedPreview ? "eye.slash" : "eye")
+                }
+                .accessibilityLabel(showPinnedPreview ? "Hide preview" : "Show preview")
+                .accessibilityIdentifier("player-card-preview-visibility")
+                .accessibilityHint(showPinnedPreview ? "Hides the pinned card preview so the Lab details are easier to read." : "Shows the pinned card preview.")
             }
         }
         .toolbar(.hidden, for: .tabBar)
@@ -1759,13 +2443,28 @@ struct PlayerCardLabView: View {
             }
             spotlightAnalysis = nil
             spotlightAnalysisDiagnostic = nil
+            spotlightBreakoutMetrics = nil
+            spotlightAnalysisAttemptKey = nil
             renderedSpotlightDiagnosticState = nil
+            activeSpotlightRenderToken = UUID()
             exportedURL = nil
         }
         .onChange(of: template) { _, newTemplate in
             if newTemplate.title != "Spotlight" { spotlightAnalysis = nil }
             if newTemplate.title != "Spotlight" { spotlightAnalysisDiagnostic = nil }
+            spotlightBreakoutMetrics = nil
+            spotlightAnalysisAttemptKey = nil
             renderedSpotlightDiagnosticState = nil
+            activeSpotlightRenderToken = UUID()
+            exportedURL = nil
+        }
+        .onChange(of: segmentationBackend) { _, _ in
+            spotlightAnalysis = nil
+            spotlightAnalysisDiagnostic = nil
+            spotlightBreakoutMetrics = nil
+            spotlightAnalysisAttemptKey = nil
+            renderedSpotlightDiagnosticState = nil
+            activeSpotlightRenderToken = UUID()
             exportedURL = nil
         }
         .onChange(of: photoPickerItem) { _, item in
@@ -1780,7 +2479,10 @@ struct PlayerCardLabView: View {
                 selectedLabPhotoID = nil
                 spotlightAnalysis = nil
                 spotlightAnalysisDiagnostic = nil
+                spotlightBreakoutMetrics = nil
+                spotlightAnalysisAttemptKey = nil
                 renderedSpotlightDiagnosticState = nil
+                activeSpotlightRenderToken = UUID()
                 message = "Imported photo is active for this Lab session only."
             }
         }
@@ -1866,7 +2568,10 @@ struct PlayerCardLabView: View {
                         selectedLabPhotoID = nil
                         spotlightAnalysis = nil
                         spotlightAnalysisDiagnostic = nil
+                        spotlightBreakoutMetrics = nil
+                        spotlightAnalysisAttemptKey = nil
                         renderedSpotlightDiagnosticState = nil
+                        activeSpotlightRenderToken = UUID()
                     }
                     .font(.footnote)
                 }
@@ -1894,7 +2599,10 @@ struct PlayerCardLabView: View {
                         photoPickerItem = nil
                         spotlightAnalysis = nil
                         spotlightAnalysisDiagnostic = nil
+                        spotlightBreakoutMetrics = nil
+                        spotlightAnalysisAttemptKey = nil
                         renderedSpotlightDiagnosticState = nil
+                        activeSpotlightRenderToken = UUID()
                         message = "\(fixture.title) is active for this Lab session only."
                     } label: {
                         VStack(alignment: .leading, spacing: 5) {
@@ -1962,6 +2670,12 @@ struct PlayerCardLabView: View {
     private var spotlightSection: some View {
         GroupBox("Spotlight segmentation") {
             VStack(alignment: .leading, spacing: 10) {
+                Picker("Mask backend", selection: $segmentationBackend) {
+                    ForEach(SpotlightSegmentationBackend.allCases, id: \.self) { backend in
+                        Text(backend.title).tag(backend)
+                    }
+                }
+                .pickerStyle(.segmented)
                 Picker("Segmentation mode", selection: $segmentationMode) {
                     ForEach(SpotlightSegmentationMode.allCases, id: \.self) { mode in
                         Text(mode.title).tag(mode)
@@ -1972,6 +2686,23 @@ struct PlayerCardLabView: View {
                     Task { await compareSegmentationStates() }
                 }
                 .buttonStyle(.bordered)
+                Button("Compare Mask Backends") {
+                    Task { await compareMaskBackends() }
+                }
+                .buttonStyle(.bordered)
+                Button("Retry Current Analysis") {
+                    spotlightAnalysis = nil
+                    spotlightAnalysisDiagnostic = nil
+                    spotlightBreakoutMetrics = nil
+                    spotlightAnalysisAttemptKey = nil
+                    spotlightAnalysisRetryGeneration += 1
+                    activeSpotlightRenderToken = UUID()
+                }
+                .buttonStyle(.bordered)
+                .disabled(currentFixture.model.photo == nil || isAnalyzing)
+                Text("Person instances is the default. Foreground instances is a DEBUG-only A/B comparison; neither backend is silently substituted in production.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
                 Text("Forced states reuse the real mask when available; they never fabricate improved masks.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
@@ -2024,12 +2755,29 @@ struct PlayerCardLabView: View {
                     LabeledContent("Cache", value: spotlightAnalysis?.wasCacheHit == true ? "Hit" : (spotlightAnalysis == nil ? "Not analyzed" : "Miss"))
                         LabeledContent("Rendered state", value: displayedSpotlightDiagnosticState.label)
                         LabeledContent("Analysis quality", value: spotlightAnalysis?.quality.rawValue.capitalized ?? "Not analyzed")
+                        LabeledContent("Mask backend", value: spotlightAnalysis?.backend.title ?? segmentationBackend.title)
+                        LabeledContent("Request revision", value: "\(spotlightAnalysis?.requestRevision ?? segmentationBackend.requestRevision)")
                         LabeledContent("Analysis diagnostic", value: displayedSpotlightAnalysisDiagnostic.detail)
                     if let analysis = spotlightAnalysis {
                         LabeledContent("Mask bounds", value: String(format: "%.2f, %.2f, %.2f, %.2f", analysis.maskBounds.minX, analysis.maskBounds.minY, analysis.maskBounds.width, analysis.maskBounds.height))
                         LabeledContent("Candidates", value: "\(analysis.candidateCount)")
                         if let selectionReason = analysis.selectionReason {
                             LabeledContent("Subject choice", value: selectionReason)
+                        }
+                        if let maskMetrics = analysis.maskMetrics {
+                            LabeledContent("Mask cleanup", value: maskMetrics.summary)
+                        }
+                        if let rasterDiagnostics = analysis.maskRasterDiagnostics {
+                            LabeledContent("Mask raster", value: rasterDiagnostics.summary)
+                        }
+                        if let spotlightBreakoutMetrics {
+                            LabeledContent("Breakout", value: spotlightBreakoutMetrics.summary)
+                        }
+                        if !analysis.candidateDiagnostics.isEmpty {
+                            let summary = analysis.candidateDiagnostics.map {
+                                String(format: "#%d %.3f/%.3f", $0.identifier, $0.area, $0.score())
+                            }.joined(separator: " · ")
+                            LabeledContent("Candidate scores", value: summary)
                         }
                         Text("Overlays available in the diagnostic mask preview after analysis.")
                             .font(.caption)
@@ -2081,22 +2829,44 @@ struct PlayerCardLabView: View {
     }
 
     private func spotlightPhotoFrame(for model: PlayerCardModel) -> CGRect {
-        let frame = CGRect(
-            x: (PlayerCardModel.canvasSize.width - model.tuning.spotlightPhotoWidth) / 2,
-            y: model.tuning.spotlightPhotoY,
-            width: model.tuning.spotlightPhotoWidth,
-            height: model.tuning.spotlightPhotoHeight
-        )
+        let frame = spotlightPhotoRect(for: model)
         return CGRect(x: frame.minX / PlayerCardModel.canvasSize.width, y: frame.minY / PlayerCardModel.canvasSize.height, width: frame.width / PlayerCardModel.canvasSize.width, height: frame.height / PlayerCardModel.canvasSize.height)
     }
 
-    private func spotlightBreakoutFrame(for model: PlayerCardModel) -> CGRect {
-        let photoRect = CGRect(
+    private func spotlightPhotoRect(for model: PlayerCardModel) -> CGRect {
+        CGRect(
             x: (PlayerCardModel.canvasSize.width - model.tuning.spotlightPhotoWidth) / 2,
             y: model.tuning.spotlightPhotoY,
             width: model.tuning.spotlightPhotoWidth,
             height: model.tuning.spotlightPhotoHeight
         )
+    }
+
+    private func breakoutMetrics(for analysis: SpotlightAnalysisResult, model: PlayerCardModel) -> SpotlightBreakoutGeometry.Metrics? {
+        let photoRect = spotlightPhotoRect(for: model)
+        let quality: SpotlightSegmentationQuality = switch model.segmentationMode {
+        case .auto: analysis.quality
+        case .forceExcellent: .excellent
+        case .forceUsable: .usable
+        case .forceFallback: .fallback
+        }
+        guard quality != .fallback else { return nil }
+        let envelope = SpotlightBreakoutGeometry.envelope(
+            photoRect: photoRect,
+            breakout: model.tuning.spotlightBreakout,
+            quality: quality
+        )
+        return SpotlightBreakoutGeometry.measure(
+            mask: analysis.processedMask,
+            crop: model.crop,
+            photoRect: photoRect,
+            envelope: envelope,
+            protectedZones: [CGRect(x: 54, y: 891, width: 972, height: 243)]
+        )
+    }
+
+    private func spotlightBreakoutFrame(for model: PlayerCardModel) -> CGRect {
+        let photoRect = spotlightPhotoRect(for: model)
         let quality: SpotlightSegmentationQuality = if let analysis = model.spotlightAnalysis {
             switch model.segmentationMode {
             case .auto: analysis.quality
@@ -2122,20 +2892,9 @@ struct PlayerCardLabView: View {
 
     private func projectedSourceBounds(_ sourceBounds: CGRect, in model: PlayerCardModel) -> CGRect {
         guard let photo = model.photo, let image = photo.rollCallNormalizedUpImage().cgImage else { return .zero }
-        let photoRect = CGRect(
-            x: (PlayerCardModel.canvasSize.width - model.tuning.spotlightPhotoWidth) / 2,
-            y: model.tuning.spotlightPhotoY,
-            width: model.tuning.spotlightPhotoWidth,
-            height: model.tuning.spotlightPhotoHeight
-        )
+        let photoRect = spotlightPhotoRect(for: model)
         let sourceSize = CGSize(width: image.width, height: image.height)
-        let destination = SpotlightPhotoTransform(sourceSize: sourceSize, crop: model.crop, destinationFrame: photoRect).fullImageDestination
-        let projected = CGRect(
-            x: destination.minX + sourceBounds.minX * sourceSize.width * destination.width / sourceSize.width,
-            y: destination.minY + sourceBounds.minY * sourceSize.height * destination.height / sourceSize.height,
-            width: sourceBounds.width * destination.width,
-            height: sourceBounds.height * destination.height
-        )
+        let projected = SpotlightPhotoTransform(sourceSize: sourceSize, crop: model.crop, destinationFrame: photoRect).projectedSourceRect(sourceBounds)
         return CGRect(x: projected.minX / PlayerCardModel.canvasSize.width, y: projected.minY / PlayerCardModel.canvasSize.height, width: projected.width / PlayerCardModel.canvasSize.width, height: projected.height / PlayerCardModel.canvasSize.height)
     }
 
@@ -2229,15 +2988,23 @@ struct PlayerCardLabView: View {
     }
 
     private func renderCurrentCard() async {
+        let renderIdentityAtStart = renderIdentity
+        let renderToken = UUID()
+        activeSpotlightRenderToken = renderToken
         isRendering = true
         isAnalyzing = false
         let fallbackModel = currentFixture.model
         let image = await Task.detached(priority: .userInitiated) {
             PlayerCardArtworkRenderer.render(fallbackModel)
         }.value
-        guard !Task.isCancelled else { return }
+        guard !Task.isCancelled, activeSpotlightRenderToken == renderToken, renderIdentity == renderIdentityAtStart else { return }
         renderedImage = image
         if template.title == "Spotlight" {
+            if let analysis = spotlightAnalysis {
+                spotlightBreakoutMetrics = breakoutMetrics(for: analysis, model: fallbackModel)
+            } else {
+                spotlightBreakoutMetrics = nil
+            }
             let needsAnalysis = fallbackModel.photo != nil && spotlightAnalysis == nil
             renderedSpotlightDiagnosticState = needsAnalysis
                 ? .fallbackAnalyzing
@@ -2246,7 +3013,8 @@ struct PlayerCardLabView: View {
                     analysis: spotlightAnalysis,
                     isAnalyzing: false,
                     hasPhoto: fallbackModel.photo != nil,
-                    diagnostic: spotlightAnalysisDiagnostic
+                    diagnostic: spotlightAnalysisDiagnostic,
+                    breakoutMetrics: spotlightBreakoutMetrics
                 )
         } else {
             renderedSpotlightDiagnosticState = nil
@@ -2254,22 +3022,27 @@ struct PlayerCardLabView: View {
         isRendering = false
 
         guard template.title == "Spotlight", let photo = fallbackModel.photo, spotlightAnalysis == nil else { return }
+        let identity = SpotlightAnalysisService.sourceIdentity(for: photo)
+        let analysisKey = SpotlightAnalysisService.cacheKey(for: identity, crop: fallbackModel.crop, backend: segmentationBackend)
+        guard spotlightAnalysisAttemptKey != analysisKey else { return }
+        spotlightAnalysisAttemptKey = analysisKey
         isAnalyzing = true
         spotlightAnalysisDiagnostic = .analyzing
         renderedSpotlightDiagnosticState = .fallbackAnalyzing
         let report = await SpotlightAnalysisService.shared.analyze(
             photo: photo,
             crop: fallbackModel.crop,
-            identity: SpotlightAnalysisService.sourceIdentity(for: photo)
+            identity: identity,
+            backend: segmentationBackend
         )
-        guard !Task.isCancelled else {
-            spotlightAnalysisDiagnostic = .cancelled
-            renderedSpotlightDiagnosticState = .fallbackDiagnostic(.cancelled)
-            isAnalyzing = false
-            return
-        }
+        guard !Task.isCancelled, activeSpotlightRenderToken == renderToken, renderIdentity == renderIdentityAtStart else { return }
         spotlightAnalysis = report.result
         spotlightAnalysisDiagnostic = report.diagnostic
+        if let result = report.result {
+            spotlightBreakoutMetrics = breakoutMetrics(for: result, model: fallbackModel)
+        } else {
+            spotlightBreakoutMetrics = nil
+        }
         isAnalyzing = false
         if report.result == nil {
             renderedSpotlightDiagnosticState = SpotlightDiagnosticState.resolve(
@@ -2307,14 +3080,15 @@ struct PlayerCardLabView: View {
             for item in PlayerCardTemplate.allCases {
                 var fixture = CardFixtureLibrary.fixture(id: id, template: item, importedPhoto: importedPhoto, crop: automaticPhotoCrop, tuning: tuning, colorOverride: teamColor)
                 if item.title == "Spotlight", let photo = fixture.model.photo {
-                    let identity = SpotlightAnalysisService.sourceIdentity(for: photo)
+                    let identity = "\(SpotlightAnalysisService.sourceIdentity(for: photo))|\(segmentationBackend.rawValue)"
                     if let cached = spotlightAnalysesByIdentity[identity] {
                         fixture = CardFixtureLibrary.fixture(id: id, template: item, importedPhoto: importedPhoto, crop: automaticPhotoCrop, tuning: tuning, colorOverride: teamColor, analysis: cached)
                     } else {
                         let report = await SpotlightAnalysisService.shared.analyze(
                             photo: photo,
                             crop: fixture.model.crop,
-                            identity: identity
+                            identity: SpotlightAnalysisService.sourceIdentity(for: photo),
+                            backend: segmentationBackend
                         )
                         if let analysis = report.result {
                             spotlightAnalysesByIdentity[identity] = analysis
@@ -2353,6 +3127,73 @@ struct PlayerCardLabView: View {
         do {
             exportedURL = try CardExportService.writePNG(sheet, named: "spotlight-segmentation-comparison")
             message = "Generated Excellent / Usable / Fallback comparison."
+        } catch {
+            message = error.localizedDescription
+        }
+    }
+
+    private func compareMaskBackends() async {
+        let snapshotFixtureID = fixtureID
+        let snapshotImportedPhoto = importedPhoto
+        let snapshotTuning = tuning
+        let snapshotTeamColor = teamColor
+        let snapshotModel = currentFixture.model
+        guard template.title == "Spotlight", let photo = snapshotModel.photo else {
+            message = "Choose a Spotlight photo before comparing mask backends."
+            return
+        }
+
+        let identity = SpotlightAnalysisService.sourceIdentity(for: photo)
+        let crop = snapshotModel.crop
+        var fixtures: [PlayerCardFixture] = []
+        for backend in SpotlightSegmentationBackend.allCases {
+            message = "Comparing \(backend.title)…"
+            let report = await SpotlightAnalysisService.shared.analyze(
+                photo: photo,
+                crop: crop,
+                identity: identity,
+                backend: backend
+            )
+            if let analysis = report.result {
+                let fixture = CardFixtureLibrary.fixture(
+                    id: snapshotFixtureID,
+                    template: .spotlight(version: 1),
+                    importedPhoto: snapshotImportedPhoto,
+                    crop: crop,
+                    tuning: snapshotTuning,
+                    colorOverride: snapshotTeamColor,
+                    segmentationMode: .auto,
+                    analysis: analysis
+                )
+                fixtures.append(PlayerCardFixture(
+                    id: "\(snapshotFixtureID)-\(backend.rawValue)",
+                    title: "\(backend.title) · \(analysis.quality.rawValue.capitalized)",
+                    model: fixture.model
+                ))
+            } else {
+                let fixture = CardFixtureLibrary.fixture(
+                    id: snapshotFixtureID,
+                    template: .spotlight(version: 1),
+                    importedPhoto: snapshotImportedPhoto,
+                    crop: crop,
+                    tuning: snapshotTuning,
+                    colorOverride: snapshotTeamColor,
+                    segmentationMode: .forceFallback
+                )
+                fixtures.append(PlayerCardFixture(
+                    id: "\(snapshotFixtureID)-\(backend.rawValue)",
+                    title: "\(backend.title) · Fallback",
+                    model: fixture.model
+                ))
+            }
+        }
+
+        let sheet = await Task.detached(priority: .userInitiated) {
+            CardExportService.contactSheet(fixtures: fixtures, columns: 2)
+        }.value
+        do {
+            exportedURL = try CardExportService.writePNG(sheet, named: "spotlight-mask-backend-comparison")
+            message = "Generated a same-photo Person / Foreground backend comparison."
         } catch {
             message = error.localizedDescription
         }

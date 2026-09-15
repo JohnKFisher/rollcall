@@ -202,6 +202,75 @@ final class PlayerCardLabTests: XCTestCase {
         )
     }
 
+    func testSpotlightMaskedPhotoKeepsAsymmetricMaskRegisteredWithSource() throws {
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1
+        format.opaque = true
+        let source = UIGraphicsImageRenderer(size: CGSize(width: 64, height: 64), format: format).image { rendererContext in
+            UIColor.systemRed.setFill()
+            rendererContext.fill(CGRect(x: 0, y: 0, width: 64, height: 32))
+            UIColor.systemBlue.setFill()
+            rendererContext.fill(CGRect(x: 0, y: 32, width: 64, height: 32))
+        }
+        let mask = UIGraphicsImageRenderer(size: CGSize(width: 64, height: 64), format: format).image { rendererContext in
+            UIColor.white.setFill()
+            rendererContext.fill(CGRect(x: 0, y: 0, width: 64, height: 32))
+        }
+        let maskCGImage = try XCTUnwrap(mask.cgImage)
+        let outputFormat = UIGraphicsImageRendererFormat()
+        outputFormat.scale = 1
+        outputFormat.opaque = true
+
+        let output = UIGraphicsImageRenderer(size: CGSize(width: 64, height: 64), format: outputFormat).image { rendererContext in
+            UIColor.black.setFill()
+            rendererContext.fill(CGRect(x: 0, y: 0, width: 64, height: 64))
+            PlayerCardArtworkRenderer.drawMaskedPhoto(
+                source,
+                mask: maskCGImage,
+                crop: .full,
+                in: CGRect(x: 0, y: 0, width: 64, height: 64),
+                context: rendererContext.cgContext,
+                envelope: CGRect(x: 0, y: 0, width: 64, height: 64)
+            )
+        }
+
+        let pixels = rgbaPixels(output)
+        let top = pixel(pixels, width: 64, x: 32, y: 16)
+        let bottom = pixel(pixels, width: 64, x: 32, y: 48)
+        XCTAssertGreaterThan(top.red, top.blue, "The white top-half mask should retain the red top-half source.")
+        XCTAssertLessThan(bottom.red, 24, "The masked-out bottom half should remain background.")
+        XCTAssertLessThan(bottom.blue, 24, "The masked-out bottom half should remain background.")
+    }
+
+    func testSpotlightPhotoTransformCentersAspectFillCropOverflow() {
+        let transform = SpotlightPhotoTransform(
+            sourceSize: CGSize(width: 1_400, height: 1_800),
+            crop: NormalizedPhotoCrop(x: 0, y: 0.1, width: 1, height: 0.8),
+            destinationFrame: CGRect(x: 220, y: 155, width: 640, height: 820)
+        )
+
+        XCTAssertEqual(transform.fullImageDestination.midX, 540, accuracy: 0.001)
+        XCTAssertEqual(transform.fullImageDestination.midY, 565, accuracy: 0.001)
+        XCTAssertEqual(transform.fullImageDestination.minX, 141.25, accuracy: 1.0)
+        XCTAssertEqual(transform.fullImageDestination.maxX, 938.75, accuracy: 1.0)
+        XCTAssertEqual(
+            transform.projectedSourceRect(CGRect(x: 0, y: 0, width: 1, height: 1)).midX,
+            transform.fullImageDestination.midX,
+            accuracy: 0.001
+        )
+    }
+
+    func testSpotlightMaskBackendIsPartOfAnalysisCacheIdentity() {
+        let crop = NormalizedPhotoCrop(x: 0.08, y: 0.12, width: 0.84, height: 0.72)
+        let personKey = SpotlightAnalysisService.cacheKey(for: "photo", crop: crop, backend: .personInstance)
+        let foregroundKey = SpotlightAnalysisService.cacheKey(for: "photo", crop: crop, backend: .foregroundInstance)
+
+        XCTAssertNotEqual(personKey, foregroundKey)
+        XCTAssertTrue(personKey.contains(SpotlightSegmentationBackend.personInstance.rawValue))
+        XCTAssertTrue(foregroundKey.contains(SpotlightSegmentationBackend.foregroundInstance.rawValue))
+        XCTAssertTrue(personKey.contains(SpotlightAnalysisService.analysisVersion))
+    }
+
     func testSpotlightDiagnosticStateDistinguishesAnalysisLifecycleAndQuality() throws {
         XCTAssertEqual(
             SpotlightDiagnosticState.resolve(mode: .auto, analysis: nil, isAnalyzing: true, hasPhoto: true),
@@ -216,11 +285,11 @@ final class PlayerCardLabTests: XCTestCase {
             .fallbackNoUsableMask
         )
         XCTAssertEqual(
-            SpotlightDiagnosticState.resolve(mode: .auto, analysis: makeAnalysis(quality: .usable), isAnalyzing: false, hasPhoto: true),
+            SpotlightDiagnosticState.resolve(mode: .auto, analysis: makeAnalysis(quality: .usable), isAnalyzing: false, hasPhoto: true, breakoutMetrics: meaningfulBreakoutMetrics),
             .enhancedUsable
         )
         XCTAssertEqual(
-            SpotlightDiagnosticState.resolve(mode: .auto, analysis: makeAnalysis(quality: .excellent), isAnalyzing: false, hasPhoto: true),
+            SpotlightDiagnosticState.resolve(mode: .auto, analysis: makeAnalysis(quality: .excellent), isAnalyzing: false, hasPhoto: true, breakoutMetrics: meaningfulBreakoutMetrics),
             .enhancedExcellent
         )
         XCTAssertEqual(
@@ -230,6 +299,25 @@ final class PlayerCardLabTests: XCTestCase {
         XCTAssertEqual(
             SpotlightDiagnosticState.resolve(mode: .auto, analysis: nil, isAnalyzing: false, hasPhoto: false),
             .noPhoto
+        )
+    }
+
+    func testSpotlightDiagnosticStateDoesNotCallAContainedMaskAVisibleBreakout() {
+        let contained = SpotlightBreakoutGeometry.Metrics(
+            sampledForegroundFraction: 0.30,
+            outsidePhotoFraction: 0,
+            outsideEnvelopeFraction: 0,
+            protectedZoneFraction: 0
+        )
+        XCTAssertEqual(
+            SpotlightDiagnosticState.resolve(
+                mode: .auto,
+                analysis: makeAnalysis(quality: .excellent),
+                isAnalyzing: false,
+                hasPhoto: true,
+                breakoutMetrics: contained
+            ),
+            .enhancedMaskOnly
         )
     }
 
@@ -281,6 +369,26 @@ final class PlayerCardLabTests: XCTestCase {
         XCTAssertLessThan(usable.height, excellent.height)
     }
 
+    func testSpotlightBreakoutMeasurementDetectsPixelsThatEscapePhotoFrame() throws {
+        let mask = makeSyntheticMask(size: CGSize(width: 100, height: 100)) { context in
+            UIColor.white.setFill()
+            context.fill(CGRect(x: 35, y: 0, width: 30, height: 28))
+        }
+        let photoRect = CGRect(x: 25, y: 25, width: 50, height: 50)
+        let metrics = try XCTUnwrap(
+            SpotlightBreakoutGeometry.measure(
+                mask: try XCTUnwrap(mask.cgImage),
+                crop: NormalizedPhotoCrop(x: 0, y: 0.2, width: 1, height: 0.6),
+                photoRect: photoRect,
+                envelope: photoRect.insetBy(dx: -25, dy: -25)
+            )
+        )
+
+        XCTAssertGreaterThan(metrics.outsidePhotoFraction, 0.02)
+        XCTAssertLessThanOrEqual(metrics.outsideEnvelopeFraction, 0.02)
+        XCTAssertTrue(metrics.hasMeaningfulEscape)
+    }
+
     private func makeAnalysis(quality: SpotlightSegmentationQuality) -> SpotlightAnalysisResult {
         let mask = makeMask().cgImage!
         return SpotlightAnalysisResult(
@@ -293,6 +401,15 @@ final class PlayerCardLabTests: XCTestCase {
             personBounds: CGRect(x: 0.26, y: 0.10, width: 0.48, height: 0.78),
             cacheKey: "diagnostic-state-\(quality.rawValue)",
             wasCacheHit: false
+        )
+    }
+
+    private var meaningfulBreakoutMetrics: SpotlightBreakoutGeometry.Metrics {
+        SpotlightBreakoutGeometry.Metrics(
+            sampledForegroundFraction: 0.30,
+            outsidePhotoFraction: 0.08,
+            outsideEnvelopeFraction: 0,
+            protectedZoneFraction: 0
         )
     }
 
@@ -328,6 +445,95 @@ final class PlayerCardLabTests: XCTestCase {
         XCTAssertNil(selection)
     }
 
+    func testSpotlightMaskProcessorKeepsFaceAnchoredSubjectAndDropsDistantIsland() throws {
+        let image = makeSyntheticMask(size: CGSize(width: 160, height: 160)) { context in
+            UIColor.white.setFill()
+            context.fill(CGRect(x: 48, y: 20, width: 58, height: 112))
+            context.fill(CGRect(x: 117, y: 116, width: 30, height: 30))
+        }
+
+        let processed = try XCTUnwrap(
+            SpotlightMaskProcessor.process(image.cgImage!, faceBounds: CGRect(x: 0.48, y: 0.18, width: 0.16, height: 0.14))
+        )
+
+        XCTAssertEqual(processed.mask.width, 160)
+        XCTAssertEqual(processed.mask.height, 160)
+        XCTAssertLessThan(processed.bounds.maxX, 0.75)
+        XCTAssertEqual(processed.metrics.retainedComponentCount, 1)
+        XCTAssertGreaterThan(processed.metrics.dominantComponentShare, 0.70)
+    }
+
+    func testSpotlightMaskProcessorFillsSmallHoleWithoutOpaqueHardEdge() throws {
+        let image = makeSyntheticMask(size: CGSize(width: 120, height: 120)) { context in
+            UIColor.white.setFill()
+            context.fill(CGRect(x: 30, y: 18, width: 60, height: 84))
+            UIColor(white: 0.10, alpha: 1).setFill()
+            context.fill(CGRect(x: 54, y: 54, width: 10, height: 10))
+        }
+
+        let processed = try XCTUnwrap(SpotlightMaskProcessor.process(image.cgImage!))
+        let pixels = grayscalePixels(processed.mask)
+        let center = pixels[60 * 120 + 59]
+        let edge = pixels[60 * 120 + 30]
+
+        XCTAssertGreaterThan(center, 0, "A small enclosed hole should be filled.")
+        XCTAssertGreaterThan(edge, 0, "The retained subject should still reach its source boundary.")
+        XCTAssertLessThan(edge, 255, "The processed edge should retain a subtle feather instead of a hard binary edge.")
+    }
+
+    func testSpotlightMaskProcessorRejectsLowConfidenceBackgroundAndSevereFragmentation() throws {
+        let lowConfidence = makeSyntheticMask(size: CGSize(width: 100, height: 100)) { context in
+            UIColor.white.setFill()
+            context.fill(CGRect(x: 28, y: 12, width: 44, height: 76))
+            UIColor(white: 0.10, alpha: 1).setFill()
+            context.fill(CGRect(x: 4, y: 4, width: 18, height: 18))
+        }
+        let cleaned = try XCTUnwrap(SpotlightMaskProcessor.process(lowConfidence.cgImage!))
+        XCTAssertEqual(grayscalePixels(cleaned.mask)[10 * 100 + 10], 0)
+
+        let fragmented = makeSyntheticMask(size: CGSize(width: 200, height: 200)) { context in
+            UIColor.white.setFill()
+            context.fill(CGRect(x: 72, y: 24, width: 56, height: 150))
+            for row in 0..<5 {
+                for column in 0..<5 {
+                    context.fill(CGRect(x: 4 + column * 36, y: 4 + row * 36, width: 12, height: 12))
+                }
+            }
+        }
+        let fragmentedResult = try XCTUnwrap(SpotlightMaskProcessor.process(fragmented.cgImage!))
+        XCTAssertEqual(fragmentedResult.quality, .fallback)
+        XCTAssertGreaterThan(fragmentedResult.metrics.rawComponentCount, 12)
+    }
+
+    func testSpotlightMaskProcessorRejectsDenseRectangularArtifact() throws {
+        let image = makeSyntheticMask(size: CGSize(width: 160, height: 160)) { context in
+            UIColor.white.setFill()
+            context.fill(CGRect(x: 38, y: 18, width: 84, height: 118))
+        }
+
+        let processed = try XCTUnwrap(SpotlightMaskProcessor.process(image.cgImage!))
+
+        XCTAssertGreaterThan(processed.metrics.rectangularity, 0.90)
+        XCTAssertEqual(processed.quality, .fallback)
+    }
+
+    func testSpotlightMaskProcessorIsDeterministicAndPreservesSoftSourceAlpha() throws {
+        let image = makeSyntheticMask(size: CGSize(width: 96, height: 96)) { context in
+            UIColor(white: 0.95, alpha: 1).setFill()
+            context.fill(CGRect(x: 24, y: 12, width: 44, height: 72))
+            UIColor(white: 0.30, alpha: 1).setFill()
+            context.fill(CGRect(x: 34, y: 12, width: 24, height: 3))
+        }
+
+        let first = try XCTUnwrap(SpotlightMaskProcessor.process(image.cgImage!))
+        let second = try XCTUnwrap(SpotlightMaskProcessor.process(image.cgImage!))
+
+        XCTAssertEqual(grayscalePixels(first.mask), grayscalePixels(second.mask))
+        XCTAssertEqual(first.metrics, second.metrics)
+        XCTAssertGreaterThan(grayscalePixels(first.mask)[13 * 96 + 40], 0)
+        XCTAssertLessThan(grayscalePixels(first.mask)[13 * 96 + 40], 255)
+    }
+
     func testContactSheetAndLabExportProducePNG() throws {
         let fixtures = CardFixtureLibrary.comparisonFixtures(template: .clean(version: 2))
         let sheet = CardExportService.contactSheet(fixtures: fixtures)
@@ -360,5 +566,58 @@ final class PlayerCardLabTests: XCTestCase {
             UIColor.white.setFill()
             rendererContext.fill(CGRect(x: 360, y: 180, width: 680, height: 1_400))
         }
+    }
+
+    private func makeSyntheticMask(size: CGSize, draw: (UIGraphicsImageRendererContext) -> Void) -> UIImage {
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1
+        return UIGraphicsImageRenderer(size: size, format: format).image { rendererContext in
+            UIColor.black.setFill()
+            rendererContext.fill(CGRect(origin: .zero, size: size))
+            draw(rendererContext)
+        }
+    }
+
+    private func grayscalePixels(_ image: CGImage) -> [UInt8] {
+        var pixels = [UInt8](repeating: 0, count: image.width * image.height)
+        let context = CGContext(
+            data: &pixels,
+            width: image.width,
+            height: image.height,
+            bitsPerComponent: 8,
+            bytesPerRow: image.width,
+            space: CGColorSpaceCreateDeviceGray(),
+            bitmapInfo: CGImageAlphaInfo.none.rawValue
+        )!
+        context.draw(image, in: CGRect(x: 0, y: 0, width: image.width, height: image.height))
+        return pixels
+    }
+
+    private struct RGBAPixel {
+        let red: UInt8
+        let green: UInt8
+        let blue: UInt8
+        let alpha: UInt8
+    }
+
+    private func rgbaPixels(_ image: UIImage) -> [UInt8] {
+        let cgImage = image.cgImage!
+        var pixels = [UInt8](repeating: 0, count: cgImage.width * cgImage.height * 4)
+        let context = CGContext(
+            data: &pixels,
+            width: cgImage.width,
+            height: cgImage.height,
+            bitsPerComponent: 8,
+            bytesPerRow: cgImage.width * 4,
+            space: CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        )!
+        context.draw(cgImage, in: CGRect(x: 0, y: 0, width: cgImage.width, height: cgImage.height))
+        return pixels
+    }
+
+    private func pixel(_ pixels: [UInt8], width: Int, x: Int, y: Int) -> RGBAPixel {
+        let index = (y * width + x) * 4
+        return RGBAPixel(red: pixels[index], green: pixels[index + 1], blue: pixels[index + 2], alpha: pixels[index + 3])
     }
 }
