@@ -4,21 +4,22 @@
 **Feature:** Player Cards  
 **Template:** Broadcast  
 **Status:** Design specification / implementation source of truth  
-**Canonical export:** 1080 × 1350 px (4:5), PNG, sRGB
+**Lab authoring canvas:** 1080 × 1350 px (4:5);
+**Production export:** 1200 × 1500 px (4:5), PNG, sRGB
 
 ## 1. Purpose
 
-Broadcast is Roll Call's polished sports-broadcast player-card template. It is more assertive than Clean v2 but remains disciplined: a large player photograph, structured lower-third geometry, strong jersey-number treatment, and controlled team-color graphics. It should feel like a premium player-introduction graphic rather than a fake television interface.
+Broadcast is Roll Call's polished sports-broadcast player-card template. It is more assertive than Impact but remains disciplined: a large player photograph, structured lower-third geometry, strong jersey-number treatment, and controlled team-color graphics. It should feel like a premium player-introduction graphic rather than a fake television interface.
 
-Broadcast must work with the same ordinary uploaded player photographs as Clean and must not require person segmentation, generative imagery, or special photography.
+Broadcast must work with the same ordinary uploaded player photographs as Impact and must not require person segmentation, generative imagery, or special photography.
 
 The defining combination is **large photo + structured diagonal lower-third + assertive number + disciplined team-color geometry**.
 
 ## 2. Relationship to Other Templates
 
-- **Clean:** restrained, photo-first poster.
+- **Impact:** restrained, photo-first poster.
 - **Broadcast:** structured, confident player-introduction graphic.
-- **Spotlight:** future dramatic hero treatment.
+- **Testing:** dramatic hero treatment with segmentation diagnostics.
 
 Broadcast should clearly belong to the same Roll Call design family as Clean while providing a meaningfully stronger presentation. It must not become merely “Clean with diagonal lines.”
 
@@ -426,13 +427,13 @@ The same production Broadcast renderer powers in-app preview, Player Card Lab, s
 Extend the template-agnostic Lab created for Clean:
 
 ```text
-[ Clean ] [ Broadcast ]
+[ Impact ] [ Broadcast ]
 ```
 
 and later:
 
 ```text
-[ Clean ] [ Broadcast ] [ Spotlight ]
+[ Impact ] [ Broadcast ] [ Testing ]
 ```
 
 The same fixture can switch templates without changing preview canvas.

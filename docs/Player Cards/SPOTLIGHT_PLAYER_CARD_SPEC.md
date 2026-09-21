@@ -1,16 +1,19 @@
-# Spotlight Player Card Specification
+# Testing Player Card Specification
 
 **Product:** Roll Call  
 **Feature:** Player Cards  
-**Template:** Spotlight  
+**Template:** Testing (internal renderer identity: `spotlight`)
 **Status:** Design specification / implementation source of truth  
-**Canonical export:** 1080 × 1350 px (4:5), PNG, sRGB
+**Lab authoring canvas:** 1080 × 1350 px (4:5) (DEBUG-only Testing renderer);
+**Production Spotlight export:** 1200 × 1500 px (4:5), PNG, sRGB (existing default renderer)
 
 ---
 
+> Naming note: the former Spotlight Lab design is now displayed as **Testing** and remains DEBUG-only. The internal `Spotlight...` analysis and renderer identifiers remain stable; the production/default card now uses the **Spotlight** display name and continues to use the existing production renderer.
+
 ## 1. Purpose
 
-Spotlight is Roll Call's most dramatic player-card template.
+Testing is Roll Call's most dramatic player-card template.
 
 Its defining idea is that the **player breaks free of the photograph**. The original rectangular photograph remains visibly part of the composition while an on-device segmented copy of the player may extend beyond its frame, pass in front of the giant jersey number, and receive subtle team-color rim lighting.
 
@@ -24,13 +27,13 @@ Spotlight must remain a finished premium card even when segmentation is unavaila
 
 The three templates should be clearly distinct:
 
-- **Clean:** photograph presented beautifully; restrained poster.
+- **Impact:** photograph presented beautifully; restrained poster.
 - **Broadcast:** photograph plus structured diagonal lower-third; polished player-introduction graphic.
-- **Spotlight:** staged photograph plus cinematic depth; player may break free of the frame.
+- **Testing:** staged photograph plus cinematic depth; player may break free of the frame.
 
 A useful implementation/visual test is:
 
-**Clean | Broadcast | Spotlight Fallback | Spotlight Enhanced**
+**Impact | Broadcast | Testing Fallback | Testing Enhanced**
 
 All four should immediately read as different presentations of the same player.
 
@@ -70,7 +73,7 @@ Dynamic Type affects surrounding app/Lab UI, not exported artwork.
 
 ## 5. Core Composition
 
-Spotlight should be more centered and poster-like than Broadcast.
+Testing should be more centered and poster-like than Broadcast.
 
 Conceptually:
 
@@ -925,7 +928,7 @@ Versioning should support:
 The shared template-agnostic Lab must support:
 
 ```text
-[ Clean ] [ Broadcast ] [ Spotlight ]
+[ Impact ] [ Broadcast ] [ Testing ]
 ```
 
 The same fixture/player data should switch among templates without changing canvas dimensions.
@@ -1271,7 +1274,7 @@ The implementation must make these cheap to tune without architectural rewrites 
 
 Spotlight is ready for production integration when:
 
-1. Fallback Spotlight clearly differs from both Clean and Broadcast.
+1. Fallback Testing clearly differs from both Impact and Broadcast.
 2. Fallback looks like a finished premium card without segmentation.
 3. Enhanced Spotlight adds obvious depth without appearing gimmicky.
 4. Original photograph remains recognizable as part of the composition.
@@ -1290,7 +1293,7 @@ Spotlight is ready for production integration when:
 17. Cached Spotlight feels immediate.
 18. Metadata/team-color changes do not unnecessarily rerun Vision.
 19. Lab can force and compare Excellent, Usable, and Fallback states.
-20. Shared template contact sheets make Clean/Broadcast/Spotlight differences obvious.
+20. Shared template contact sheets make Impact/Broadcast/Testing differences obvious.
 21. Preview and export match.
 22. Representative snapshots and Vision integration tests pass.
 23. No network, generative AI, or mandatory segmentation is required.

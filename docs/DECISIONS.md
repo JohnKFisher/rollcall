@@ -2,6 +2,16 @@
 
 Use this file as a concise decision log for project-specific architectural, behavioral, tooling, and scope decisions.
 
+## 2026-09-19
+
+- Approved and implemented for Roll Call 1.3: expose the production Player Card choices **Spotlight**, **Impact**, and **Broadcast** in Player Editor. Spotlight keeps the existing unnamed/default production renderer; Impact promotes the existing `clean-v2` artwork; Broadcast keeps its existing renderer/defaults; Testing remains a DEBUG-only Lab template. Persist the choice additively by stable renderer lineage, defaulting older players to the existing production renderer and preserving unknown future identifiers.
+  Rationale: promote the owner-approved Impact and Broadcast designs without changing the established Spotlight card or allowing the unfinished Testing experiment to block the 1.3 release. The selector remains on Player Editor and does not add a Game Day surface or generated-card cache.
+  Status: implemented in the working tree; Release app compilation and Debug test-bundle compilation passed. Runtime selector and visual acceptance remain device-owner gates.
+
+- Approved and implemented for Roll Call 1.3: harden the existing local JSON/file persistence without adding CloudKit, iCloud synchronization, a new backup format, or a SwiftData/Core Data migration. Use an explicit sequential AppState codec (schema 10 remains readable; new state is schema 11), preserve pre-migration/unreadable state copies, detect missing primary state with residual files, requalify device-local identity, recompute readiness, preserve Apple Music intent and library-ID hints, validate references conservatively, and keep startup generated-clip cleanup audit-only.
+  Rationale: improve termination, migration, restoration, and partial-state safety while preserving the established team package and local rollback architecture. Physical device migration behavior remains an owner validation gate controlled partly by Apple.
+  Status: implemented in the working tree; focused automated verification and physical-device checklist added; simulator/device execution remains a separate release gate.
+
 ## 2026-09-09
 
 - Approved and implemented: use the SF Symbol `baseball` for the Quick Game Day Control Center icon. Preserve the existing intent handoff, remembered-team resolution, safe destinations, and no-autoplay behavior.
@@ -56,7 +66,7 @@ Use this file as a concise decision log for project-specific architectural, beha
   Rationale: team ownership and cross-device reframing require the master to travel, while keeping the established manifest contract preserves useful backward import compatibility instead of rejecting a whole team over additive photo capability.
   Status: approved for 1.3
 
-- Approved: 1.3 ships one Player Card composition, the owner-selected Broadcast design, at 1200 by 1500 pixels with on-demand preview/rendering and system sharing. Alternative design studies are review artifacts only; there is no template picker, cache, gallery, or Game Day entry.
+- Approved: 1.3 ships one Player Card composition, the owner-selected Spotlight design, at 1200 by 1500 pixels with on-demand preview/rendering and system sharing. Alternative design studies are review artifacts only; there is no template picker, cache, gallery, or Game Day entry.
   Rationale: one polished design makes the feature visible and shareable without turning Roll Call into a design tool or adding persistent generated-file management.
   Status: approved for 1.3
 

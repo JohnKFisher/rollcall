@@ -131,7 +131,8 @@ final class SongClipGenerationTests: XCTestCase {
         }
 
         for _ in 0..<200 {
-            if await probe.didStart { break }
+            let didStart = await probe.didStart
+            if didStart { break }
             try? await Task.sleep(for: .milliseconds(25))
         }
         let didStart = await probe.didStart
@@ -186,7 +187,8 @@ final class SongClipGenerationTests: XCTestCase {
         }
 
         for _ in 0..<20 {
-            if await waitProbe.didStart { break }
+            let didStart = await waitProbe.didStart
+            if didStart { break }
             try? await Task.sleep(for: .milliseconds(10))
         }
         let didStart = await waitProbe.didStart
@@ -1138,7 +1140,8 @@ final class SongClipGenerationTests: XCTestCase {
         }
 
         for _ in 0..<200 {
-            if await gate.isWaiting { break }
+            let isWaiting = await gate.isWaiting
+            if isWaiting { break }
             try await Task.sleep(for: .milliseconds(10))
         }
         let isWaiting = await gate.isWaiting

@@ -3,6 +3,23 @@ import UIKit
 @testable import RollCall
 
 final class PlayerCardLabTests: XCTestCase {
+    func testPlayerCardDesignNamesMapToTheExistingRendererIdentities() {
+        XCTAssertEqual(PlayerCardRenderer.designName, "Spotlight")
+        XCTAssertEqual(PlayerCardTemplate.clean(version: 2).title, "Impact")
+        XCTAssertEqual(PlayerCardTemplate.broadcast(version: 1).title, "Broadcast")
+        XCTAssertEqual(PlayerCardTemplate.spotlight(version: 1).title, "Testing")
+
+        XCTAssertEqual(PlayerCardTemplate.clean(version: 2).stableIdentifier, "clean-v2")
+        XCTAssertEqual(PlayerCardTemplate.broadcast(version: 1).stableIdentifier, "broadcast")
+        XCTAssertEqual(PlayerCardTemplate.spotlight(version: 1).stableIdentifier, "spotlight")
+        XCTAssertEqual(PlayerCardDesign.spotlight.title, "Spotlight")
+        XCTAssertEqual(PlayerCardDesign.impact.title, "Impact")
+        XCTAssertEqual(PlayerCardDesign.broadcast.title, "Broadcast")
+        XCTAssertEqual(PlayerCardDesign.spotlight.rawValue, "default")
+        XCTAssertEqual(PlayerCardDesign.impact.rawValue, "clean-v2")
+        XCTAssertEqual(PlayerCardDesign.broadcast.rawValue, "broadcast")
+    }
+
     func testCleanV2DefaultsMatchApprovedTuning() {
         let tuning = PlayerCardLabTuning.default
 
@@ -242,6 +259,71 @@ final class PlayerCardLabTests: XCTestCase {
         XCTAssertLessThan(bottom.blue, 24, "The masked-out bottom half should remain background.")
     }
 
+    func testSpotlightMaskedPhotoCanCrossRevealedBasePhotoBoundary() throws {
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1
+        format.opaque = true
+        let source = UIGraphicsImageRenderer(size: CGSize(width: 64, height: 64), format: format).image { rendererContext in
+            UIColor.systemRed.setFill()
+            rendererContext.fill(CGRect(x: 0, y: 0, width: 64, height: 32))
+            UIColor.systemBlue.setFill()
+            rendererContext.fill(CGRect(x: 0, y: 32, width: 64, height: 32))
+        }
+        let mask = UIGraphicsImageRenderer(size: CGSize(width: 64, height: 64), format: format).image { rendererContext in
+            UIColor.white.setFill()
+            rendererContext.fill(CGRect(x: 0, y: 0, width: 64, height: 32))
+        }
+        let maskCGImage = try XCTUnwrap(mask.cgImage)
+        let outputFormat = UIGraphicsImageRendererFormat()
+        outputFormat.scale = 1
+        outputFormat.opaque = true
+
+        let photoRect = CGRect(x: 16, y: 16, width: 32, height: 32)
+        let basePhotoClip = CGRect(x: 16, y: 24, width: 32, height: 24)
+        let crop = NormalizedPhotoCrop(x: 0, y: 0.25, width: 1, height: 0.5)
+        let baseOnly = UIGraphicsImageRenderer(size: CGSize(width: 64, height: 64), format: outputFormat).image { rendererContext in
+            UIColor.black.setFill()
+            rendererContext.fill(CGRect(x: 0, y: 0, width: 64, height: 64))
+            PlayerCardArtworkRenderer.drawPhoto(
+                source,
+                crop: crop,
+                in: photoRect,
+                context: rendererContext.cgContext,
+                cornerRadius: 0,
+                clipRect: basePhotoClip
+            )
+        }
+        let output = UIGraphicsImageRenderer(size: CGSize(width: 64, height: 64), format: outputFormat).image { rendererContext in
+            UIColor.black.setFill()
+            rendererContext.fill(CGRect(x: 0, y: 0, width: 64, height: 64))
+            PlayerCardArtworkRenderer.drawPhoto(
+                source,
+                crop: crop,
+                in: photoRect,
+                context: rendererContext.cgContext,
+                cornerRadius: 0,
+                clipRect: basePhotoClip
+            )
+            PlayerCardArtworkRenderer.drawMaskedPhoto(
+                source,
+                mask: maskCGImage,
+                crop: crop,
+                in: photoRect,
+                context: rendererContext.cgContext,
+                envelope: CGRect(x: 0, y: 0, width: 64, height: 64)
+            )
+        }
+
+        let basePixels = rgbaPixels(baseOnly)
+        let pixels = rgbaPixels(output)
+        let unrevealed = pixel(basePixels, width: 64, x: 32, y: 20)
+        let escaped = pixel(pixels, width: 64, x: 32, y: 20)
+        let photoInterior = pixel(pixels, width: 64, x: 32, y: 28)
+        XCTAssertLessThan(unrevealed.red, 24, "The enhanced base photo must leave the reveal band transparent to the background. Got r=\(unrevealed.red) b=\(unrevealed.blue).")
+        XCTAssertGreaterThan(escaped.red, escaped.blue, "The masked source should remain visible across the revealed photo boundary. Got r=\(escaped.red) b=\(escaped.blue).")
+        XCTAssertGreaterThan(photoInterior.red, photoInterior.blue, "The same masked source should remain visible inside the photo frame. Got r=\(photoInterior.red) b=\(photoInterior.blue).")
+    }
+
     func testSpotlightPhotoTransformCentersAspectFillCropOverflow() {
         let transform = SpotlightPhotoTransform(
             sourceSize: CGSize(width: 1_400, height: 1_800),
@@ -307,7 +389,8 @@ final class PlayerCardLabTests: XCTestCase {
             sampledForegroundFraction: 0.30,
             outsidePhotoFraction: 0,
             outsideEnvelopeFraction: 0,
-            protectedZoneFraction: 0
+            protectedZoneFraction: 0,
+            visibleEscapeFraction: 0
         )
         XCTAssertEqual(
             SpotlightDiagnosticState.resolve(
@@ -378,8 +461,10 @@ final class PlayerCardLabTests: XCTestCase {
         let metrics = try XCTUnwrap(
             SpotlightBreakoutGeometry.measure(
                 mask: try XCTUnwrap(mask.cgImage),
+                sourceSize: CGSize(width: mask.cgImage!.width, height: mask.cgImage!.height),
                 crop: NormalizedPhotoCrop(x: 0, y: 0.2, width: 1, height: 0.6),
                 photoRect: photoRect,
+                basePhotoClip: photoRect,
                 envelope: photoRect.insetBy(dx: -25, dy: -25)
             )
         )
@@ -387,6 +472,164 @@ final class PlayerCardLabTests: XCTestCase {
         XCTAssertGreaterThan(metrics.outsidePhotoFraction, 0.02)
         XCTAssertLessThanOrEqual(metrics.outsideEnvelopeFraction, 0.02)
         XCTAssertTrue(metrics.hasMeaningfulEscape)
+    }
+
+    func testSpotlightBasePhotoRevealRequiresNewTopBandCoverage() throws {
+        let photoRect = CGRect(x: 25, y: 25, width: 50, height: 50)
+        let crop = NormalizedPhotoCrop(x: 0.3, y: 0.1, width: 0.4, height: 0.8)
+        let envelope = photoRect.insetBy(dx: -25, dy: -25)
+        let baseClip = SpotlightBreakoutGeometry.basePhotoClip(photoRect: photoRect, breakout: 0.20, quality: .excellent)
+
+        let sideMask = makeSyntheticMask(size: CGSize(width: 100, height: 100)) { context in
+            UIColor.white.setFill()
+            context.fill(CGRect(x: 0, y: 45, width: 10, height: 10))
+        }
+        let sideMetrics = try XCTUnwrap(
+            SpotlightBreakoutGeometry.measure(
+                mask: try XCTUnwrap(sideMask.cgImage),
+                sourceSize: CGSize(width: sideMask.cgImage!.width, height: sideMask.cgImage!.height),
+                crop: crop,
+                photoRect: photoRect,
+                basePhotoClip: baseClip,
+                envelope: envelope
+            )
+        )
+        XCTAssertGreaterThan(sideMetrics.outsidePhotoFraction, 0.02)
+        XCTAssertLessThan(sideMetrics.newlyRevealedFraction, 0.02)
+        XCTAssertEqual(
+            SpotlightBreakoutGeometry.resolvedBasePhotoClip(mask: sideMask.cgImage, sourceSize: CGSize(width: 100, height: 100), crop: crop, photoRect: photoRect, breakout: 0.20, quality: .excellent),
+            photoRect,
+            "A side escape must not reveal an empty top band."
+        )
+
+        let topMask = makeSyntheticMask(size: CGSize(width: 100, height: 100)) { context in
+            UIColor.white.setFill()
+            context.fill(CGRect(x: 40, y: 30, width: 20, height: 6))
+        }
+        let topMetrics = try XCTUnwrap(
+            SpotlightBreakoutGeometry.measure(
+                mask: try XCTUnwrap(topMask.cgImage),
+                sourceSize: CGSize(width: topMask.cgImage!.width, height: topMask.cgImage!.height),
+                crop: crop,
+                photoRect: photoRect,
+                basePhotoClip: baseClip,
+                envelope: envelope
+            )
+        )
+        XCTAssertGreaterThanOrEqual(topMetrics.newlyRevealedFraction, 0.02)
+        XCTAssertTrue(topMetrics.hasMeaningfulNewlyRevealedArea)
+        XCTAssertEqual(
+            SpotlightBreakoutGeometry.resolvedBasePhotoClip(mask: topMask.cgImage, sourceSize: CGSize(width: 100, height: 100), crop: crop, photoRect: photoRect, breakout: 0.20, quality: .excellent),
+            baseClip,
+            "Foreground in the newly revealed top band should apply the clip."
+        )
+
+        let subthresholdMask = makeSyntheticMask(size: CGSize(width: 100, height: 100)) { context in
+            UIColor.white.setFill()
+            context.fill(CGRect(x: 40, y: 40, width: 20, height: 20))
+            context.fill(CGRect(x: 40, y: 30, width: 2, height: 1))
+        }
+        let subthresholdMetrics = try XCTUnwrap(
+            SpotlightBreakoutGeometry.measure(
+                mask: try XCTUnwrap(subthresholdMask.cgImage),
+                sourceSize: CGSize(width: subthresholdMask.cgImage!.width, height: subthresholdMask.cgImage!.height),
+                crop: crop,
+                photoRect: photoRect,
+                basePhotoClip: baseClip,
+                envelope: envelope
+            )
+        )
+        XCTAssertGreaterThan(subthresholdMetrics.newlyRevealedFraction, 0)
+        XCTAssertLessThan(subthresholdMetrics.newlyRevealedFraction, 0.02)
+        XCTAssertEqual(
+            SpotlightBreakoutGeometry.resolvedBasePhotoClip(mask: subthresholdMask.cgImage, sourceSize: CGSize(width: 100, height: 100), crop: crop, photoRect: photoRect, breakout: 0.20, quality: .excellent),
+            photoRect,
+            "A tiny top fragment must not create a visually misleading reveal."
+        )
+        XCTAssertEqual(
+            SpotlightBreakoutGeometry.basePhotoClip(photoRect: photoRect, breakout: 0.20, quality: .fallback),
+            photoRect
+        )
+    }
+
+    func testSpotlightExcellentRevealAnchorsToSelectedSubjectBounds() throws {
+        let photoRect = CGRect(x: 220, y: 155, width: 640, height: 820)
+        let sourceSize = CGSize(width: 1_000, height: 1_000)
+        let mask = makeSyntheticMask(size: sourceSize) { context in
+            UIColor.white.setFill()
+            context.fill(CGRect(x: 360, y: 120, width: 280, height: 380))
+        }
+        let subjectBounds = CGRect(x: 0.36, y: 0.12, width: 0.28, height: 0.38)
+        let baseline = SpotlightBreakoutGeometry.basePhotoClip(photoRect: photoRect, breakout: 0.12, quality: .excellent)
+        let anchored = SpotlightBreakoutGeometry.basePhotoClip(
+            photoRect: photoRect,
+            breakout: 0.12,
+            quality: .excellent,
+            subjectBounds: subjectBounds,
+            sourceSize: sourceSize
+        )
+
+        XCTAssertGreaterThan(anchored.minY, baseline.minY)
+        XCTAssertLessThanOrEqual(anchored.minY - photoRect.minY, 144, "Excellent reveal must remain bounded.")
+
+        let resolved = SpotlightBreakoutGeometry.resolvedBasePhotoClip(
+            mask: mask.cgImage,
+            sourceSize: sourceSize,
+            crop: .full,
+            photoRect: photoRect,
+            breakout: 0.12,
+            quality: .excellent,
+            subjectBounds: subjectBounds
+        )
+        XCTAssertEqual(resolved, anchored)
+        XCTAssertGreaterThan(resolved.minY, photoRect.minY)
+
+        let aperture = try XCTUnwrap(
+            SpotlightBreakoutGeometry.basePhotoRevealRect(
+                photoRect: photoRect,
+                basePhotoClip: resolved,
+                sourceSize: sourceSize,
+                crop: .full,
+                quality: .excellent,
+                subjectBounds: subjectBounds
+            )
+        )
+        XCTAssertEqual(aperture.minY, photoRect.minY)
+        XCTAssertEqual(aperture.maxY, resolved.minY)
+        XCTAssertLessThan(aperture.width, photoRect.width, "Excellent should use a local aperture, not a full-width bite.")
+
+        let invalidFaceAperture = try XCTUnwrap(
+            SpotlightBreakoutGeometry.basePhotoRevealRect(
+                photoRect: photoRect,
+                basePhotoClip: resolved,
+                sourceSize: sourceSize,
+                crop: .full,
+                quality: .excellent,
+                subjectBounds: subjectBounds,
+                faceBounds: CGRect(x: 1.40, y: 0.10, width: 0.08, height: 0.08)
+            )
+        )
+        let projectedSubject = SpotlightPhotoTransform(sourceSize: sourceSize, crop: .full, destinationFrame: photoRect).projectedSourceRect(subjectBounds)
+        XCTAssertEqual(invalidFaceAperture.midX, projectedSubject.midX, accuracy: 0.1, "An implausible face must not move the aperture away from the selected subject.")
+    }
+
+    func testSpotlightBreakoutMeasurementUsesExplicitPhotoSourceSize() throws {
+        let mask = makeSyntheticMask(size: CGSize(width: 100, height: 100)) { context in
+            UIColor.white.setFill()
+            context.fill(CGRect(x: 80, y: 35, width: 20, height: 30))
+        }
+        let photoRect = CGRect(x: 25, y: 25, width: 50, height: 50)
+        let metrics = try XCTUnwrap(
+            SpotlightBreakoutGeometry.measure(
+                mask: try XCTUnwrap(mask.cgImage),
+                sourceSize: CGSize(width: 200, height: 100),
+                crop: .full,
+                photoRect: photoRect,
+                envelope: photoRect.insetBy(dx: -100, dy: -100)
+            )
+        )
+
+        XCTAssertGreaterThan(metrics.outsidePhotoFraction, 0.80, "Breakout projection must use the photo source aspect ratio, not the mask raster aspect ratio.")
     }
 
     private func makeAnalysis(quality: SpotlightSegmentationQuality) -> SpotlightAnalysisResult {
@@ -409,7 +652,9 @@ final class PlayerCardLabTests: XCTestCase {
             sampledForegroundFraction: 0.30,
             outsidePhotoFraction: 0.08,
             outsideEnvelopeFraction: 0,
-            protectedZoneFraction: 0
+            protectedZoneFraction: 0,
+            visibleEscapeFraction: 0.08,
+            visibleEscapeBounds: CGRect(x: 220, y: 80, width: 100, height: 100)
         )
     }
 
@@ -557,6 +802,216 @@ final class PlayerCardLabTests: XCTestCase {
 
         XCTAssertEqual(try Data(contentsOf: url), try XCTUnwrap(rendered.pngData()))
         XCTAssertNotNil(UIImage(contentsOfFile: url.path)?.cgImage)
+    }
+
+    /// The Excellent composition, asserted through the production renderer rather than through the
+    /// geometry helpers alone. `basePhotoRevealRect` punches a single subject-anchored aperture out
+    /// of an otherwise untouched photo, so the rendered card has to show three distinct things.
+    func testSpotlightExcellentApertureCompositionRendersThroughProductionPath() throws {
+        let photoSize = CGSize(width: 1_000, height: 1_000)
+        let photo = makeFlatImage(size: photoSize, color: UIColor(red: 0, green: 1, blue: 0, alpha: 1))
+        let subjectBounds = CGRect(x: 0.36, y: 0.12, width: 0.28, height: 0.38)
+        let subjectMask = try makeCoverageMask(size: photoSize) { context in
+            UIColor.white.setFill()
+            context.fill(CGRect(x: 360, y: 120, width: 280, height: 380))
+        }
+        let emptyRimMask = try makeCoverageMask(size: photoSize) { _ in }
+        let analysis = SpotlightAnalysisResult(
+            mask: subjectMask,
+            processedMask: subjectMask,
+            rimLightMask: emptyRimMask,
+            quality: .excellent,
+            maskBounds: subjectBounds,
+            faceBounds: nil,
+            personBounds: subjectBounds,
+            cacheKey: "excellent-aperture-composition",
+            wasCacheHit: false
+        )
+
+        let tuning = PlayerCardLabTuning.default
+        let photoRect = CGRect(
+            x: (PlayerCardModel.canvasSize.width - tuning.spotlightPhotoWidth) / 2,
+            y: tuning.spotlightPhotoY,
+            width: tuning.spotlightPhotoWidth,
+            height: tuning.spotlightPhotoHeight
+        )
+        let basePhotoClip = SpotlightBreakoutGeometry.resolvedBasePhotoClip(
+            mask: subjectMask,
+            sourceSize: photoSize,
+            crop: .full,
+            photoRect: photoRect,
+            breakout: tuning.spotlightBreakout,
+            quality: .excellent,
+            subjectBounds: subjectBounds
+        )
+        XCTAssertGreaterThan(basePhotoClip.minY, photoRect.minY, "This fixture must actually earn a top reveal.")
+        let aperture = try XCTUnwrap(
+            SpotlightBreakoutGeometry.basePhotoRevealRect(
+                photoRect: photoRect,
+                basePhotoClip: basePhotoClip,
+                sourceSize: photoSize,
+                crop: .full,
+                quality: .excellent,
+                subjectBounds: subjectBounds
+            )
+        )
+
+        // Three sample points, chosen from the production geometry rather than hardcoded:
+        // beside the aperture in the top band, inside the aperture where the mask is absent, and
+        // inside the aperture where the subject is.
+        let besideAperture = CGPoint(x: (photoRect.minX + aperture.minX) / 2, y: (photoRect.minY + basePhotoClip.minY) / 2)
+        let insideApertureAboveSubject = CGPoint(x: aperture.midX, y: photoRect.minY + 45)
+        let insideApertureOnSubject = CGPoint(x: aperture.midX, y: basePhotoClip.minY - 22)
+        XCTAssertTrue(photoRect.contains(besideAperture))
+        XCTAssertFalse(aperture.contains(besideAperture))
+        XCTAssertTrue(aperture.contains(insideApertureAboveSubject))
+        XCTAssertTrue(aperture.contains(insideApertureOnSubject))
+        let projectedSubject = SpotlightPhotoTransform(sourceSize: photoSize, crop: .full, destinationFrame: photoRect).projectedSourceRect(subjectBounds)
+        XCTAssertFalse(projectedSubject.contains(besideAperture), "Sample 1 must be plain photo, not subject.")
+        XCTAssertFalse(projectedSubject.contains(insideApertureAboveSubject), "Sample 2 must sit above the subject.")
+        XCTAssertTrue(projectedSubject.contains(insideApertureOnSubject), "Sample 3 must sit on the subject.")
+
+        let teamColor = CardRGBColor(red: 0.05, green: 0.10, blue: 0.75)
+        func render(_ mode: SpotlightSegmentationMode) -> [UInt8] {
+            rgbaPixels(PlayerCardArtworkRenderer.render(CardFixtureLibrary.fixture(
+                id: "normal",
+                template: .spotlight(version: 1),
+                importedPhoto: photo,
+                crop: .full,
+                colorOverride: teamColor,
+                segmentationMode: mode,
+                analysis: analysis
+            ).model))
+        }
+        let width = Int(PlayerCardModel.canvasSize.width)
+        let excellent = render(.forceExcellent)
+        let fallback = render(.forceFallback)
+        func sample(_ pixels: [UInt8], _ point: CGPoint) -> RGBAPixel {
+            pixel(pixels, width: width, x: Int(point.x), y: Int(point.y))
+        }
+
+        // 1. Photo outside the aperture: the Excellent path must not bite the full width away.
+        XCTAssertTrue(
+            isPhotoGreen(sample(excellent, besideAperture)),
+            "Photo pixels beside the aperture must survive the Excellent reveal. Got \(sample(excellent, besideAperture))."
+        )
+        // 2. Background inside the aperture where the mask is absent.
+        XCTAssertTrue(
+            isPhotoGreen(sample(fallback, insideApertureAboveSubject)),
+            "Control: without the reveal the photo covers this point."
+        )
+        XCTAssertFalse(
+            isPhotoGreen(sample(excellent, insideApertureAboveSubject)),
+            "The aperture must expose the card background where the subject is absent. Got \(sample(excellent, insideApertureAboveSubject))."
+        )
+        // 3. Subject inside the aperture: drawn back on top of that exposed background.
+        XCTAssertTrue(
+            isPhotoGreen(sample(excellent, insideApertureOnSubject)),
+            "The masked subject must be composited back into the aperture. Got \(sample(excellent, insideApertureOnSubject))."
+        )
+    }
+
+    /// Excellent renders no full-width rectangular photo clip, so foreground landing in the top band
+    /// beside the aperture sits on unchanged photo pixels. The metric must not report it as escape.
+    func testSpotlightVisibleEscapeExcludesPixelsTheAperturePreserves() throws {
+        let photoSize = CGSize(width: 1_000, height: 1_000)
+        let subjectBounds = CGRect(x: 0.36, y: 0.12, width: 0.28, height: 0.38)
+        let mask = try XCTUnwrap(
+            makeSyntheticMask(size: photoSize) { context in
+                UIColor.white.setFill()
+                context.fill(CGRect(x: 360, y: 120, width: 280, height: 380))
+                // Foreground in the top band, but to the left of the subject-anchored aperture.
+                context.fill(CGRect(x: 140, y: 10, width: 180, height: 150))
+            }.cgImage
+        )
+        let photoRect = CGRect(x: 220, y: 155, width: 640, height: 820)
+        let breakout: CGFloat = 0.12
+        let envelope = SpotlightBreakoutGeometry.envelope(photoRect: photoRect, breakout: breakout, quality: .excellent)
+        let basePhotoClip = SpotlightBreakoutGeometry.basePhotoClip(
+            photoRect: photoRect,
+            breakout: breakout,
+            quality: .excellent,
+            subjectBounds: subjectBounds,
+            sourceSize: photoSize
+        )
+        let aperture = try XCTUnwrap(
+            SpotlightBreakoutGeometry.basePhotoRevealRect(
+                photoRect: photoRect,
+                basePhotoClip: basePhotoClip,
+                sourceSize: photoSize,
+                crop: .full,
+                quality: .excellent,
+                subjectBounds: subjectBounds
+            )
+        )
+
+        func measure(revealRect: CGRect?) throws -> SpotlightBreakoutGeometry.Metrics {
+            try XCTUnwrap(
+                SpotlightBreakoutGeometry.measure(
+                    mask: mask,
+                    sourceSize: photoSize,
+                    crop: .full,
+                    photoRect: photoRect,
+                    basePhotoClip: basePhotoClip,
+                    envelope: envelope,
+                    photoRevealRect: revealRect
+                )
+            )
+        }
+        let fullWidthBite = try measure(revealRect: nil)
+        let localAperture = try measure(revealRect: aperture)
+
+        XCTAssertLessThan(
+            localAperture.visibleEscapeFraction,
+            fullWidthBite.visibleEscapeFraction,
+            "Counting the whole top band inflates the Excellent escape fraction."
+        )
+        let inflatedBounds = try XCTUnwrap(fullWidthBite.visibleEscapeBounds)
+        XCTAssertLessThan(inflatedBounds.minX, aperture.minX, "Precondition: the fixture puts foreground beside the aperture.")
+
+        let bounds = try XCTUnwrap(localAperture.visibleEscapeBounds)
+        XCTAssertGreaterThanOrEqual(bounds.minX, aperture.minX)
+        XCTAssertLessThanOrEqual(bounds.maxX, aperture.maxX)
+        XCTAssertGreaterThanOrEqual(bounds.minY, aperture.minY)
+        XCTAssertLessThanOrEqual(bounds.maxY, aperture.maxY)
+
+        // The reveal decision itself is unchanged: it was already aperture-aware.
+        XCTAssertEqual(localAperture.newlyRevealedFraction, try measure(revealRect: aperture).newlyRevealedFraction)
+        XCTAssertTrue(localAperture.hasMeaningfulNewlyRevealedArea)
+    }
+
+    /// Spotlight masks reach `CGContext.clip(to:mask:)`, which only honours 8-bit grayscale
+    /// coverage — exactly what `SpotlightMaskProcessor` emits. An RGBA mask clips nothing, so a
+    /// render-level test built on `makeSyntheticMask` would pass no matter what the aperture did.
+    private func makeCoverageMask(size: CGSize, draw: (UIGraphicsImageRendererContext) -> Void) throws -> CGImage {
+        let drawn = try XCTUnwrap(makeSyntheticMask(size: size, draw: draw).cgImage)
+        let context = try XCTUnwrap(CGContext(
+            data: nil,
+            width: drawn.width,
+            height: drawn.height,
+            bitsPerComponent: 8,
+            bytesPerRow: drawn.width,
+            space: CGColorSpaceCreateDeviceGray(),
+            bitmapInfo: CGImageAlphaInfo.none.rawValue
+        ))
+        context.draw(drawn, in: CGRect(x: 0, y: 0, width: drawn.width, height: drawn.height))
+        return try XCTUnwrap(context.makeImage())
+    }
+
+    private func makeFlatImage(size: CGSize, color: UIColor) -> UIImage {
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1
+        format.opaque = true
+        return UIGraphicsImageRenderer(size: size, format: format).image { rendererContext in
+            color.setFill()
+            rendererContext.fill(CGRect(origin: .zero, size: size))
+        }
+    }
+
+    /// The synthetic Lab photo is flat pure green, so "is this the photo or the card behind it?"
+    /// reduces to a channel-dominance check that survives the Spotlight edge-light wash.
+    private func isPhotoGreen(_ value: RGBAPixel) -> Bool {
+        Int(value.green) > 150 && Int(value.green) > Int(value.red) + 80 && Int(value.green) > Int(value.blue) + 80
     }
 
     private func makeMask() -> UIImage {

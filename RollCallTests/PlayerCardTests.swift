@@ -3,6 +3,31 @@ import UIKit
 @testable import RollCall
 
 final class PlayerCardTests: XCTestCase {
+    func testShippingDesignsAreOrderedAndExcludeInternalTemplates() {
+        XCTAssertEqual(
+            PlayerCardDesign.shippingDesigns,
+            [.spotlight, .impact, .broadcast]
+        )
+        XCTAssertEqual(PlayerCardDesign.shippingDesigns.map(\.title), ["Spotlight", "Impact", "Broadcast"])
+    }
+
+    func testLastPlayerCardDesignPreferenceFallsBackForMissingOrUnknownValues() throws {
+        XCTAssertNil(AppSettings.default.lastPlayerCardDesignID)
+        XCTAssertEqual(AppSettings.default.lastPlayerCardDesign, .spotlight)
+
+        let invalid = try JSONDecoder().decode(
+            AppSettings.self,
+            from: Data(#"{"lastPlayerCardDesignID":"testing"}"#.utf8)
+        )
+        XCTAssertEqual(invalid.lastPlayerCardDesignID, "testing")
+        XCTAssertEqual(invalid.lastPlayerCardDesign, .spotlight)
+
+        var saved = AppSettings.default
+        saved.lastPlayerCardDesignID = PlayerCardDesign.impact.rawValue
+        let reread = try JSONDecoder().decode(AppSettings.self, from: JSONEncoder().encode(saved))
+        XCTAssertEqual(reread.lastPlayerCardDesign, .impact)
+    }
+
     func testSelectedDesignRendersFourByFiveAtExpectedPixelSize() throws {
         let player = playerWithSong()
         let team = team(containing: player, accent: .blue)
@@ -16,6 +41,68 @@ final class PlayerCardTests: XCTestCase {
         XCTAssertEqual(image.size, PlayerCardRenderer.outputSize)
         XCTAssertEqual(image.size.width / image.size.height, 4.0 / 5.0, accuracy: 0.0001)
         XCTAssertNotNil(image.pngData())
+    }
+
+    func testAllProductionDesignsRenderAtTheProductionCanvasSize() throws {
+        let player = playerWithSong()
+        let team = team(containing: player, accent: .blue)
+        let photo = samplePhoto()
+        let crop = PlayerPhotoFramingGeometry.centeredCrop(
+            aspectRatio: PlayerPhotoFramingGeometry.playerCardPhotoAspectRatio,
+            imageSize: photo.size
+        )
+
+        var images: [PlayerCardDesign: Data] = [:]
+        for design in PlayerCardDesign.allCases {
+            let image = PlayerCardRenderer().render(
+                content: PlayerCardContent(player: player, team: team),
+                photo: photo,
+                crop: crop,
+                design: design
+            )
+            XCTAssertEqual(image.size, PlayerCardRenderer.outputSize)
+            images[design] = try XCTUnwrap(image.pngData())
+        }
+
+        XCTAssertNotEqual(images[.spotlight], images[.impact])
+        XCTAssertNotEqual(images[.spotlight], images[.broadcast])
+        XCTAssertNotEqual(images[.impact], images[.broadcast])
+    }
+
+    func testSpotlightDesignKeepsTheExistingDefaultRenderer() throws {
+        let player = playerWithSong()
+        let team = team(containing: player, accent: .blue)
+        let photo = samplePhoto()
+        let crop = PlayerPhotoFramingGeometry.centeredCrop(
+            aspectRatio: PlayerPhotoFramingGeometry.playerCardPhotoAspectRatio,
+            imageSize: photo.size
+        )
+        let content = PlayerCardContent(player: player, team: team)
+
+        let implicitDefault = PlayerCardRenderer().render(content: content, photo: photo, crop: crop)
+        let explicitSpotlight = PlayerCardRenderer().render(content: content, photo: photo, crop: crop, design: .spotlight)
+
+        XCTAssertEqual(try XCTUnwrap(implicitDefault.pngData()), try XCTUnwrap(explicitSpotlight.pngData()))
+    }
+
+    func testPlayerCardDesignPersistenceDefaultsOldPlayersToSpotlightAndPreservesUnknownIDs() throws {
+        var player = RollCallTestFixtures.player(id: UUID(), name: "Legacy", number: "7")
+        player.playerCardDesign = .broadcast
+        let encoded = try JSONEncoder().encode(player)
+        var object = try XCTUnwrap(JSONSerialization.jsonObject(with: encoded) as? [String: Any])
+
+        object.removeValue(forKey: "playerCardDesignID")
+        let oldPlayer = try JSONDecoder().decode(Player.self, from: JSONSerialization.data(withJSONObject: object))
+        XCTAssertEqual(oldPlayer.playerCardDesign, .spotlight)
+        XCTAssertNil(oldPlayer.playerCardDesignID)
+
+        object["playerCardDesignID"] = "future-v9"
+        let futurePlayer = try JSONDecoder().decode(Player.self, from: JSONSerialization.data(withJSONObject: object))
+        XCTAssertEqual(futurePlayer.playerCardDesign, .spotlight)
+        XCTAssertEqual(futurePlayer.playerCardDesignID, "future-v9")
+        let reencoded = try JSONEncoder().encode(futurePlayer)
+        let reread = try JSONDecoder().decode(Player.self, from: reencoded)
+        XCTAssertEqual(reread.playerCardDesignID, "future-v9")
     }
 
     func testMissingOptionalContentAndPhotoStillRender() {
@@ -150,19 +237,21 @@ final class PlayerCardTests: XCTestCase {
     }
 
     func testBroadcastTypographyRendersLongContentAndOneTwoThreeDigitNumbers() throws {
-        for number in ["7", "15", "123"] {
-            let content = PlayerCardContent(
-                playerName: "Alexandra Verylongsurname",
-                playerNumber: number,
-                teamName: "P-WAY THUNDER LONG TEAM NAME",
-                songTitle: "A Very Long Walk-Up Song Title That Still Wraps",
-                artistName: "The Very Long Artist Name",
-                accentPreset: .blue
-            )
+        for name in ["Ellie Fisher", "Alexandria Montgomery-Summers"] {
+            for number in ["7", "15", "123"] {
+                let content = PlayerCardContent(
+                    playerName: name,
+                    playerNumber: number,
+                    teamName: "P-WAY THUNDER LONG TEAM NAME",
+                    songTitle: "A Very Long Walk-Up Song Title That Still Wraps",
+                    artistName: "The Very Long Artist Name",
+                    accentPreset: .blue
+                )
 
-            let image = PlayerCardRenderer().render(content: content, photo: nil, crop: nil)
-            XCTAssertEqual(image.size, PlayerCardRenderer.outputSize)
-            XCTAssertNotNil(image.pngData())
+                let image = PlayerCardRenderer().render(content: content, photo: nil, crop: nil, design: .broadcast)
+                XCTAssertEqual(image.size, PlayerCardRenderer.outputSize)
+                XCTAssertNotNil(image.pngData())
+            }
         }
     }
 

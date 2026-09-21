@@ -27,7 +27,7 @@ The working tree already contained unrelated modifications and deletions before 
 
 ### Durable app state
 
-`AppState` is schema-versioned (`currentSchemaVersion = 9`) and is written as pretty-printed JSON with ISO-8601 dates to:
+`AppState` is schema-versioned (`currentSchemaVersion = 11`) and is written as pretty-printed JSON with ISO-8601 dates to:
 
 `Application Support/RollCall/state.json`
 
@@ -38,11 +38,11 @@ The storage roots are defined by `AppPaths` in `RollCall/Models.swift`:
 - `Snapshots/` — backup state and manifests.
 - `state.json` — the active `AppState`.
 
-Writes are coordinated by `StatePersistenceWriter` in `AppModel.swift`; state is encoded to a temporary file and replaced atomically. Corrupt or unsupported state is copied to a `state-unreadable-<UUID>.json` file before a fresh state is used and an error is surfaced.
+Writes are coordinated by `StatePersistenceWriter` in `AppModel.swift`; state is encoded to a temporary file and replaced atomically. The shared `AppStatePersistenceCodec` applies sequential compatibility migrations and rejects future or malformed state. Corrupt or unsupported state is copied to a `state-unreadable-<UUID>.json` file; materially migrated state also retains a `state-pre-migration-v<version>-<UUID>.json` copy. Missing primary state with meaningful residual files enters the existing recovery flow without deleting or reconstructing orphaned data.
 
 `AppState` contains:
 
-- app/schema version and a device label (`DeviceIdentity`, default `This iPhone`);
+- app/schema version and a device label plus local qualification token (`DeviceIdentity`, default label `This iPhone`); the token is requalified for the current device and is not part of team exports;
 - selected team ID and all teams;
 - Recently Deleted entries and backup snapshot records;
 - experimental flags;

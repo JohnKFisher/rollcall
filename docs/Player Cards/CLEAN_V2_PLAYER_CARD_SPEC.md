@@ -1,20 +1,23 @@
-# Clean v2 Player Card Specification
+# Impact Player Card Specification
 
 **Product:** Roll Call  
 **Feature:** Player Cards  
-**Template:** Clean v2  
+**Template:** Impact (internal renderer identity: `clean-v2`)
 **Status:** Design specification / implementation source of truth  
-**Canonical export:** 1080 × 1350 px (4:5), PNG, sRGB
+**Lab authoring canvas:** 1080 × 1350 px (4:5);
+**Production export:** 1200 × 1500 px (4:5), PNG, sRGB
 
 ---
 
+> Naming note: the design formerly called Clean v2 is now displayed as **Impact**. The internal `clean`/`CleanV2` renderer identifiers remain stable so this display-name rename cannot change artwork selection or compatibility behavior. Production keeps the canonical 1080×1350 geometry and rasterizes it directly at 1200×1500.
+
 ## 1. Purpose
 
-Clean v2 is the restrained, premium, photo-first Roll Call player-card template.
+Impact is the restrained, premium, photo-first Roll Call player-card template.
 
 It should feel like a polished share graphic rather than a screenshot of app UI. The visual language should be modern, confident, and sports-adjacent without drifting into generic youth-sports template aesthetics.
 
-Clean v2 should be reliable with essentially any valid uploaded rectangular player photo and must not depend on AI image generation, player cutouts, or successful foreground segmentation.
+Impact should be reliable with essentially any valid uploaded rectangular player photo and must not depend on AI image generation, player cutouts, or successful foreground segmentation.
 
 The card should be deterministic: given the same player data, crop, template version, and team color, it should render the same result every time.
 
@@ -37,7 +40,7 @@ The card should be deterministic: given the same player data, crop, template ver
 
 ## 3. Canonical Canvas
 
-Clean v2 uses a fixed graphic coordinate system rather than device-responsive layout.
+Impact uses a fixed graphic coordinate system rather than device-responsive layout.
 
 - Canvas: **1080 × 1350 px**
 - Aspect ratio: **4:5**
@@ -123,7 +126,7 @@ The hero photo is a large rectangular image near the top of the card.
 
 - Use the user's saved/approved crop as authoritative.
 - Render with an aspect-fill strategy inside the hero frame.
-- Clean v2 must not silently recrop the image based on Vision results.
+- Impact must not silently recrop the image based on Vision results.
 - Legacy face-heavy crops must still produce an intentional card.
 - Foreground segmentation is not required.
 - Person/face detection may inform decorative-element placement only.
@@ -134,7 +137,7 @@ The actual photo may continue farther downward under the gradient than is visual
 
 ### 5.2 Photo Fidelity
 
-Clean v2 enhances presentation but does not reinterpret the photograph.
+Impact enhances presentation but does not reinterpret the photograph.
 
 Allowed:
 
@@ -188,7 +191,7 @@ Requirements:
 
 ## 7. Team-Color Edge Illumination
 
-This is a signature Clean v2 visual element.
+This is a signature Impact visual element.
 
 The hero photo should receive subtle team-derived edge lighting that reads as ambient reflected light rather than a stroke or neon border.
 
@@ -218,7 +221,7 @@ All hero lighting effects must be composited before clipping to the rounded hero
 
 ### 8.1 Critical Requirement
 
-**Clean v2 must not use hardcoded visual variants for the team colors currently available in Roll Call.**
+**Impact must not use hardcoded visual variants for the team colors currently available in Roll Call.**
 
 Roll Call is expected to support arbitrary user-selected team colors in the future, including selection from a full color wheel. The player-card rendering system must therefore derive all card colors algorithmically from the actual stored team color.
 
@@ -334,7 +337,7 @@ Do not add filler slogans or team mottos.
 
 ## 10. Jersey Number
 
-Clean v2 uses two jersey-number treatments.
+Impact uses two jersey-number treatments.
 
 ### 10.1 Readable Number
 
@@ -673,7 +676,7 @@ Hero photo radius: ~20 px
 
 The hero photo should be less rounded than the overall card.
 
-Avoid repeated UI-style rounded containers elsewhere in Clean v2.
+Avoid repeated UI-style rounded containers elsewhere in Impact.
 
 ---
 
@@ -686,7 +689,7 @@ Omit both number treatments. Do not substitute `00`, `—`, or invented content.
 Omit team label and accent rule.
 
 ### No photo
-Do not generate Clean v2. The production UI should communicate that a player photo is required.
+Do not generate Impact. The production UI should communicate that a player photo is required.
 
 ### Missing first or last name
 Use whichever name exists as the dominant name element.
@@ -731,7 +734,7 @@ Requirements:
 
 ## 23. Export Requirements
 
-Canonical Clean v2 export:
+Canonical Impact export:
 
 - **1080 × 1350 px**
 - **PNG**
@@ -748,7 +751,7 @@ If alternate social-share aspect ratios are added later, they should be purpose-
 
 ## 24. Renderer Architecture
 
-The Clean v2 card should be implemented as an isolated production renderer driven by a card model.
+The Impact card should be implemented as an isolated production renderer driven by a card model.
 
 Conceptually:
 
@@ -797,7 +800,7 @@ What the developer approves in the Lab should be what the user exports.
 
 ## 26. Player Card Lab
 
-Clean v2 must first be implemented in a development-only Player Card Lab before replacing the current production share card.
+Impact was first implemented in the development-only Player Card Lab and is now available through the production selector.
 
 The Lab should render the actual production card implementation.
 
@@ -889,7 +892,7 @@ Do not make every tiny anti-aliasing difference a permanent blocker; protect mea
 
 ## 28. Determinism
 
-**Given the same player data, crop, template version, source image, and team color, Clean v2 must render the same card every time.**
+**Given the same player data, crop, template version, source image, and team color, Impact must render the same card every time.**
 
 This applies to:
 
@@ -907,7 +910,7 @@ If Vision metadata is cached or used to select a decorative-number side, the res
 
 ## 29. Explicit Exclusions
 
-Clean v2 does **not** use:
+Impact does **not** use:
 
 - AI-generated imagery;
 - required foreground/person segmentation;
@@ -930,13 +933,13 @@ Clean v2 does **not** use:
 - hardcoded color variants tied to today's preset team colors;
 - user-facing controls for glow strength, typography, waveform style, or layout tuning.
 
-More dramatic treatments belong in Spotlight, Broadcast, or future templates.
+More dramatic treatments belong in Testing, Broadcast, or future templates.
 
 ---
 
-## 30. Clean v2 Acceptance Criteria
+## 30. Impact Acceptance Criteria
 
-Clean v2 is ready for production integration when:
+Impact is ready for production integration when:
 
 1. The card clearly feels like a finished share graphic rather than an app screenshot.
 2. The photo remains the dominant visual element.
@@ -955,7 +958,7 @@ Clean v2 is ready for production integration when:
 15. The Player Card Lab can generate individual exports, fixture sets, and a contact sheet.
 16. Representative visual regression tests pass.
 17. The implementation has no network or generative-AI dependency.
-18. Clean v2 remains visually restrained enough to serve as the baseline/default card style.
+18. Impact remains visually restrained enough to serve as a selectable production card style.
 
 ---
 
@@ -969,4 +972,4 @@ The implementation should leave room for Roll Call to add:
 - alternate share aspect ratios;
 - additional controlled color-derived visual treatments.
 
-Clean v2 itself should remain stable, deterministic, and deliberately restrained.
+Impact itself should remain stable, deterministic, and deliberately restrained.

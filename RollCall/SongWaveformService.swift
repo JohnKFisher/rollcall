@@ -112,6 +112,10 @@ enum SongWaveformSourceResolver {
                 )
             )
             guard let item = query.items?.first,
+                  AppleMusicLibraryResolution.matches(
+                      source: source,
+                      playbackStoreID: item.value(forProperty: MPMediaItemPropertyPlaybackStoreID) as? String
+                  ),
                   !item.isCloudItem else {
                 return nil
             }

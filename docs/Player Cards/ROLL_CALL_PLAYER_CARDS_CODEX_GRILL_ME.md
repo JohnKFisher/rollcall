@@ -1,5 +1,7 @@
 # `/grill-me` Prompt — Roll Call Player Cards: Three-Template Lab + Renderer Implementation
 
+> Display naming update: the production/default card is **Spotlight**, the former Spotlight Lab card is **Testing**, Clean v2 is **Impact**, and Broadcast is unchanged. The implementation identifiers in this historical prompt remain unchanged where they describe renderer or Vision-analysis internals.
+
 You are working in the existing Roll Call iOS project.
 
 Before making implementation changes, **inspect the repository and read the existing Player Card design specs in full** from:
@@ -8,9 +10,9 @@ Before making implementation changes, **inspect the repository and read the exis
 
 Treat those documents as the product/design source of truth for the three templates:
 
-- Clean
+- Impact
 - Broadcast
-- Spotlight
+- Testing
 
 Do **not** duplicate or reinterpret those specs from memory. Read the files themselves before planning.
 
@@ -30,9 +32,9 @@ Implement the new three-template Player Card system in a way that allows rapid v
 
 The immediate target is a development-only **Player Card Lab** that renders the real production card views for:
 
-- Clean
+- Impact
 - Broadcast
-- Spotlight
+- Testing
 
 The Lab must make it possible to compare templates, stress-test edge cases, tune provisional visual constants, inspect Spotlight segmentation behavior, export representative cards, and generate contact sheets without requiring a new full app build for every visual change.
 
@@ -178,7 +180,7 @@ Create a development-only Lab available through the most natural existing DEBUG-
 At minimum support:
 
 ```text
-[ Clean ] [ Broadcast ] [ Spotlight ]
+[ Impact ] [ Broadcast ] [ Testing ]
 ```
 
 with the same player fixture/data switchable among templates.
@@ -229,7 +231,7 @@ Future Roll Call functionality is intended to allow users to choose essentially 
 
 All three templates must derive their visual palettes algorithmically from the stored color.
 
-The template-specific color resolvers may share low-level color math, but Clean, Broadcast, and Spotlight need different output roles because they use color differently.
+The template-specific color resolvers may share low-level color math, but Impact, Broadcast, and Testing need different output roles because they use color differently.
 
 Test extreme values such as:
 
@@ -326,7 +328,7 @@ Implement Spotlight in two distinct layers of capability.
 
 ## 1. Spotlight fallback first
 
-Before Vision work, build a complete fallback Spotlight that is already visually distinct from Clean and Broadcast through:
+Before Vision work, build a complete fallback Testing card that is already visually distinct from Impact and Broadcast through:
 
 - staged/centered hero photo;
 - offset backdrop planes;
@@ -570,7 +572,7 @@ This is important:
 
 Build the new system and Lab alongside it.
 
-The owner needs to see real Clean/Broadcast/Spotlight renders first and tune them interactively.
+The owner needs to see real Impact/Broadcast/Testing renders first and tune them interactively.
 
 After visual approval, production integration becomes a separate explicit step.
 

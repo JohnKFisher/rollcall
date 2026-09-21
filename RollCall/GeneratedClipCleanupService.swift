@@ -118,8 +118,6 @@ struct GeneratedClipCleanupService {
     }
 
     private func snapshotStatesIncludingOrphanedFiles(in state: AppState) throws -> [AppState] {
-        let decoder = JSONDecoder()
-        decoder.dateDecodingStrategy = .iso8601
         var urls: [URL] = []
 
         for snapshot in state.snapshots {
@@ -147,7 +145,7 @@ struct GeneratedClipCleanupService {
         urls.append(contentsOf: orphanedSnapshotFiles)
 
         return try urls.map { url in
-            let snapshotState = try decoder.decode(AppState.self, from: Data(contentsOf: url))
+            let snapshotState = try AppStatePersistenceCodec.decode(Data(contentsOf: url))
             guard snapshotState.schemaVersion <= AppState.currentSchemaVersion else {
                 throw AppError.unsupportedSavedStateVersion
             }

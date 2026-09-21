@@ -181,7 +181,7 @@ Opened from any player row (Players tab, Readiness list, Game Day tile long-pres
 - **Player Song** — choose from Music Library, search Apple Music, import audio or video, swap source, clear cue. Shows the assigned song title, source, and current readiness/portability status.
 - **Make Your Clip / Fine Tune Clip** (only when a song exists) — waveform or honest placeholder rail, selected-window dragging, length choices, exact start/length/fade controls, preview with playhead, and explicit Save for draft selections.
 - **Announcement Cue** — record a custom intro via in-app mic recording. Buttons: Start/Stop Recording, Preview, Clear. A warning is shown if the file reference exists but the audio file is missing.
-- **Player Card** — a visible `Preview & Share` action opens the finished Broadcast-style 1200-by-1500 graphic before the system Share Sheet. The preview also offers `Adjust Player Card Photo`; those draft framing changes follow the Player Editor's Save/Cancel transaction.
+- **Player Card** — a visible `Preview & Share` action opens the selected Spotlight, Impact, or Broadcast 1200-by-1500 graphic before the system Share Sheet. Spotlight is the default for existing players. The preview also offers the production design selector and `Adjust Player Card Photo`; those draft changes follow the Player Editor's Save/Cancel transaction. The unfinished Testing design remains DEBUG-only.
 - **Remove Player** at the bottom, destructive role.
 
 The editor is large and rich because per-player setup is where most setup time is spent. But the Setup Guide deliberately avoids most of this complexity — it only touches identity and song cue, leaving photos, announcer recordings, and advanced trim for later.

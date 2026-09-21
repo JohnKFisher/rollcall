@@ -109,6 +109,244 @@ final class AppStatePersistenceTests: XCTestCase {
         ))
     }
 
+    func testCurrentStateRoundTripPreservesPortableIntentAndDeviceQualification() throws {
+        var player = RollCallTestFixtures.player(
+            id: RollCallTestFixtures.alexID,
+            name: "Alex Ramirez",
+            number: "12",
+            cue: RollCallTestFixtures.appleMusicCue(
+                songID: "catalog.alex",
+                title: "Thunder",
+                artistName: "The Bats"
+            )
+        )
+        player.songAssignment = .privateClip(
+            SongClip(cue: player.cue!)
+        )
+        guard case .privateClip(var clip)? = player.songAssignment,
+              case .appleMusic(var source) = clip.originalSource else {
+            return XCTFail("Expected an Apple Music clip.")
+        }
+        source.libraryPersistentID = 42
+        clip.originalSource = .appleMusic(source)
+        player.songAssignment = .privateClip(clip)
+
+        var state = RollCallTestFixtures.appState(team: RollCallTestFixtures.team(players: [player]))
+        state.deviceIdentity = DeviceIdentity(label: "Source iPhone", qualificationToken: "source-device")
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        let decoded = try AppStatePersistenceCodec.decode(try encoder.encode(state))
+
+        XCTAssertEqual(decoded.schemaVersion, AppState.currentSchemaVersion)
+        XCTAssertEqual(decoded.deviceIdentity.qualificationToken, "source-device")
+        guard case .privateClip(let decodedClip)? = decoded.teams[0].players[0].songAssignment,
+              case .appleMusic(let decodedSource) = decodedClip.originalSource else {
+            return XCTFail("Expected the Apple Music selection to survive the round trip.")
+        }
+        XCTAssertEqual(decodedSource.songID, "catalog.alex")
+        XCTAssertEqual(decodedSource.libraryPersistentID, 42)
+    }
+
+    func testSchemaTenMigratesSequentiallyToCurrentSchema() throws {
+        var legacyState = RollCallTestFixtures.appState(team: RollCallTestFixtures.team())
+        legacyState.schemaVersion = 10
+        legacyState.lastGameDayTeamID = legacyState.selectedTeamID
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+
+        let migrated = try AppStatePersistenceCodec.decode(try encoder.encode(legacyState))
+
+        XCTAssertEqual(migrated.schemaVersion, 11)
+        XCTAssertEqual(migrated.lastGameDayTeamID, legacyState.lastGameDayTeamID)
+        XCTAssertEqual(migrated.teams.first?.players.count, legacyState.teams.first?.players.count)
+    }
+
+    @MainActor
+    func testMigrationFailurePreservesOriginalStateBytes() throws {
+        let originalBytes = Data(#"{"schemaVersion":10,"deviceIdentity":"not-an-object","teams":[]}"#.utf8)
+        try originalBytes.write(to: AppPaths.stateURL(), options: .atomic)
+
+        let model = AppModel(deviceIdentityProvider: {
+            DeviceIdentity(label: "Test Device", qualificationToken: "test-device")
+        })
+
+        XCTAssertEqual(model.stateRecovery?.reason, .loadFailure)
+        XCTAssertEqual(try Data(contentsOf: AppPaths.stateURL()), originalBytes)
+        XCTAssertNotNil(model.stateRecovery?.preservedStateURL)
+    }
+
+    @MainActor
+    func testMalformedSchemaVersionPreservesOriginalStateBytes() throws {
+        let originalBytes = Data(#"{"schemaVersion":true,"teams":[]}"#.utf8)
+        try originalBytes.write(to: AppPaths.stateURL(), options: .atomic)
+
+        let model = AppModel(deviceIdentityProvider: {
+            DeviceIdentity(label: "Test Device", qualificationToken: "test-device")
+        })
+
+        XCTAssertEqual(model.stateRecovery?.reason, .loadFailure)
+        XCTAssertEqual(try Data(contentsOf: AppPaths.stateURL()), originalBytes)
+        XCTAssertNotNil(model.stateRecovery?.preservedStateURL)
+    }
+
+    @MainActor
+    func testMissingStateWithoutResidualDataStartsFresh() {
+        let model = AppModel(deviceIdentityProvider: {
+            DeviceIdentity(label: "Fresh Device", qualificationToken: "fresh-device")
+        })
+
+        XCTAssertNil(model.stateRecovery)
+        XCTAssertTrue(model.state.teams.isEmpty)
+        XCTAssertEqual(model.state.deviceIdentity.qualificationToken, "fresh-device")
+    }
+
+    @MainActor
+    func testMissingStateWithResidualAssetEntersRecoveryWithoutDeletingAsset() async throws {
+        try writeAsset("orphan-photo.jpg")
+
+        let model = AppModel(deviceIdentityProvider: {
+            DeviceIdentity(label: "Restored Device", qualificationToken: "restored-device")
+        })
+
+        XCTAssertEqual(model.stateRecovery?.reason, .missingPrimaryWithResidualData)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: try AppPaths.stateURL().path))
+        XCTAssertTrue(assetExists("orphan-photo.jpg"))
+
+        await model.startFreshAfterStateRecovery()
+        XCTAssertNil(model.stateRecovery)
+        XCTAssertTrue(assetExists("orphan-photo.jpg"))
+    }
+
+    @MainActor
+    func testMissingStateWithSnapshotOffersAndRestoresSnapshotRecovery() async throws {
+        let snapshotState = RollCallTestFixtures.appState(team: RollCallTestFixtures.team())
+        _ = try writeRecoverySnapshot(snapshotState, fileName: "orphan-snapshot.json")
+
+        let model = AppModel(deviceIdentityProvider: {
+            DeviceIdentity(label: "Restored Device", qualificationToken: "restored-device")
+        })
+
+        XCTAssertEqual(model.stateRecovery?.reason, .missingPrimaryWithResidualData)
+        let snapshot = try XCTUnwrap(model.stateRecovery?.snapshots.first)
+        XCTAssertEqual(model.stateRecovery?.snapshots.count, 1)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: try AppPaths.stateURL().path))
+
+        await model.restoreStateRecoverySnapshot(snapshot)
+
+        XCTAssertNil(model.stateRecovery)
+        XCTAssertEqual(model.state.teams.first?.name, "Thunder")
+        XCTAssertEqual(model.state.deviceIdentity.qualificationToken, "restored-device")
+        XCTAssertTrue(FileManager.default.fileExists(atPath: snapshot.url.path))
+    }
+
+    func testConsistencyReportDistinguishesMissingAuthoritativeAndDerivedAssets() throws {
+        var player = RollCallTestFixtures.player(
+            id: RollCallTestFixtures.alexID,
+            name: "Alex Ramirez",
+            number: "12",
+            cue: RollCallTestFixtures.localCue(relativePath: "missing-song.m4a"),
+            photoRelativePath: "missing-photo.jpg"
+        )
+        var clip = SongClip(cue: player.cue!)
+        clip.generatedAsset = GeneratedClipAsset(
+            relativePath: "GeneratedClips/missing-generated.m4a",
+            status: .ready,
+            renderedSelection: clip.requestedSelection,
+            generationKey: clip.generationKey,
+            generatedAt: RollCallTestFixtures.now
+        )
+        player.songAssignment = .privateClip(clip)
+        let report = AppStateConsistencyValidator.report(
+            for: RollCallTestFixtures.appState(team: RollCallTestFixtures.team(players: [player]))
+        )
+
+        XCTAssertEqual(report.missingPhotoPaths, ["missing-photo.jpg"])
+        XCTAssertEqual(report.missingLocalAudioPaths, ["missing-song.m4a"])
+        XCTAssertEqual(report.missingGeneratedClipPaths, ["GeneratedClips/missing-generated.m4a"])
+        XCTAssertTrue(report.hasIssues)
+    }
+
+    func testInvalidAppleMusicLibraryHintDoesNotMatchDifferentCatalogSong() {
+        let source = AppleMusicSource(
+            songID: "catalog.correct",
+            title: "Correct Song",
+            artistName: "The Bats",
+            duration: 180,
+            previewURL: nil,
+            isCatalogBacked: true,
+            libraryPersistentID: 123
+        )
+
+        XCTAssertFalse(AppleMusicLibraryResolution.matches(source: source, playbackStoreID: "catalog.other"))
+        XCTAssertTrue(AppleMusicLibraryResolution.matches(source: source, playbackStoreID: "catalog.correct"))
+    }
+
+    @MainActor
+    func testDeviceIdentityIsRequalifiedAfterRestoration() throws {
+        let cue = RollCallTestFixtures.appleMusicCue(
+            songID: "catalog.alex",
+            title: "Alex Walkup",
+            artistName: "The Bats"
+        )
+        guard case .appleMusic(var source) = cue.source else {
+            return XCTFail("Expected Apple Music fixture.")
+        }
+        source.libraryPersistentID = 42
+        var appleMusicCue = cue
+        appleMusicCue.source = .appleMusic(source)
+        var player = RollCallTestFixtures.player(
+            id: RollCallTestFixtures.alexID,
+            name: "Alex Ramirez",
+            number: "12",
+            cue: appleMusicCue
+        )
+        var clip = SongClip(cue: appleMusicCue)
+        clip.readinessInputs = SongClipReadinessInputs(
+            playback: .sourceBackedDownloaded,
+            sourceAvailableOnDevice: true,
+            downloadedOnDevice: true
+        )
+        player.songAssignment = .privateClip(clip)
+        var state = RollCallTestFixtures.appState(team: RollCallTestFixtures.team(players: [player]))
+        state.deviceIdentity = DeviceIdentity(label: "Old iPhone", qualificationToken: "old-device")
+        try writeState(state)
+
+        let model = AppModel(deviceIdentityProvider: {
+            DeviceIdentity(label: "New iPhone", qualificationToken: "new-device")
+        })
+
+        XCTAssertEqual(model.state.deviceIdentity.label, "New iPhone")
+        XCTAssertEqual(model.state.deviceIdentity.qualificationToken, "new-device")
+        XCTAssertEqual(model.selectedTeam?.name, "Thunder")
+        guard case .privateClip(let restoredClip)? = model.selectedTeam?.players.first?.songAssignment else {
+            return XCTFail("Expected the Apple Music clip to remain assigned.")
+        }
+        XCTAssertEqual(restoredClip.readinessInputs.playback, .needsAppleMusic)
+        XCTAssertFalse(restoredClip.readinessInputs.sourceAvailableOnDevice)
+        XCTAssertFalse(restoredClip.readinessInputs.downloadedOnDevice)
+    }
+
+    @MainActor
+    func testLaunchDoesNotTrustPersistedReadinessAndFlushesLatestRapidMutation() async throws {
+        var state = RollCallTestFixtures.appState(team: RollCallTestFixtures.team())
+        state.lastReadiness = ReadinessStatus(
+            generatedAt: RollCallTestFixtures.now,
+            checks: [],
+            teamID: state.selectedTeamID
+        )
+        try writeState(state)
+        let model = AppModel()
+        XCTAssertNil(model.state.lastReadiness)
+
+        for index in 0..<8 {
+            model.renameSelectedTeam(to: "Thunder \(index)")
+        }
+        let flushed = await model.flushLatestState()
+        XCTAssertTrue(flushed)
+        let saved = try AppStatePersistenceCodec.decode(Data(contentsOf: AppPaths.stateURL()))
+        XCTAssertEqual(saved.teams.first?.name, "Thunder 7")
+    }
+
     @MainActor
     func testUnreadableStateRemainsUntouchedUntilRecoveryChoice() async throws {
         let originalBytes = Data("not-json".utf8)
@@ -353,6 +591,7 @@ final class AppStatePersistenceTests: XCTestCase {
         draft.photoSourceRelativePath = "master.jpg"
         draft.profilePhotoCrop = NormalizedPhotoCrop(x: 0.2, y: 0.1, width: 0.5, height: 0.5)
         draft.playerCardPhotoCrop = NormalizedPhotoCrop(x: 0.1, y: 0.05, width: 0.75, height: 0.84)
+        draft.playerCardDesign = .broadcast
 
         model.commitPlayerEditorDraft(draft)
 
@@ -361,6 +600,7 @@ final class AppStatePersistenceTests: XCTestCase {
         XCTAssertEqual(saved.photoSourceRelativePath, "master.jpg")
         XCTAssertEqual(saved.profilePhotoCrop, draft.profilePhotoCrop)
         XCTAssertEqual(saved.playerCardPhotoCrop, draft.playerCardPhotoCrop)
+        XCTAssertEqual(saved.playerCardDesign, .broadcast)
     }
 
     func testPlayerDecodeDefaultsMissingPresenceToPresent() throws {
@@ -692,6 +932,14 @@ final class AppStatePersistenceTests: XCTestCase {
         let url = try AppPaths.snapshotsDirectory().appendingPathComponent(fileName)
         try encoder.encode(state).write(to: url, options: .atomic)
         return url
+    }
+
+    private func writeAsset(_ relativePath: String) throws {
+        try Data("test".utf8).write(to: AppPaths.assetURL(relativePath: relativePath), options: .atomic)
+    }
+
+    private func assetExists(_ relativePath: String) -> Bool {
+        AppPaths.isUsableAssetFile(relativePath: relativePath)
     }
 
     private func preparedAppleMusicPlayer() -> (player: Player, clip: SongClip) {

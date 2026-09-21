@@ -20,12 +20,38 @@ enum PlayerCardTemplate: Hashable, Sendable, CaseIterable {
 
     static let allCases: [PlayerCardTemplate] = [.clean(version: 2), .broadcast(version: 1), .spotlight(version: 1)]
 
+    /// User-facing name. Keep the enum cases and stable identifiers unchanged so a display-name
+    /// rename cannot redirect an existing renderer or invalidate any future stored references.
     var title: String {
         switch self {
-        case .clean: return "Clean"
+        case .clean: return "Impact"
         case .broadcast: return "Broadcast"
-        case .spotlight: return "Spotlight"
+        case .spotlight: return "Testing"
         }
+    }
+
+    /// Internal renderer identity. This is deliberately independent from `title`.
+    var stableIdentifier: String {
+        switch self {
+        case .clean: return "clean-v2"
+        case .broadcast: return "broadcast"
+        case .spotlight: return "spotlight"
+        }
+    }
+
+    var isClean: Bool {
+        if case .clean = self { return true }
+        return false
+    }
+
+    var isBroadcast: Bool {
+        if case .broadcast = self { return true }
+        return false
+    }
+
+    var isSpotlight: Bool {
+        if case .spotlight = self { return true }
+        return false
     }
 
     var version: Int {
@@ -1029,6 +1055,29 @@ struct PlayerCardModel: @unchecked Sendable {
 
     init(
         template: PlayerCardTemplate,
+        content: PlayerCardContent,
+        photo: UIImage?,
+        crop: NormalizedPhotoCrop? = nil,
+        tuning: PlayerCardLabTuning = .default,
+        brandIcon: UIImage? = nil
+    ) {
+        self.init(
+            template: template,
+            playerName: content.playerName,
+            playerNumber: content.playerNumber,
+            teamName: content.teamName,
+            songTitle: content.songTitle,
+            artistName: content.artistName,
+            teamColor: CardRGBColor.from(content.accentPreset),
+            photo: photo,
+            crop: crop,
+            tuning: tuning,
+            brandIcon: brandIcon
+        )
+    }
+
+    init(
+        template: PlayerCardTemplate,
         playerName: String,
         playerNumber: String?,
         teamName: String?,
@@ -1134,9 +1183,22 @@ enum PlayerCardArtworkRenderer {
         context.drawLinearGradient(gradient, start: CGPoint(x: 80, y: 40), end: CGPoint(x: 1_000, y: 1_350), options: [])
     }
 
-    static func drawPhoto(_ image: UIImage?, crop: NormalizedPhotoCrop, in rect: CGRect, context: CGContext, cornerRadius: CGFloat, edgeLight: CardRGBColor? = nil, edgeLightStrength: CGFloat = 0) {
+    static func drawPhoto(_ image: UIImage?, crop: NormalizedPhotoCrop, in rect: CGRect, context: CGContext, cornerRadius: CGFloat, edgeLight: CardRGBColor? = nil, edgeLightStrength: CGFloat = 0, clipRect: CGRect? = nil, revealRect: CGRect? = nil) {
         context.saveGState()
         UIBezierPath(roundedRect: rect, cornerRadius: cornerRadius).addClip()
+        if let revealRect {
+            let hole = revealRect.intersection(rect)
+            if !hole.isNull, !hole.isEmpty {
+                let path = CGMutablePath()
+                path.addRect(rect)
+                path.addRect(hole)
+                context.addPath(path)
+                context.clip(using: .evenOdd)
+            }
+        }
+        if let clipRect {
+            context.clip(to: clipRect)
+        }
         if let image, let cgImage = image.rollCallNormalizedUpImage().cgImage {
             drawFullImage(cgImage, crop: crop, in: rect, context: context)
             if let edgeLight {
@@ -1377,8 +1439,8 @@ enum PlayerCardArtworkRenderer {
             } else {
                 let firstWidth = min(width, measuredTextWidth(firstName.uppercased(), font: firstFit.font, tracking: firstFit.tracking))
                 let lastWidth = min(width, measuredTextWidth(last.uppercased(), font: lastFit.font, tracking: lastFit.tracking))
-                drawBroadcastText(firstName.uppercased(), in: CGRect(x: firstRect.minX, y: firstRect.minY, width: firstWidth, height: firstRect.height), angle: angle, font: firstFit.font, color: .white.withAlphaComponent(0.92), alignment: alignment, tracking: firstFit.tracking, context: context)
-                drawBroadcastText(last.uppercased(), in: CGRect(x: lastRect.minX, y: lastRect.minY, width: lastWidth, height: lastRect.height), angle: angle, font: lastFit.font, color: .white, alignment: alignment, tracking: lastFit.tracking, lineBreakMode: .byClipping, context: context)
+                drawBroadcastTextFromTopLeft(firstName.uppercased(), in: CGRect(x: firstRect.minX, y: firstRect.minY, width: firstWidth, height: firstRect.height), angle: angle, font: firstFit.font, color: .white.withAlphaComponent(0.92), alignment: alignment, tracking: firstFit.tracking, context: context)
+                drawBroadcastTextFromTopLeft(last.uppercased(), in: CGRect(x: lastRect.minX, y: lastRect.minY, width: lastWidth, height: lastRect.height), angle: angle, font: lastFit.font, color: .white, alignment: alignment, tracking: lastFit.tracking, lineBreakMode: .byClipping, context: context)
             }
         } else {
             let lastFit = fittedBroadcastNameFont(last.uppercased(), maxSize: maxLastSize, minimumSize: 30, width: width, weight: .black, fontProvider: lastFontProvider)
@@ -1387,7 +1449,7 @@ enum PlayerCardArtworkRenderer {
                 drawText(last.uppercased(), in: lastRect, font: lastFit.font, color: .white, alignment: alignment, tracking: lastFit.tracking, lineBreakMode: .byClipping, context: context)
             } else {
                 let lastWidth = min(width, measuredTextWidth(last.uppercased(), font: lastFit.font, tracking: lastFit.tracking))
-                drawBroadcastText(last.uppercased(), in: CGRect(x: lastRect.minX, y: lastRect.minY, width: lastWidth, height: lastRect.height), angle: angle, font: lastFit.font, color: .white, alignment: alignment, tracking: lastFit.tracking, lineBreakMode: .byClipping, context: context)
+                drawBroadcastTextFromTopLeft(last.uppercased(), in: CGRect(x: lastRect.minX, y: lastRect.minY, width: lastWidth, height: lastRect.height), angle: angle, font: lastFit.font, color: .white, alignment: alignment, tracking: lastFit.tracking, lineBreakMode: .byClipping, context: context)
             }
         }
     }
@@ -1697,19 +1759,193 @@ struct SpotlightBreakoutGeometry {
         let outsidePhotoFraction: CGFloat
         let outsideEnvelopeFraction: CGFloat
         let protectedZoneFraction: CGFloat
+        let visibleEscapeFraction: CGFloat
+        let visibleEscapeBounds: CGRect?
+        let newlyRevealedFraction: CGFloat
+        let newlyRevealedBounds: CGRect?
 
         var hasMeaningfulEscape: Bool {
-            outsidePhotoFraction >= 0.02 && outsideEnvelopeFraction <= 0.02 && protectedZoneFraction <= 0.01
+            visibleEscapeFraction >= 0.02 && visibleEscapeBounds != nil
+        }
+
+        var hasMeaningfulNewlyRevealedArea: Bool {
+            newlyRevealedFraction >= 0.02 && newlyRevealedBounds != nil
         }
 
         var summary: String {
             String(
-                format: "outside photo %.1f%% · clipped %.1f%% · protected %.1f%%",
+                format: "outside photo %.1f%% · clipped %.1f%% · protected %.1f%% · visible escape %.1f%% · top reveal %.1f%%",
                 outsidePhotoFraction * 100,
                 outsideEnvelopeFraction * 100,
-                protectedZoneFraction * 100
+                protectedZoneFraction * 100,
+                visibleEscapeFraction * 100,
+                newlyRevealedFraction * 100
             )
         }
+
+        init(
+            sampledForegroundFraction: CGFloat,
+            outsidePhotoFraction: CGFloat,
+            outsideEnvelopeFraction: CGFloat,
+            protectedZoneFraction: CGFloat,
+            visibleEscapeFraction: CGFloat = 0,
+            visibleEscapeBounds: CGRect? = nil,
+            newlyRevealedFraction: CGFloat = 0,
+            newlyRevealedBounds: CGRect? = nil
+        ) {
+            self.sampledForegroundFraction = sampledForegroundFraction
+            self.outsidePhotoFraction = outsidePhotoFraction
+            self.outsideEnvelopeFraction = outsideEnvelopeFraction
+            self.protectedZoneFraction = protectedZoneFraction
+            self.visibleEscapeFraction = visibleEscapeFraction
+            self.visibleEscapeBounds = visibleEscapeBounds
+            self.newlyRevealedFraction = newlyRevealedFraction
+            self.newlyRevealedBounds = newlyRevealedBounds
+        }
+    }
+
+    static let protectedTypographyZone = CGRect(x: 54, y: protectedNameTop, width: 972, height: 243)
+    private static let excellentRevealMargin: CGFloat = 44
+    private static let excellentMaximumReveal: CGFloat = 144
+
+    private static func validatedProjectedFace(
+        _ faceBounds: CGRect?,
+        transform: SpotlightPhotoTransform,
+        photoRect: CGRect
+    ) -> CGRect? {
+        guard let faceBounds else { return nil }
+        let projected = transform.projectedSourceRect(faceBounds)
+        return projected.insetBy(dx: -photoRect.width * 0.18, dy: -photoRect.height * 0.12).intersects(photoRect) ? projected : nil
+    }
+
+    static func basePhotoClip(
+        photoRect: CGRect,
+        breakout: CGFloat,
+        quality: SpotlightSegmentationQuality,
+        subjectBounds: CGRect? = nil,
+        sourceSize: CGSize? = nil,
+        crop: NormalizedPhotoCrop = .full,
+        faceBounds: CGRect? = nil
+    ) -> CGRect {
+        guard quality != .fallback else { return photoRect }
+        let qualityScale: CGFloat = quality == .usable ? 0.45 : 1
+        let baselineReveal = min(photoRect.height * breakout * qualityScale, quality == .usable ? 72 : excellentMaximumReveal)
+        guard baselineReveal > 0 else { return photoRect }
+        var topReveal = baselineReveal
+
+        // A fixed aperture can miss the actual head when Vision's selected subject begins
+        // farther down the source image. For Excellent, use the selected processed subject's
+        // projected top as the anchor, then expose a bounded amount of real source pixels below
+        // it. The optional face bounds are only a sanity check: a detached mask must not move
+        // the photo edge on its own.
+        if quality == .excellent,
+           let subjectBounds,
+           let sourceSize,
+           subjectBounds.width > 0,
+           subjectBounds.height > 0 {
+            let transform = SpotlightPhotoTransform(sourceSize: sourceSize, crop: crop, destinationFrame: photoRect)
+            let projectedSubject = transform.projectedSourceRect(subjectBounds)
+            let subjectIntersectsPhoto = projectedSubject.intersects(photoRect)
+            let faceIsPlausible = faceBounds == nil || validatedProjectedFace(faceBounds, transform: transform, photoRect: photoRect) != nil
+            if subjectIntersectsPhoto && faceIsPlausible {
+                let margin = min(excellentRevealMargin, photoRect.height * 0.08)
+                let subjectAnchoredReveal = max(0, projectedSubject.minY - photoRect.minY + margin)
+                topReveal = min(
+                    max(baselineReveal, subjectAnchoredReveal),
+                    min(excellentMaximumReveal, photoRect.height * 0.18)
+                )
+            }
+        }
+
+        return CGRect(
+            x: photoRect.minX,
+            y: min(photoRect.maxY, photoRect.minY + topReveal),
+            width: photoRect.width,
+            height: max(0, photoRect.height - topReveal)
+        )
+    }
+
+    static func resolvedBasePhotoClip(
+        mask: CGImage?,
+        sourceSize: CGSize,
+        crop: NormalizedPhotoCrop,
+        photoRect: CGRect,
+        breakout: CGFloat,
+        quality: SpotlightSegmentationQuality,
+        protectedZones: [CGRect] = [protectedTypographyZone],
+        subjectBounds: CGRect? = nil,
+        faceBounds: CGRect? = nil
+    ) -> CGRect {
+        guard quality != .fallback, let mask else { return photoRect }
+        let candidate = basePhotoClip(
+            photoRect: photoRect,
+            breakout: breakout,
+            quality: quality,
+            subjectBounds: subjectBounds,
+            sourceSize: sourceSize,
+            crop: crop,
+            faceBounds: faceBounds
+        )
+        let envelope = envelope(photoRect: photoRect, breakout: breakout, quality: quality)
+        let revealRect = basePhotoRevealRect(
+            photoRect: photoRect,
+            basePhotoClip: candidate,
+            sourceSize: sourceSize,
+            crop: crop,
+            quality: quality,
+            subjectBounds: subjectBounds,
+            faceBounds: faceBounds
+        )
+        guard let metrics = measure(
+            mask: mask,
+            sourceSize: sourceSize,
+            crop: crop,
+            photoRect: photoRect,
+            basePhotoClip: candidate,
+            envelope: envelope,
+            protectedZones: protectedZones,
+            photoRevealRect: revealRect
+        ), metrics.hasMeaningfulNewlyRevealedArea else {
+            return photoRect
+        }
+        return candidate
+    }
+
+    static func basePhotoRevealRect(
+        photoRect: CGRect,
+        basePhotoClip: CGRect,
+        sourceSize: CGSize,
+        crop: NormalizedPhotoCrop,
+        quality: SpotlightSegmentationQuality,
+        subjectBounds: CGRect?,
+        faceBounds: CGRect? = nil
+    ) -> CGRect? {
+        guard quality == .excellent,
+              basePhotoClip.minY > photoRect.minY,
+              let subjectBounds,
+              subjectBounds.width > 0,
+              subjectBounds.height > 0 else { return nil }
+
+        let transform = SpotlightPhotoTransform(sourceSize: sourceSize, crop: crop, destinationFrame: photoRect)
+        let projectedSubject = transform.projectedSourceRect(subjectBounds)
+        guard projectedSubject.intersects(photoRect) else { return nil }
+
+        let validatedFace = validatedProjectedFace(faceBounds, transform: transform, photoRect: photoRect)
+        let centerX = validatedFace?.midX ?? projectedSubject.midX
+        let subjectWidth = projectedSubject.width
+        let faceWidth = validatedFace?.width ?? 0
+        let notchWidth = min(
+            photoRect.width * 0.62,
+            max(photoRect.width * 0.30, max(subjectWidth * 0.72, faceWidth * 4.0))
+        )
+        let notch = CGRect(
+            x: centerX - notchWidth / 2,
+            y: photoRect.minY,
+            width: notchWidth,
+            height: basePhotoClip.minY - photoRect.minY
+        )
+        let clipped = notch.intersection(photoRect)
+        return clipped.isNull || clipped.isEmpty ? nil : clipped
     }
 
     static func envelope(
@@ -1733,10 +1969,13 @@ struct SpotlightBreakoutGeometry {
 
     static func measure(
         mask: CGImage,
+        sourceSize: CGSize,
         crop: NormalizedPhotoCrop,
         photoRect: CGRect,
+        basePhotoClip: CGRect? = nil,
         envelope: CGRect,
         protectedZones: [CGRect] = [],
+        photoRevealRect: CGRect? = nil,
         maximumDimension: Int = 192
     ) -> Metrics? {
         let width = mask.width
@@ -1759,14 +1998,25 @@ struct SpotlightBreakoutGeometry {
         context.draw(mask, in: CGRect(x: 0, y: 0, width: sampleWidth, height: sampleHeight))
 
         let transform = SpotlightPhotoTransform(
-            sourceSize: CGSize(width: width, height: height),
+            sourceSize: sourceSize,
             crop: crop,
             destinationFrame: photoRect
         )
+        let baseClip = basePhotoClip ?? photoRect
         var foreground = 0
         var outsidePhoto = 0
         var outsideEnvelope = 0
         var protected = 0
+        var visibleEscape = 0
+        var visibleMinX = CGFloat.greatestFiniteMagnitude
+        var visibleMinY = CGFloat.greatestFiniteMagnitude
+        var visibleMaxX = -CGFloat.greatestFiniteMagnitude
+        var visibleMaxY = -CGFloat.greatestFiniteMagnitude
+        var newlyRevealed = 0
+        var newlyRevealedMinX = CGFloat.greatestFiniteMagnitude
+        var newlyRevealedMinY = CGFloat.greatestFiniteMagnitude
+        var newlyRevealedMaxX = -CGFloat.greatestFiniteMagnitude
+        var newlyRevealedMaxY = -CGFloat.greatestFiniteMagnitude
         for index in pixels.indices where pixels[index] > 32 {
             foreground += 1
             let x = index % sampleWidth
@@ -1779,16 +2029,54 @@ struct SpotlightBreakoutGeometry {
                 x: transform.fullImageDestination.minX + normalizedPoint.x * transform.fullImageDestination.width,
                 y: transform.fullImageDestination.minY + normalizedPoint.y * transform.fullImageDestination.height
             )
-            if !photoRect.contains(projectedPoint) { outsidePhoto += 1 }
-            if !envelope.contains(projectedPoint) { outsideEnvelope += 1 }
-            if protectedZones.contains(where: { $0.contains(projectedPoint) }) { protected += 1 }
+            let isOutsidePhoto = !photoRect.contains(projectedPoint)
+            let isOutsideEnvelope = !envelope.contains(projectedPoint)
+            let isProtected = protectedZones.contains(where: { $0.contains(projectedPoint) })
+            if isOutsidePhoto { outsidePhoto += 1 }
+            if isOutsideEnvelope { outsideEnvelope += 1 }
+            if isProtected { protected += 1 }
+            // What the base photo layer actually covers. The Excellent path does not install the
+            // full-width rectangular clip: it draws the whole photo and punches a single
+            // subject-anchored aperture out of it, so foreground sitting in the top band *beside*
+            // that aperture lands on unchanged photo pixels and is not visible escape at all.
+            let isCoveredByBasePhoto = if let photoRevealRect {
+                photoRect.contains(projectedPoint) && !photoRevealRect.contains(projectedPoint)
+            } else {
+                baseClip.contains(projectedPoint)
+            }
+            if !isCoveredByBasePhoto, !isOutsideEnvelope, !isProtected {
+                visibleEscape += 1
+                visibleMinX = min(visibleMinX, projectedPoint.x)
+                visibleMinY = min(visibleMinY, projectedPoint.y)
+                visibleMaxX = max(visibleMaxX, projectedPoint.x)
+                visibleMaxY = max(visibleMaxY, projectedPoint.y)
+                if photoRect.contains(projectedPoint) {
+                    if photoRevealRect?.contains(projectedPoint) ?? true {
+                        newlyRevealed += 1
+                        newlyRevealedMinX = min(newlyRevealedMinX, projectedPoint.x)
+                        newlyRevealedMinY = min(newlyRevealedMinY, projectedPoint.y)
+                        newlyRevealedMaxX = max(newlyRevealedMaxX, projectedPoint.x)
+                        newlyRevealedMaxY = max(newlyRevealedMaxY, projectedPoint.y)
+                    }
+                }
+            }
         }
         guard foreground > 0 else { return nil }
+        let visibleEscapeBounds: CGRect? = visibleEscape > 0
+            ? CGRect(x: visibleMinX, y: visibleMinY, width: visibleMaxX - visibleMinX, height: visibleMaxY - visibleMinY)
+            : nil
+        let newlyRevealedBounds: CGRect? = newlyRevealed > 0
+            ? CGRect(x: newlyRevealedMinX, y: newlyRevealedMinY, width: newlyRevealedMaxX - newlyRevealedMinX, height: newlyRevealedMaxY - newlyRevealedMinY)
+            : nil
         return Metrics(
             sampledForegroundFraction: CGFloat(foreground) / CGFloat(pixels.count),
             outsidePhotoFraction: CGFloat(outsidePhoto) / CGFloat(foreground),
             outsideEnvelopeFraction: CGFloat(outsideEnvelope) / CGFloat(foreground),
-            protectedZoneFraction: CGFloat(protected) / CGFloat(foreground)
+            protectedZoneFraction: CGFloat(protected) / CGFloat(foreground),
+            visibleEscapeFraction: CGFloat(visibleEscape) / CGFloat(foreground),
+            visibleEscapeBounds: visibleEscapeBounds,
+            newlyRevealedFraction: CGFloat(newlyRevealed) / CGFloat(foreground),
+            newlyRevealedBounds: newlyRevealedBounds
         )
     }
 }
@@ -1799,6 +2087,50 @@ private enum SpotlightPlayerCardRenderer {
         PlayerCardArtworkRenderer.drawBackground(in: context, accent: colors.atmosphericAccent, atmosphere: model.tuning.spotlightAtmosphere)
         let photoRect = CGRect(x: (PlayerCardModel.canvasSize.width - model.tuning.spotlightPhotoWidth) / 2, y: model.tuning.spotlightPhotoY, width: model.tuning.spotlightPhotoWidth, height: model.tuning.spotlightPhotoHeight)
 
+        let enhancedQuality: SpotlightSegmentationQuality? = {
+            guard let analysis = model.spotlightAnalysis else { return nil }
+            let quality = effectiveQuality(model, analysis: analysis)
+            return quality == .fallback ? nil : quality
+        }()
+        let sourceSize = model.photo?.rollCallNormalizedUpImage().cgImage.map {
+            CGSize(width: $0.width, height: $0.height)
+        }
+        let candidateEnvelope = enhancedQuality.map {
+            SpotlightBreakoutGeometry.envelope(
+                photoRect: photoRect,
+                breakout: model.tuning.spotlightBreakout,
+                quality: $0
+            )
+        }
+        let basePhotoClip: CGRect = if let quality = enhancedQuality, let sourceSize {
+            SpotlightBreakoutGeometry.resolvedBasePhotoClip(
+                mask: model.spotlightAnalysis?.processedMask,
+                sourceSize: sourceSize,
+                crop: model.crop,
+                photoRect: photoRect,
+                breakout: model.tuning.spotlightBreakout,
+                quality: quality,
+                subjectBounds: model.spotlightAnalysis?.maskBounds,
+                faceBounds: model.spotlightAnalysis?.faceBounds
+            )
+        } else {
+            photoRect
+        }
+        let basePhotoRevealRect: CGRect? = if let quality = enhancedQuality, let sourceSize {
+            SpotlightBreakoutGeometry.basePhotoRevealRect(
+                photoRect: photoRect,
+                basePhotoClip: basePhotoClip,
+                sourceSize: sourceSize,
+                crop: model.crop,
+                quality: quality,
+                subjectBounds: model.spotlightAnalysis?.maskBounds,
+                faceBounds: model.spotlightAnalysis?.faceBounds
+            )
+        } else {
+            nil
+        }
+        let rectangularPhotoClip: CGRect? = basePhotoRevealRect == nil && basePhotoClip != photoRect ? basePhotoClip : nil
+
         let backPlane = photoRect.offsetBy(dx: 34, dy: -28)
         context.setFillColor(colors.planeAccent.uiColor.withAlphaComponent(0.72).cgColor)
         context.fill(backPlane)
@@ -1808,15 +2140,11 @@ private enum SpotlightPlayerCardRenderer {
         // Keep the giant number behind the photo, but offset it far enough right that its graphic
         // structure remains visible around the centered portrait frame.
         PlayerCardArtworkRenderer.drawGiantNumber(model.playerNumber, in: CGRect(x: 500, y: 180, width: 560, height: 610), color: colors.numberAccent.uiColor, opacity: model.tuning.spotlightGiantNumberOpacity, context: context)
-        PlayerCardArtworkRenderer.drawPhoto(model.photo, crop: model.crop, in: photoRect, context: context, cornerRadius: 22, edgeLight: colors.rimLightAccent, edgeLightStrength: 0.22)
+        PlayerCardArtworkRenderer.drawPhoto(model.photo, crop: model.crop, in: photoRect, context: context, cornerRadius: 22, edgeLight: colors.rimLightAccent, edgeLightStrength: 0.22, clipRect: rectangularPhotoClip, revealRect: basePhotoRevealRect)
 
         if let analysis = model.spotlightAnalysis, effectiveQuality(model, analysis: analysis) != .fallback, let photo = model.photo {
             let quality = effectiveQuality(model, analysis: analysis)
-            let envelope = SpotlightBreakoutGeometry.envelope(
-                photoRect: photoRect,
-                breakout: model.tuning.spotlightBreakout,
-                quality: quality
-            )
+            let envelope = candidateEnvelope ?? SpotlightBreakoutGeometry.envelope(photoRect: photoRect, breakout: model.tuning.spotlightBreakout, quality: quality)
             let rim = analysis.rimLightMask
             context.saveGState()
             context.setAlpha(model.tuning.spotlightRimLight * (quality == .usable ? 0.55 : 1))
@@ -2333,6 +2661,11 @@ struct PlayerCardLabView: View {
     @State private var renderedSpotlightDiagnosticState: SpotlightDiagnosticState?
     @State private var renderedImage: UIImage?
     @State private var exportedURL: URL?
+    @State private var latestOutputImage: UIImage?
+    @State private var latestOutputTitle: String?
+    @State private var latestOutputRevision = 0
+    @State private var activeComparisonToken: UUID?
+    @State private var activeComparisonTask: Task<Void, Never>?
     @State private var isRendering = false
     @State private var isAnalyzing = false
     @State private var isGeneratingContactSheet = false
@@ -2358,7 +2691,7 @@ struct PlayerCardLabView: View {
     private var renderIdentity: String {
         let colorIdentity = [String(describing: teamColor.red), String(describing: teamColor.green), String(describing: teamColor.blue)].joined(separator: ",")
         let analysisIdentity = [spotlightAnalysis?.cacheKey ?? "no-analysis", spotlightAnalysis?.quality.rawValue ?? "none"].joined(separator: ",")
-        return [template.title, String(template.version), fixtureID, colorIdentity, String(describing: tuning), segmentationMode.rawValue, segmentationBackend.rawValue, String(spotlightAnalysisRetryGeneration), analysisIdentity, photoIdentity, String(describing: automaticPhotoCrop)].joined(separator: "|")
+        return [template.stableIdentifier, String(template.version), fixtureID, colorIdentity, String(describing: tuning), segmentationMode.rawValue, segmentationBackend.rawValue, String(spotlightAnalysisRetryGeneration), analysisIdentity, photoIdentity, String(describing: automaticPhotoCrop)].joined(separator: "|")
     }
 
     private var photoIdentity: String {
@@ -2375,23 +2708,100 @@ struct PlayerCardLabView: View {
         spotlightAnalysisDiagnostic ?? .notAnalyzed
     }
 
+    private func selectTemplate(_ newTemplate: PlayerCardTemplate) {
+        guard template != newTemplate else { return }
+
+        // Invalidate any in-flight render or Vision analysis before changing the
+        // visible template. The old async result must never win the race and
+        // put the previous card back on screen.
+        invalidateComparisonWork()
+        template = newTemplate
+        spotlightAnalysis = nil
+        spotlightAnalysisDiagnostic = nil
+        spotlightBreakoutMetrics = nil
+        spotlightAnalysisAttemptKey = nil
+        renderedSpotlightDiagnosticState = nil
+        renderedImage = nil
+        isRendering = false
+        isAnalyzing = false
+        activeSpotlightRenderToken = UUID()
+        clearLatestOutput()
+        message = "Switching to \(newTemplate.title)…"
+    }
+
+    private func clearLatestOutput() {
+        exportedURL = nil
+        latestOutputImage = nil
+        latestOutputTitle = nil
+    }
+
+    /// Starts a comparison job and keeps ownership of it for its whole lifetime.
+    ///
+    /// The generation token only protects *publication*: it stops a stale job from putting an
+    /// obsolete contact sheet on screen. It does nothing about the work itself, which is why the
+    /// task has to be retained. Re-enabling the controls the moment a job is invalidated would let
+    /// a second Vision/contact-sheet job start while the first one is still holding the CPU, and
+    /// would tell the user the Lab is idle when it is not.
+    private func startComparisonWork(_ work: @escaping @MainActor () async -> Void) {
+        guard activeComparisonTask == nil else { return }
+        isGeneratingContactSheet = true
+        activeComparisonTask = Task { @MainActor in
+            await work()
+            activeComparisonTask = nil
+            isGeneratingContactSheet = false
+        }
+    }
+
+    /// Invalidates any in-flight comparison results and asks the active job to stop.
+    ///
+    /// Deliberately leaves `isGeneratingContactSheet` alone: the flag belongs to the job's actual
+    /// lifetime, and `startComparisonWork` clears it when the task really finishes unwinding.
+    private func invalidateComparisonWork() {
+        activeComparisonToken = UUID()
+        activeComparisonTask?.cancel()
+        clearLatestOutput()
+    }
+
+    private func publishComparison(_ image: UIImage, named name: String, title: String, statusMessage: String, token: UUID) {
+        guard activeComparisonToken == token, !Task.isCancelled else { return }
+        do {
+            let url = try CardExportService.writePNG(image, named: name)
+            exportedURL = url
+            latestOutputImage = image
+            latestOutputTitle = title
+            latestOutputRevision += 1
+            message = "\(statusMessage) See it below. Ready to share as \(url.lastPathComponent)."
+        } catch {
+            clearLatestOutput()
+            message = error.localizedDescription
+        }
+    }
+
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 18) {
-                templateSection
-                fixtureSection
-                colorSection
-                if template.title == "Spotlight" {
-                    spotlightSection
+        ScrollViewReader { scrollProxy in
+            ScrollView {
+                VStack(alignment: .leading, spacing: 18) {
+                    templateSection
+                    fixtureSection
+                    colorSection
+                    if template.isSpotlight {
+                        spotlightSection
+                    }
+                    tuningSection
+                    diagnosticsSection
+                    if template.isSpotlight, spotlightAnalysis != nil {
+                        spotlightOverlaySection
+                    }
+                    exportSection
+                    latestOutputSection
                 }
-                tuningSection
-                diagnosticsSection
-                if template.title == "Spotlight", spotlightAnalysis != nil {
-                    spotlightOverlaySection
-                }
-                exportSection
+                .padding(16)
             }
-            .padding(16)
+            .onChange(of: latestOutputRevision) { _, _ in
+                withAnimation(.easeInOut(duration: 0.25)) {
+                    scrollProxy.scrollTo("latest-lab-output", anchor: .top)
+                }
+            }
         }
         .safeAreaInset(edge: .top, spacing: 0) {
             if showPinnedPreview {
@@ -2438,6 +2848,7 @@ struct PlayerCardLabView: View {
             await prepareAutomaticPhotoCrop()
         }
         .onChange(of: fixtureID) { _, _ in
+            invalidateComparisonWork()
             if importedPhoto == nil {
                 automaticPhotoCrop = nil
             }
@@ -2448,17 +2859,10 @@ struct PlayerCardLabView: View {
             renderedSpotlightDiagnosticState = nil
             activeSpotlightRenderToken = UUID()
             exportedURL = nil
-        }
-        .onChange(of: template) { _, newTemplate in
-            if newTemplate.title != "Spotlight" { spotlightAnalysis = nil }
-            if newTemplate.title != "Spotlight" { spotlightAnalysisDiagnostic = nil }
-            spotlightBreakoutMetrics = nil
-            spotlightAnalysisAttemptKey = nil
-            renderedSpotlightDiagnosticState = nil
-            activeSpotlightRenderToken = UUID()
-            exportedURL = nil
+            clearLatestOutput()
         }
         .onChange(of: segmentationBackend) { _, _ in
+            invalidateComparisonWork()
             spotlightAnalysis = nil
             spotlightAnalysisDiagnostic = nil
             spotlightBreakoutMetrics = nil
@@ -2466,6 +2870,19 @@ struct PlayerCardLabView: View {
             renderedSpotlightDiagnosticState = nil
             activeSpotlightRenderToken = UUID()
             exportedURL = nil
+            clearLatestOutput()
+        }
+        .onChange(of: segmentationMode) { _, _ in
+            invalidateComparisonWork()
+        }
+        .onChange(of: tuning) { _, _ in
+            invalidateComparisonWork()
+        }
+        .onChange(of: teamColor) { _, _ in
+            invalidateComparisonWork()
+        }
+        .onChange(of: automaticPhotoCrop) { _, _ in
+            invalidateComparisonWork()
         }
         .onChange(of: photoPickerItem) { _, item in
             guard let item else { return }
@@ -2474,6 +2891,7 @@ struct PlayerCardLabView: View {
                     message = "Could not load that photo into the Lab."
                     return
                 }
+                invalidateComparisonWork()
                 importedPhoto = image.rollCallNormalizedUpImage()
                 automaticPhotoCrop = nil
                 selectedLabPhotoID = nil
@@ -2483,6 +2901,7 @@ struct PlayerCardLabView: View {
                 spotlightAnalysisAttemptKey = nil
                 renderedSpotlightDiagnosticState = nil
                 activeSpotlightRenderToken = UUID()
+                clearLatestOutput()
                 message = "Imported photo is active for this Lab session only."
             }
         }
@@ -2494,14 +2913,14 @@ struct PlayerCardLabView: View {
                 Text("Canonical preview")
                     .font(.headline)
                 Spacer()
-                if template.title == "Spotlight" {
+                if template.isSpotlight {
                     StatusChip(
                         text: displayedSpotlightDiagnosticState.label,
                         role: displayedSpotlightDiagnosticState.role,
                         systemImage: displayedSpotlightDiagnosticState.systemImage,
                         emphasis: .subdued
                     )
-                        .accessibilityIdentifier("spotlight-diagnostic-state")
+                        .accessibilityIdentifier("testing-diagnostic-state")
                 }
                 Text("1080 × 1350 PNG")
                     .font(.caption.weight(.semibold))
@@ -2538,12 +2957,20 @@ struct PlayerCardLabView: View {
 
     private var templateSection: some View {
         GroupBox("Template") {
-            Picker("Template", selection: $template) {
+            HStack(spacing: 8) {
                 ForEach(PlayerCardTemplate.allCases, id: \.self) { item in
-                    Text(item.title).tag(item)
+                    Button(item.title) {
+                        selectTemplate(item)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .buttonStyle(.bordered)
+                    .tint(template == item ? .accentColor : .secondary)
+                    .font(.subheadline.weight(template == item ? .semibold : .regular))
+                    .accessibilityIdentifier("player-card-template-\(item.title.lowercased())")
+                    .accessibilityValue(template == item ? "Selected" : "Not selected")
                 }
             }
-            .pickerStyle(.segmented)
+            .accessibilityElement(children: .contain)
             .accessibilityLabel("Player Card template")
         }
     }
@@ -2563,6 +2990,7 @@ struct PlayerCardLabView: View {
                 labPhotoFixtureSection
                 if importedPhoto != nil {
                     Button("Use generated fixture photo") {
+                        invalidateComparisonWork()
                         importedPhoto = nil
                         automaticPhotoCrop = nil
                         selectedLabPhotoID = nil
@@ -2572,6 +3000,7 @@ struct PlayerCardLabView: View {
                         spotlightAnalysisAttemptKey = nil
                         renderedSpotlightDiagnosticState = nil
                         activeSpotlightRenderToken = UUID()
+                        clearLatestOutput()
                     }
                     .font(.footnote)
                 }
@@ -2589,6 +3018,7 @@ struct PlayerCardLabView: View {
             LazyVGrid(columns: [GridItem(.adaptive(minimum: 92), spacing: 10)], spacing: 10) {
                 ForEach(LabPhotoFixture.allCases) { fixture in
                     Button {
+                        invalidateComparisonWork()
                         guard let image = fixture.image else {
                             message = "Could not load \(fixture.title) into the Lab."
                             return
@@ -2603,6 +3033,7 @@ struct PlayerCardLabView: View {
                         spotlightAnalysisAttemptKey = nil
                         renderedSpotlightDiagnosticState = nil
                         activeSpotlightRenderToken = UUID()
+                        clearLatestOutput()
                         message = "\(fixture.title) is active for this Lab session only."
                     } label: {
                         VStack(alignment: .leading, spacing: 5) {
@@ -2668,7 +3099,7 @@ struct PlayerCardLabView: View {
     }
 
     private var spotlightSection: some View {
-        GroupBox("Spotlight segmentation") {
+        GroupBox("Testing segmentation") {
             VStack(alignment: .leading, spacing: 10) {
                 Picker("Mask backend", selection: $segmentationBackend) {
                     ForEach(SpotlightSegmentationBackend.allCases, id: \.self) { backend in
@@ -2683,13 +3114,15 @@ struct PlayerCardLabView: View {
                 }
                 .pickerStyle(.segmented)
                 Button("Compare Segmentation States") {
-                    Task { await compareSegmentationStates() }
+                    startComparisonWork { await compareSegmentationStates() }
                 }
                 .buttonStyle(.bordered)
+                .disabled(isGeneratingContactSheet)
                 Button("Compare Mask Backends") {
-                    Task { await compareMaskBackends() }
+                    startComparisonWork { await compareMaskBackends() }
                 }
                 .buttonStyle(.bordered)
+                .disabled(isGeneratingContactSheet)
                 Button("Retry Current Analysis") {
                     spotlightAnalysis = nil
                     spotlightAnalysisDiagnostic = nil
@@ -2697,6 +3130,7 @@ struct PlayerCardLabView: View {
                     spotlightAnalysisAttemptKey = nil
                     spotlightAnalysisRetryGeneration += 1
                     activeSpotlightRenderToken = UUID()
+                    clearLatestOutput()
                 }
                 .buttonStyle(.bordered)
                 .disabled(currentFixture.model.photo == nil || isAnalyzing)
@@ -2713,12 +3147,12 @@ struct PlayerCardLabView: View {
     private var tuningSection: some View {
         DisclosureGroup("Provisional visual controls", isExpanded: $showTuning) {
             VStack(alignment: .leading, spacing: 12) {
-                if template.title == "Clean" {
+                if template.isClean {
                     labSlider("Gradient start", keyPath: \.cleanGradientStart, range: 0.35...0.85)
                     labSlider("Gradient strength", keyPath: \.cleanGradientStrength, range: 0.55...1.0)
                     labSlider("Name Y", keyPath: \.cleanNameY, range: 680...820)
                     labSlider("Edge light", keyPath: \.cleanEdgeLight, range: 0.00...0.75)
-                } else if template.title == "Broadcast" {
+                } else if template.isBroadcast {
                     labSlider("Broadcast angle", keyPath: \.broadcastAngle, range: 7...17)
                     labSlider("Lower-third Y", keyPath: \.broadcastLowerThirdY, range: 620...900)
                     labSlider("Photo height", keyPath: \.broadcastPhotoHeight, range: 800...1_300)
@@ -2751,7 +3185,7 @@ struct PlayerCardLabView: View {
                 LabeledContent("Template version", value: "\(template.title) \(template.version)")
                 LabeledContent("Canvas", value: "1080 × 1350, scale 1")
                 LabeledContent("Photo source", value: importedPhoto == nil ? "Procedural fixture" : "Owner-imported session photo")
-                if template.title == "Spotlight" {
+                if template.isSpotlight {
                     LabeledContent("Cache", value: spotlightAnalysis?.wasCacheHit == true ? "Hit" : (spotlightAnalysis == nil ? "Not analyzed" : "Miss"))
                         LabeledContent("Rendered state", value: displayedSpotlightDiagnosticState.label)
                         LabeledContent("Analysis quality", value: spotlightAnalysis?.quality.rawValue.capitalized ?? "Not analyzed")
@@ -2791,7 +3225,7 @@ struct PlayerCardLabView: View {
     }
 
     private var spotlightOverlaySection: some View {
-        GroupBox("Spotlight debug overlays") {
+        GroupBox("Testing debug overlays") {
             VStack(alignment: .leading, spacing: 10) {
                 Toggle("Show bounds and protected zones", isOn: $showSpotlightOverlays)
                 if showSpotlightOverlays, let analysis = spotlightAnalysis {
@@ -2805,8 +3239,10 @@ struct PlayerCardLabView: View {
                             let size = proxy.size
                             let model = currentFixture.model
                             overlayRect(projectedSourceBounds(analysis.personBounds ?? analysis.maskBounds, in: model), in: size, color: .green, label: "subject")
+                            overlayRect(spotlightBasePhotoClipFrame(for: model), in: size, color: .cyan, label: "photo aperture")
                             overlayRect(spotlightBreakoutFrame(for: model), in: size, color: .orange, label: "breakout")
-                            overlayRect(CGRect(x: 0.05, y: 0.66, width: 0.90, height: 0.18), in: size, color: .red, label: "protected name")
+                            let protected = SpotlightBreakoutGeometry.protectedTypographyZone
+                            overlayRect(CGRect(x: protected.minX / PlayerCardModel.canvasSize.width, y: protected.minY / PlayerCardModel.canvasSize.height, width: protected.width / PlayerCardModel.canvasSize.width, height: protected.height / PlayerCardModel.canvasSize.height), in: size, color: .red, label: "protected name")
                             if let faceBounds = analysis.faceBounds {
                                 overlayRect(projectedSourceBounds(faceBounds, in: model), in: size, color: .blue, label: "face")
                             }
@@ -2820,7 +3256,7 @@ struct PlayerCardLabView: View {
                         maskPreview(title: "Processed mask", image: UIImage(cgImage: analysis.processedMask))
                         maskPreview(title: "Rim mask", image: UIImage(cgImage: analysis.rimLightMask))
                     }
-                    Text("Green subject bounds • orange breakout envelope • red protected typography zone • blue face bounds • rim mask and foreground use the same source-photo transform.")
+                    Text("Green subject bounds • cyan applied photo aperture (full photo frame means no reveal) • orange breakout envelope • red protected typography zone • blue face bounds • rim mask and foreground use the same source-photo transform.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
@@ -2842,8 +3278,13 @@ struct PlayerCardLabView: View {
         )
     }
 
+    private func spotlightSourceSize(for model: PlayerCardModel) -> CGSize? {
+        model.photo?.rollCallNormalizedUpImage().cgImage.map { CGSize(width: $0.width, height: $0.height) }
+    }
+
     private func breakoutMetrics(for analysis: SpotlightAnalysisResult, model: PlayerCardModel) -> SpotlightBreakoutGeometry.Metrics? {
         let photoRect = spotlightPhotoRect(for: model)
+        guard let sourceSize = spotlightSourceSize(for: model) else { return nil }
         let quality: SpotlightSegmentationQuality = switch model.segmentationMode {
         case .auto: analysis.quality
         case .forceExcellent: .excellent
@@ -2856,12 +3297,34 @@ struct PlayerCardLabView: View {
             breakout: model.tuning.spotlightBreakout,
             quality: quality
         )
-        return SpotlightBreakoutGeometry.measure(
+        let basePhotoClip = SpotlightBreakoutGeometry.resolvedBasePhotoClip(
             mask: analysis.processedMask,
+            sourceSize: sourceSize,
             crop: model.crop,
             photoRect: photoRect,
+            breakout: model.tuning.spotlightBreakout,
+            quality: quality,
+            subjectBounds: analysis.maskBounds,
+            faceBounds: analysis.faceBounds
+        )
+        let revealRect = SpotlightBreakoutGeometry.basePhotoRevealRect(
+            photoRect: photoRect,
+            basePhotoClip: basePhotoClip,
+            sourceSize: sourceSize,
+            crop: model.crop,
+            quality: quality,
+            subjectBounds: analysis.maskBounds,
+            faceBounds: analysis.faceBounds
+        )
+        return SpotlightBreakoutGeometry.measure(
+            mask: analysis.processedMask,
+            sourceSize: sourceSize,
+            crop: model.crop,
+            photoRect: photoRect,
+            basePhotoClip: basePhotoClip,
             envelope: envelope,
-            protectedZones: [CGRect(x: 54, y: 891, width: 972, height: 243)]
+            protectedZones: [SpotlightBreakoutGeometry.protectedTypographyZone],
+            photoRevealRect: revealRect
         )
     }
 
@@ -2887,6 +3350,43 @@ struct PlayerCardLabView: View {
             y: envelope.minY / PlayerCardModel.canvasSize.height,
             width: envelope.width / PlayerCardModel.canvasSize.width,
             height: envelope.height / PlayerCardModel.canvasSize.height
+        )
+    }
+
+    private func spotlightBasePhotoClipFrame(for model: PlayerCardModel) -> CGRect {
+        guard let analysis = model.spotlightAnalysis else { return spotlightPhotoFrame(for: model) }
+        guard let sourceSize = spotlightSourceSize(for: model) else { return spotlightPhotoFrame(for: model) }
+        let quality: SpotlightSegmentationQuality = switch model.segmentationMode {
+        case .auto: analysis.quality
+        case .forceExcellent: .excellent
+        case .forceUsable: .usable
+        case .forceFallback: .fallback
+        }
+        let photoRect = spotlightPhotoRect(for: model)
+        let clip = SpotlightBreakoutGeometry.resolvedBasePhotoClip(
+            mask: analysis.processedMask,
+            sourceSize: sourceSize,
+            crop: model.crop,
+            photoRect: photoRect,
+            breakout: model.tuning.spotlightBreakout,
+            quality: quality,
+            subjectBounds: analysis.maskBounds,
+            faceBounds: analysis.faceBounds
+        )
+        let aperture = SpotlightBreakoutGeometry.basePhotoRevealRect(
+            photoRect: photoRect,
+            basePhotoClip: clip,
+            sourceSize: sourceSize,
+            crop: model.crop,
+            quality: quality,
+            subjectBounds: analysis.maskBounds,
+            faceBounds: analysis.faceBounds
+        ) ?? clip
+        return CGRect(
+            x: aperture.minX / PlayerCardModel.canvasSize.width,
+            y: aperture.minY / PlayerCardModel.canvasSize.height,
+            width: aperture.width / PlayerCardModel.canvasSize.width,
+            height: aperture.height / PlayerCardModel.canvasSize.height
         )
     }
 
@@ -2933,7 +3433,7 @@ struct PlayerCardLabView: View {
                 }
                 .buttonStyle(.borderedProminent)
                 Button {
-                    Task { await generateTemplateContactSheet() }
+                    startComparisonWork { await generateTemplateContactSheet() }
                 } label: {
                     HStack(spacing: 8) {
                         if isGeneratingContactSheet {
@@ -2945,16 +3445,51 @@ struct PlayerCardLabView: View {
                 }
                 .buttonStyle(.bordered)
                 .disabled(isGeneratingContactSheet)
-                if let exportedURL {
+                if let exportedURL, latestOutputImage == nil {
                     ShareLink(item: exportedURL) {
-                        Label("Share latest Lab output", systemImage: "square.and.arrow.up")
+                        Label("Share latest card output", systemImage: "square.and.arrow.up")
                     }
                     .font(.subheadline.weight(.semibold))
+                    Text("Ready to share: \(exportedURL.lastPathComponent)")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                 }
                 Text("Outputs are written to a temporary Lab directory and are not added to team state, packages, or the production share flow.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
+        }
+    }
+
+    @ViewBuilder
+    private var latestOutputSection: some View {
+        if let latestOutputImage, let exportedURL {
+            GroupBox("Latest generated comparison") {
+                VStack(alignment: .leading, spacing: 10) {
+                    Text(latestOutputTitle ?? "Comparison")
+                        .font(.headline)
+                    Image(uiImage: latestOutputImage)
+                        .resizable()
+                        .scaledToFit()
+                        .frame(maxWidth: .infinity)
+                        .frame(maxHeight: 520)
+                        .background(Color(uiColor: .secondarySystemGroupedBackground))
+                        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                        .accessibilityLabel("Generated comparison preview")
+                    Text("This comparison is shown here immediately. The PNG is ready to share as \(exportedURL.lastPathComponent).")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    ShareLink(item: exportedURL) {
+                        Label("Share comparison", systemImage: "square.and.arrow.up")
+                    }
+                    .font(.subheadline.weight(.semibold))
+                    Button("Dismiss comparison") {
+                        clearLatestOutput()
+                    }
+                    .font(.footnote)
+                }
+            }
+            .id("latest-lab-output")
         }
     }
 
@@ -2999,7 +3534,7 @@ struct PlayerCardLabView: View {
         }.value
         guard !Task.isCancelled, activeSpotlightRenderToken == renderToken, renderIdentity == renderIdentityAtStart else { return }
         renderedImage = image
-        if template.title == "Spotlight" {
+        if template.isSpotlight {
             if let analysis = spotlightAnalysis {
                 spotlightBreakoutMetrics = breakoutMetrics(for: analysis, model: fallbackModel)
             } else {
@@ -3021,7 +3556,7 @@ struct PlayerCardLabView: View {
         }
         isRendering = false
 
-        guard template.title == "Spotlight", let photo = fallbackModel.photo, spotlightAnalysis == nil else { return }
+        guard template.isSpotlight, let photo = fallbackModel.photo, spotlightAnalysis == nil else { return }
         let identity = SpotlightAnalysisService.sourceIdentity(for: photo)
         let analysisKey = SpotlightAnalysisService.cacheKey(for: identity, crop: fallbackModel.crop, backend: segmentationBackend)
         guard spotlightAnalysisAttemptKey != analysisKey else { return }
@@ -3057,20 +3592,25 @@ struct PlayerCardLabView: View {
 
     private func exportCurrentCard() async {
         guard let renderedImage else { return }
+        clearLatestOutput()
         do {
             exportedURL = try CardExportService.writePNG(renderedImage, named: "\(template.title.lowercased())-\(fixtureID)")
-            message = "Exported canonical PNG to the temporary Lab directory."
+            message = "Exported canonical PNG. Ready to share as \(exportedURL?.lastPathComponent ?? "the latest card output")."
         } catch {
             message = error.localizedDescription
         }
     }
 
     private func generateTemplateContactSheet() async {
-        guard !isGeneratingContactSheet else { return }
-        isGeneratingContactSheet = true
-        exportedURL = nil
+        let token = UUID()
+        let snapshotImportedPhoto = importedPhoto
+        let snapshotCrop = automaticPhotoCrop
+        let snapshotTuning = tuning
+        let snapshotTeamColor = teamColor
+        let snapshotBackend = segmentationBackend
+        activeComparisonToken = token
+        clearLatestOutput()
         message = "Generating template comparison…"
-        defer { isGeneratingContactSheet = false }
 
         let comparisonIDs = ["normal", "long-name", "no-music", "bright", "dark", "wild-color"]
         let totalFixtureCount = comparisonIDs.count * PlayerCardTemplate.allCases.count
@@ -3078,58 +3618,78 @@ struct PlayerCardLabView: View {
         var spotlightAnalysesByIdentity: [String: SpotlightAnalysisResult] = [:]
         for id in comparisonIDs {
             for item in PlayerCardTemplate.allCases {
-                var fixture = CardFixtureLibrary.fixture(id: id, template: item, importedPhoto: importedPhoto, crop: automaticPhotoCrop, tuning: tuning, colorOverride: teamColor)
-                if item.title == "Spotlight", let photo = fixture.model.photo {
-                    let identity = "\(SpotlightAnalysisService.sourceIdentity(for: photo))|\(segmentationBackend.rawValue)"
+                guard activeComparisonToken == token, !Task.isCancelled else { return }
+                var fixture = CardFixtureLibrary.fixture(id: id, template: item, importedPhoto: snapshotImportedPhoto, crop: snapshotCrop, tuning: snapshotTuning, colorOverride: snapshotTeamColor)
+                if item.isSpotlight, let photo = fixture.model.photo {
+                    let identity = "\(SpotlightAnalysisService.sourceIdentity(for: photo))|\(snapshotBackend.rawValue)"
                     if let cached = spotlightAnalysesByIdentity[identity] {
-                        fixture = CardFixtureLibrary.fixture(id: id, template: item, importedPhoto: importedPhoto, crop: automaticPhotoCrop, tuning: tuning, colorOverride: teamColor, analysis: cached)
+                        fixture = CardFixtureLibrary.fixture(id: id, template: item, importedPhoto: snapshotImportedPhoto, crop: snapshotCrop, tuning: snapshotTuning, colorOverride: snapshotTeamColor, analysis: cached)
                     } else {
                         let report = await SpotlightAnalysisService.shared.analyze(
                             photo: photo,
                             crop: fixture.model.crop,
                             identity: SpotlightAnalysisService.sourceIdentity(for: photo),
-                            backend: segmentationBackend
+                            backend: snapshotBackend
                         )
+                        guard activeComparisonToken == token, !Task.isCancelled else { return }
                         if let analysis = report.result {
                             spotlightAnalysesByIdentity[identity] = analysis
-                            fixture = CardFixtureLibrary.fixture(id: id, template: item, importedPhoto: importedPhoto, crop: automaticPhotoCrop, tuning: tuning, colorOverride: teamColor, analysis: analysis)
+                            fixture = CardFixtureLibrary.fixture(id: id, template: item, importedPhoto: snapshotImportedPhoto, crop: snapshotCrop, tuning: snapshotTuning, colorOverride: snapshotTeamColor, analysis: analysis)
                         }
                     }
                 }
                 fixtures.append(fixture)
-                message = "Generating template comparison… \(fixtures.count) of \(totalFixtureCount)"
+                if activeComparisonToken == token {
+                    message = "Generating template comparison… \(fixtures.count) of \(totalFixtureCount)"
+                }
             }
         }
+        guard activeComparisonToken == token, !Task.isCancelled else { return }
         let sheet = await Task.detached(priority: .userInitiated) {
             CardExportService.contactSheet(fixtures: fixtures, columns: 3)
         }.value
-        do {
-            exportedURL = try CardExportService.writePNG(sheet, named: "template-comparison-contact-sheet")
-            message = "Generated a template comparison contact sheet."
-        } catch {
-            message = error.localizedDescription
-        }
+        guard activeComparisonToken == token, !Task.isCancelled else { return }
+        publishComparison(
+            sheet,
+            named: "template-comparison-contact-sheet",
+            title: "Template comparison contact sheet",
+            statusMessage: "Generated a template comparison contact sheet.",
+            token: token
+        )
     }
 
     private func compareSegmentationStates() async {
-        guard template.title == "Spotlight" else { return }
+        guard template.isSpotlight else { return }
+        let token = UUID()
+        let snapshotFixtureID = fixtureID
+        let snapshotImportedPhoto = importedPhoto
+        let snapshotCrop = automaticPhotoCrop
+        let snapshotTuning = tuning
+        let snapshotTeamColor = teamColor
+        let snapshotAnalysis = spotlightAnalysis
+        activeComparisonToken = token
+        clearLatestOutput()
+        message = "Generating segmentation comparison…"
+
         let modes: [SpotlightSegmentationMode] = [.forceExcellent, .forceUsable, .forceFallback]
         let fixtures = modes.map { mode in
-            let fixture = CardFixtureLibrary.fixture(id: fixtureID, template: .spotlight(version: 1), importedPhoto: importedPhoto, crop: automaticPhotoCrop, tuning: tuning, colorOverride: teamColor, segmentationMode: mode, analysis: spotlightAnalysis)
-            let title = spotlightAnalysis == nil
+            let fixture = CardFixtureLibrary.fixture(id: snapshotFixtureID, template: .spotlight(version: 1), importedPhoto: snapshotImportedPhoto, crop: snapshotCrop, tuning: snapshotTuning, colorOverride: snapshotTeamColor, segmentationMode: mode, analysis: snapshotAnalysis)
+            let title = snapshotAnalysis == nil
                 ? "\(mode.title) · no mask (fallback)"
                 : mode.title
-            return PlayerCardFixture(id: "\(fixtureID)-\(mode.rawValue)", title: title, model: fixture.model)
+            return PlayerCardFixture(id: "\(snapshotFixtureID)-\(mode.rawValue)", title: title, model: fixture.model)
         }
         let sheet = await Task.detached(priority: .userInitiated) {
             CardExportService.contactSheet(fixtures: fixtures, columns: 3)
         }.value
-        do {
-            exportedURL = try CardExportService.writePNG(sheet, named: "spotlight-segmentation-comparison")
-            message = "Generated Excellent / Usable / Fallback comparison."
-        } catch {
-            message = error.localizedDescription
-        }
+        guard activeComparisonToken == token, !Task.isCancelled else { return }
+        publishComparison(
+            sheet,
+            named: "testing-segmentation-comparison",
+            title: "Testing segmentation states",
+            statusMessage: "Generated Excellent / Usable / Fallback comparison.",
+            token: token
+        )
     }
 
     private func compareMaskBackends() async {
@@ -3138,22 +3698,30 @@ struct PlayerCardLabView: View {
         let snapshotTuning = tuning
         let snapshotTeamColor = teamColor
         let snapshotModel = currentFixture.model
-        guard template.title == "Spotlight", let photo = snapshotModel.photo else {
-            message = "Choose a Spotlight photo before comparing mask backends."
+        guard template.isSpotlight, let photo = snapshotModel.photo else {
+            message = "Choose a Testing photo before comparing mask backends."
             return
         }
+
+        let token = UUID()
+        activeComparisonToken = token
+        clearLatestOutput()
 
         let identity = SpotlightAnalysisService.sourceIdentity(for: photo)
         let crop = snapshotModel.crop
         var fixtures: [PlayerCardFixture] = []
         for backend in SpotlightSegmentationBackend.allCases {
-            message = "Comparing \(backend.title)…"
+            guard activeComparisonToken == token, !Task.isCancelled else { return }
+            if activeComparisonToken == token {
+                message = "Comparing \(backend.title)…"
+            }
             let report = await SpotlightAnalysisService.shared.analyze(
                 photo: photo,
                 crop: crop,
                 identity: identity,
                 backend: backend
             )
+            guard activeComparisonToken == token, !Task.isCancelled else { return }
             if let analysis = report.result {
                 let fixture = CardFixtureLibrary.fixture(
                     id: snapshotFixtureID,
@@ -3188,15 +3756,18 @@ struct PlayerCardLabView: View {
             }
         }
 
+        guard activeComparisonToken == token, !Task.isCancelled else { return }
         let sheet = await Task.detached(priority: .userInitiated) {
             CardExportService.contactSheet(fixtures: fixtures, columns: 2)
         }.value
-        do {
-            exportedURL = try CardExportService.writePNG(sheet, named: "spotlight-mask-backend-comparison")
-            message = "Generated a same-photo Person / Foreground backend comparison."
-        } catch {
-            message = error.localizedDescription
-        }
+        guard activeComparisonToken == token, !Task.isCancelled else { return }
+        publishComparison(
+            sheet,
+            named: "testing-mask-backend-comparison",
+            title: "Testing mask backend comparison",
+            statusMessage: "Generated a same-photo Person / Foreground backend comparison.",
+            token: token
+        )
     }
 }
 

@@ -305,6 +305,28 @@ struct Cue: Codable, Equatable, Identifiable {
     }
 }
 
+/// The production Player Card choices. Raw values are stable storage identifiers,
+/// not user-facing names. The default value preserves the existing unnamed card
+/// composition for players saved before design selection existed.
+enum PlayerCardDesign: String, Codable, CaseIterable, Hashable, Identifiable, Sendable {
+    case spotlight = "default"
+    case impact = "clean-v2"
+    case broadcast = "broadcast"
+
+    static let defaultDesign: Self = .spotlight
+    static let shippingDesigns: [Self] = [.spotlight, .impact, .broadcast]
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .spotlight: return "Spotlight"
+        case .impact: return "Impact"
+        case .broadcast: return "Broadcast"
+        }
+    }
+}
+
 struct Player: Codable, Equatable, Identifiable {
     var id: UUID
     var displayName: String
@@ -316,6 +338,14 @@ struct Player: Codable, Equatable, Identifiable {
     var photoSourceRelativePath: String?
     var profilePhotoCrop: NormalizedPhotoCrop?
     var playerCardPhotoCrop: NormalizedPhotoCrop?
+    /// Stable renderer lineage identifier. Unknown future values are preserved so
+    /// opening and resaving an older package cannot erase a design this build does
+    /// not yet understand.
+    var playerCardDesignID: String?
+    var playerCardDesign: PlayerCardDesign {
+        get { PlayerCardDesign(rawValue: playerCardDesignID ?? "") ?? .defaultDesign }
+        set { playerCardDesignID = newValue.rawValue }
+    }
     var songAssignment: SongAssignment?
     var cue: Cue? {
         get {
@@ -339,6 +369,9 @@ struct Player: Codable, Equatable, Identifiable {
         case photoSourceRelativePath
         case profilePhotoCrop
         case playerCardPhotoCrop
+        case playerCardDesignID
+        // Compatibility with the short-lived pre-release field name.
+        case playerCardDesign
         case cue
         case songAssignment
         case isPresent
@@ -355,6 +388,7 @@ struct Player: Codable, Equatable, Identifiable {
         photoSourceRelativePath: String? = nil,
         profilePhotoCrop: NormalizedPhotoCrop? = nil,
         playerCardPhotoCrop: NormalizedPhotoCrop? = nil,
+        playerCardDesign: PlayerCardDesign = .defaultDesign,
         cue: Cue?,
         isPresent: Bool,
         customAnnouncerRelativePath: String? = nil,
@@ -368,6 +402,7 @@ struct Player: Codable, Equatable, Identifiable {
         self.photoSourceRelativePath = photoSourceRelativePath
         self.profilePhotoCrop = profilePhotoCrop
         self.playerCardPhotoCrop = playerCardPhotoCrop
+        self.playerCardDesignID = playerCardDesign.rawValue
         self.songAssignment = cue.map { .privateClip(SongClip(cue: $0)) }
         self.isPresent = isPresent
         self.customAnnouncerRelativePath = customAnnouncerRelativePath
@@ -384,6 +419,8 @@ struct Player: Codable, Equatable, Identifiable {
         photoSourceRelativePath = try container.decodeIfPresent(String.self, forKey: .photoSourceRelativePath)
         profilePhotoCrop = try container.decodeIfPresent(NormalizedPhotoCrop.self, forKey: .profilePhotoCrop)
         playerCardPhotoCrop = try container.decodeIfPresent(NormalizedPhotoCrop.self, forKey: .playerCardPhotoCrop)
+        playerCardDesignID = try container.decodeIfPresent(String.self, forKey: .playerCardDesignID)
+            ?? container.decodeIfPresent(String.self, forKey: .playerCardDesign)
         if container.contains(.songAssignment) {
             if try container.decodeNil(forKey: .songAssignment) {
                 songAssignment = nil
@@ -415,6 +452,7 @@ struct Player: Codable, Equatable, Identifiable {
         try container.encodeIfPresent(photoSourceRelativePath, forKey: .photoSourceRelativePath)
         try container.encodeIfPresent(profilePhotoCrop, forKey: .profilePhotoCrop)
         try container.encodeIfPresent(playerCardPhotoCrop, forKey: .playerCardPhotoCrop)
+        try container.encodeIfPresent(playerCardDesignID, forKey: .playerCardDesignID)
         if let songAssignment {
             try container.encode(songAssignment, forKey: .songAssignment)
         }
@@ -461,6 +499,7 @@ struct PlayerEditorDraftState: Equatable {
     var photoSourceRelativePath: String?
     var profilePhotoCrop: NormalizedPhotoCrop?
     var playerCardPhotoCrop: NormalizedPhotoCrop?
+    var playerCardDesignID: String?
     var cueTiming: CueTiming?
 
     init(player: Player) {
@@ -470,6 +509,7 @@ struct PlayerEditorDraftState: Equatable {
         photoSourceRelativePath = player.photoSourceRelativePath
         profilePhotoCrop = player.profilePhotoCrop
         playerCardPhotoCrop = player.playerCardPhotoCrop
+        playerCardDesignID = player.playerCardDesignID
         cueTiming = player.cue.map {
             CueTiming(
                 id: $0.id,
@@ -533,6 +573,18 @@ struct AppSettings: Codable, Equatable {
     var keepScreenAwakeDuringLiveUse: Bool
     var showLineupProgressHints: Bool
     var explicitAppleMusicSearchFilteringEnabled: Bool
+    /// App-level default for the next Player Card preview. Keep the raw value
+    /// so an unknown future design can be preserved while this build falls
+    /// back to a valid shipping design for presentation.
+    var lastPlayerCardDesignID: String?
+
+    var lastPlayerCardDesign: PlayerCardDesign {
+        guard let design = PlayerCardDesign(rawValue: lastPlayerCardDesignID ?? ""),
+              PlayerCardDesign.shippingDesigns.contains(design) else {
+            return .defaultDesign
+        }
+        return design
+    }
 
     static let `default` = AppSettings(
         hapticsEnabled: true,
@@ -540,7 +592,8 @@ struct AppSettings: Codable, Equatable {
         alwaysUseDarkLiveMode: true,
         keepScreenAwakeDuringLiveUse: false,
         showLineupProgressHints: false,
-        explicitAppleMusicSearchFilteringEnabled: true
+        explicitAppleMusicSearchFilteringEnabled: true,
+        lastPlayerCardDesignID: nil
     )
 
     enum CodingKeys: String, CodingKey {
@@ -550,6 +603,7 @@ struct AppSettings: Codable, Equatable {
         case keepScreenAwakeDuringLiveUse
         case showLineupProgressHints
         case explicitAppleMusicSearchFilteringEnabled
+        case lastPlayerCardDesignID
     }
 
     init(
@@ -558,7 +612,8 @@ struct AppSettings: Codable, Equatable {
         alwaysUseDarkLiveMode: Bool,
         keepScreenAwakeDuringLiveUse: Bool,
         showLineupProgressHints: Bool,
-        explicitAppleMusicSearchFilteringEnabled: Bool
+        explicitAppleMusicSearchFilteringEnabled: Bool,
+        lastPlayerCardDesignID: String? = nil
     ) {
         self.hapticsEnabled = hapticsEnabled
         self.fadeOutVolumeAutomationEnabled = fadeOutVolumeAutomationEnabled
@@ -566,6 +621,7 @@ struct AppSettings: Codable, Equatable {
         self.keepScreenAwakeDuringLiveUse = keepScreenAwakeDuringLiveUse
         self.showLineupProgressHints = showLineupProgressHints
         self.explicitAppleMusicSearchFilteringEnabled = explicitAppleMusicSearchFilteringEnabled
+        self.lastPlayerCardDesignID = lastPlayerCardDesignID
     }
 
     init(from decoder: Decoder) throws {
@@ -576,6 +632,7 @@ struct AppSettings: Codable, Equatable {
         keepScreenAwakeDuringLiveUse = try container.decodeIfPresent(Bool.self, forKey: .keepScreenAwakeDuringLiveUse) ?? false
         showLineupProgressHints = try container.decodeIfPresent(Bool.self, forKey: .showLineupProgressHints) ?? false
         explicitAppleMusicSearchFilteringEnabled = try container.decodeIfPresent(Bool.self, forKey: .explicitAppleMusicSearchFilteringEnabled) ?? true
+        lastPlayerCardDesignID = try container.decodeIfPresent(String.self, forKey: .lastPlayerCardDesignID)
     }
 }
 
@@ -895,6 +952,8 @@ enum GameDayReadinessWarningPolicy {
 }
 
 struct SnapshotRecord: Codable, Equatable, Identifiable {
+    /// A local rollback snapshot of AppState. It is not a self-contained
+    /// portable backup: referenced media remains in the app's local storage.
     var id: UUID
     var createdAt: Date
     var reason: String
@@ -1103,6 +1162,15 @@ struct OnboardingState: Codable, Equatable {
 
 struct DeviceIdentity: Codable, Equatable {
     var label: String
+    /// An opaque, device-local qualification value. It is intentionally not
+    /// exported in team packages and is replaced when state is restored to a
+    /// different physical device.
+    var qualificationToken: String?
+
+    init(label: String, qualificationToken: String? = nil) {
+        self.label = label
+        self.qualificationToken = qualificationToken
+    }
 }
 
 struct RatingRequestState: Codable, Equatable {
@@ -1171,7 +1239,7 @@ struct RatingRequestState: Codable, Equatable {
 }
 
 struct AppState: Codable, Equatable {
-    static let currentSchemaVersion = 10
+    static let currentSchemaVersion = 11
 
     var schemaVersion: Int
     var appVersion: String
@@ -1289,6 +1357,259 @@ struct AppState: Codable, Equatable {
     )
 }
 
+enum AppStateMigrationError: Error, Equatable, LocalizedError {
+    case invalidRoot
+    case invalidSchemaVersion
+    case unsupportedFutureVersion(Int)
+    case migrationFailed(fromVersion: Int, message: String)
+
+    var errorDescription: String? {
+        switch self {
+        case .invalidRoot:
+            return "Saved Roll Call state is not a JSON object."
+        case .invalidSchemaVersion:
+            return "Saved Roll Call state has an invalid schema version."
+        case .unsupportedFutureVersion(let version):
+            return "Saved Roll Call state uses unsupported schema version \(version)."
+        case .migrationFailed(let version, let message):
+            return "Roll Call could not migrate schema version \(version): \(message)"
+        }
+    }
+}
+
+/// The single compatibility seam for durable AppState JSON.
+///
+/// The model types still own their additive/legacy field decoding. This
+/// pipeline owns the top-level version contract so future non-additive
+/// changes have an explicit, sequential place to live and every reader uses
+/// the same behavior.
+enum AppStatePersistenceCodec {
+    static func schemaVersion(in data: Data) throws -> Int {
+        guard let object = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            throw AppStateMigrationError.invalidRoot
+        }
+        guard let rawVersion = object["schemaVersion"] else { return 1 }
+        guard !(rawVersion is Bool),
+              let number = rawVersion as? NSNumber else {
+            throw AppStateMigrationError.invalidSchemaVersion
+        }
+        let doubleValue = number.doubleValue
+        guard doubleValue.isFinite,
+              doubleValue.rounded() == doubleValue,
+              doubleValue >= 1,
+              doubleValue <= Double(Int.max) else {
+            throw AppStateMigrationError.invalidSchemaVersion
+        }
+        return Int(doubleValue)
+    }
+
+    static func migrate(_ data: Data) throws -> Data {
+        guard var object = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            throw AppStateMigrationError.invalidRoot
+        }
+
+        let sourceVersion = try schemaVersion(in: data)
+        guard sourceVersion <= AppState.currentSchemaVersion else {
+            throw AppStateMigrationError.unsupportedFutureVersion(sourceVersion)
+        }
+
+        if sourceVersion < AppState.currentSchemaVersion {
+            for targetVersion in (sourceVersion + 1)...AppState.currentSchemaVersion {
+                try migrate(to: targetVersion, object: &object, sourceVersion: sourceVersion)
+                object["schemaVersion"] = targetVersion
+            }
+        }
+
+        do {
+            return try JSONSerialization.data(withJSONObject: object, options: [.sortedKeys])
+        } catch {
+            throw AppStateMigrationError.migrationFailed(
+                fromVersion: sourceVersion,
+                message: error.localizedDescription
+            )
+        }
+    }
+
+    static func decode(_ data: Data) throws -> AppState {
+        let migratedData = try migrate(data)
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        return try decoder.decode(AppState.self, from: migratedData)
+    }
+
+    private static func migrate(
+        to targetVersion: Int,
+        object: inout [String: Any],
+        sourceVersion: Int
+    ) throws {
+        switch targetVersion {
+        case 2:
+            // Legacy field defaults remain owned by AppState's Codable reader.
+            break
+        case 3:
+            object["recentlyDeleted"] = object["recentlyDeleted"] ?? []
+            object["snapshots"] = object["snapshots"] ?? []
+        case 4:
+            object["recentAppleMusicSelections"] = object["recentAppleMusicSelections"] ?? []
+        case 5, 6, 8, 9:
+            // These releases introduced nested/additive fields whose existing
+            // model decoders remain the compatibility implementation.
+            break
+        case 7:
+            if var ratingRequest = object["ratingRequest"] as? [String: Any],
+               ratingRequest["automaticPromptAttemptCount"] == nil,
+               let attempted = ratingRequest["hasAttemptedAutomaticPrompt"] as? Bool {
+                ratingRequest["automaticPromptAttemptCount"] = attempted ? 1 : 0
+                object["ratingRequest"] = ratingRequest
+            }
+        case 10:
+            if var teams = object["teams"] as? [[String: Any]] {
+                for index in teams.indices {
+                    teams[index]["teamClips"] = teams[index]["teamClips"] ?? []
+                }
+                object["teams"] = teams
+            }
+        case 11:
+            if let rawIdentity = object["deviceIdentity"],
+               !(rawIdentity is [String: Any]),
+               !(rawIdentity is NSNull) {
+                throw AppStateMigrationError.migrationFailed(
+                    fromVersion: sourceVersion,
+                    message: "deviceIdentity is not an object"
+                )
+            }
+            if var identity = object["deviceIdentity"] as? [String: Any] {
+                identity["qualificationToken"] = identity["qualificationToken"] ?? NSNull()
+                object["deviceIdentity"] = identity
+            }
+        default:
+            throw AppStateMigrationError.migrationFailed(
+                fromVersion: sourceVersion,
+                message: "No migration step is registered for schema \(targetVersion)."
+            )
+        }
+    }
+}
+
+struct AppStateConsistencyReport: Equatable {
+    var invalidRelativePaths: [String] = []
+    var missingPhotoPaths: [String] = []
+    var missingLocalAudioPaths: [String] = []
+    var missingAnnouncementPaths: [String] = []
+    var missingGeneratedClipPaths: [String] = []
+
+    var hasIssues: Bool {
+        !invalidRelativePaths.isEmpty
+            || !missingPhotoPaths.isEmpty
+            || !missingLocalAudioPaths.isEmpty
+            || !missingAnnouncementPaths.isEmpty
+            || !missingGeneratedClipPaths.isEmpty
+    }
+
+    static let empty = AppStateConsistencyReport()
+}
+
+/// Cheap launch-time validation of persisted references. It never removes
+/// anything and deliberately does not decode media; playback/preparation owns
+/// deeper media validation when needed.
+enum AppStateConsistencyValidator {
+    static func report(for state: AppState) -> AppStateConsistencyReport {
+        var report = AppStateConsistencyReport()
+        for team in state.teams {
+            inspect(team: team, report: &report)
+        }
+        for item in state.recentlyDeleted {
+            switch item.payload {
+            case .team(let deleted):
+                inspect(team: deleted.team, report: &report)
+            case .player(let deleted):
+                inspect(player: deleted.player, report: &report)
+            case .customClip(let deleted):
+                inspect(clip: deleted.clip, report: &report)
+            }
+        }
+        return report
+    }
+
+    private static func inspect(team: Team, report: inout AppStateConsistencyReport) {
+        for player in team.players {
+            inspect(player: player, report: &report)
+        }
+        for clip in team.teamClips {
+            inspect(clip: clip, report: &report)
+        }
+    }
+
+    private static func inspect(player: Player, report: inout AppStateConsistencyReport) {
+        record(inspectAsset(player.photoRelativePath, expected: .asset), in: &report, missing: \AppStateConsistencyReport.missingPhotoPaths)
+        record(inspectAsset(player.photoSourceRelativePath, expected: .asset), in: &report, missing: \AppStateConsistencyReport.missingPhotoPaths)
+        record(inspectAsset(player.customAnnouncerRelativePath, expected: .asset), in: &report, missing: \AppStateConsistencyReport.missingAnnouncementPaths)
+        record(inspectAsset(player.generatedBuiltInAnnouncerRelativePath, expected: .asset), in: &report, missing: \AppStateConsistencyReport.missingAnnouncementPaths)
+        if case .privateClip(let clip)? = player.songAssignment {
+            inspect(clip: clip, report: &report)
+        }
+    }
+
+    private static func inspect(clip: SongClip, report: inout AppStateConsistencyReport) {
+        if case .localAudio(let source) = clip.originalSource {
+            record(inspectAsset(source.relativePath, expected: .asset), in: &report, missing: \AppStateConsistencyReport.missingLocalAudioPaths)
+        }
+        record(inspectAsset(clip.generatedAsset.relativePath, expected: .generated), in: &report, missing: \AppStateConsistencyReport.missingGeneratedClipPaths)
+    }
+
+    private enum ExpectedRoot: Equatable {
+        case asset
+        case generated
+    }
+
+    private enum AssetValidation {
+        case missing(String)
+        case invalid(String)
+    }
+
+    private static func inspectAsset(
+        _ path: String?,
+        expected: ExpectedRoot
+    ) -> AssetValidation? {
+        guard let path else { return nil }
+        let trimmed = path.trimmingCharacters(in: .whitespacesAndNewlines)
+        let isGeneratedPath = trimmed.hasPrefix("GeneratedClips/")
+        let rootMatches = expected == .generated ? isGeneratedPath : !isGeneratedPath
+        guard rootMatches,
+              let url = try? AppPaths.assetURL(relativePath: trimmed) else {
+            return .invalid(trimmed)
+        }
+
+        guard FileManager.default.fileExists(atPath: url.path) else {
+            return .missing(trimmed)
+        }
+        guard AppPaths.isUsableAssetFile(relativePath: trimmed) else {
+            return .invalid(trimmed)
+        }
+        return nil
+    }
+
+    private static func record(
+        _ validation: AssetValidation?,
+        in report: inout AppStateConsistencyReport,
+        missing keyPath: WritableKeyPath<AppStateConsistencyReport, [String]>
+    ) {
+        switch validation {
+        case .missing(let path):
+            appendUnique(path, to: &report[keyPath: keyPath])
+        case .invalid(let path):
+            appendUnique(path, to: &report.invalidRelativePaths)
+        case .none:
+            break
+        }
+    }
+
+    private static func appendUnique(_ path: String, to paths: inout [String]) {
+        guard !paths.contains(path) else { return }
+        paths.append(path)
+    }
+}
+
 struct TeamPackageManifest: Codable {
     /// Kept independent from `AppState.currentSchemaVersion` so additive app-state
     /// migrations do not unnecessarily break team-package compatibility.
@@ -1391,7 +1712,16 @@ enum AppPaths {
         return try baseDirectory().appendingPathComponent(fileName)
     }
 
+    static func preMigrationStateRecoveryURL(schemaVersion: Int) throws -> URL {
+        let fileName = "state-pre-migration-v\(schemaVersion)-\(UUID().uuidString).json"
+        return try baseDirectory().appendingPathComponent(fileName)
+    }
+
     static func unreadableStateRecoveryFiles() -> [URL] {
+        preservedStateRecoveryFiles()
+    }
+
+    static func preservedStateRecoveryFiles() -> [URL] {
         guard let directory = try? baseDirectory(),
               let files = try? FileManager.default.contentsOfDirectory(
                 at: directory,
@@ -1402,10 +1732,15 @@ enum AppPaths {
         }
         return files
             .filter {
-                $0.lastPathComponent.hasPrefix("state-unreadable-")
+                isPreservedStateRecoveryFile($0)
                     && $0.pathExtension.lowercased() == "json"
             }
             .sorted { $0.lastPathComponent < $1.lastPathComponent }
+    }
+
+    static func isPreservedStateRecoveryFile(_ url: URL) -> Bool {
+        url.lastPathComponent.hasPrefix("state-unreadable-")
+            || url.lastPathComponent.hasPrefix("state-pre-migration-v")
     }
 
     static func telemetryStateURL() throws -> URL {
@@ -1426,7 +1761,11 @@ enum AppPaths {
 
     static func assetURL(relativePath: String) throws -> URL {
         let trimmed = relativePath.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty, !trimmed.hasPrefix("/") else { throw AppError.invalidImport }
+        guard !trimmed.isEmpty,
+              !trimmed.hasPrefix("/"),
+              !trimmed.contains("\\"),
+              !trimmed.contains("\0"),
+              !trimmed.contains("//") else { throw AppError.invalidImport }
 
         let components = trimmed.split(separator: "/").map(String.init)
         let rootURL: URL
@@ -1450,6 +1789,93 @@ enum AppPaths {
         try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
         return url
     }
+
+    static func isUsableAssetFile(relativePath: String) -> Bool {
+        guard let url = try? assetURL(relativePath: relativePath),
+              FileManager.default.fileExists(atPath: url.path),
+              isManagedAssetURL(url),
+              let values = try? url.resourceValues(forKeys: [.isRegularFileKey, .isSymbolicLinkKey]) else {
+            return false
+        }
+        return values.isRegularFile == true && values.isSymbolicLink != true
+    }
+
+    private static func isManagedAssetURL(_ url: URL) -> Bool {
+        guard let assetRoot = try? assetsDirectory().resolvingSymlinksInPath(),
+              let generatedRoot = try? generatedClipsDirectory().resolvingSymlinksInPath() else {
+            return false
+        }
+        let resolvedPath = url.resolvingSymlinksInPath().path
+        return [assetRoot.path, generatedRoot.path].contains { rootPath in
+            resolvedPath.hasPrefix(rootPath + "/")
+        }
+    }
+
+    static func residualStateEvidence() -> ResidualStateEvidence {
+        guard let directory = try? baseDirectory() else { return .empty }
+        let assetsDirectory = directory.appendingPathComponent("Assets", isDirectory: true)
+        let generatedDirectory = directory.appendingPathComponent("GeneratedClips", isDirectory: true)
+        let snapshotsDirectory = directory.appendingPathComponent("Snapshots", isDirectory: true)
+        let builtInNames = Set<String>(BuiltInClip.defaults.compactMap { builtIn in
+            guard case .builtInClip(let source) = builtIn.cue.source else { return nil }
+            return "\(source.id).mp3"
+        })
+
+        let userAssets = regularFiles(in: assetsDirectory).filter {
+            !builtInNames.contains($0.lastPathComponent)
+        }.count
+        let generatedClips = regularFiles(in: generatedDirectory).count
+        let snapshots = regularFiles(in: snapshotsDirectory).filter {
+            $0.pathExtension.lowercased() == "json"
+        }.count
+        let recoveryCopies = regularFiles(in: directory).filter {
+            isPreservedStateRecoveryFile($0)
+        }.count
+        return ResidualStateEvidence(
+            userAssetCount: userAssets,
+            generatedClipCount: generatedClips,
+            snapshotCount: snapshots,
+            recoveryCopyCount: recoveryCopies
+        )
+    }
+
+    private static func regularFiles(in directory: URL) -> [URL] {
+        guard FileManager.default.fileExists(atPath: directory.path),
+              let enumerator = FileManager.default.enumerator(
+                at: directory,
+                includingPropertiesForKeys: [.isRegularFileKey, .isSymbolicLinkKey],
+                options: [.skipsHiddenFiles]
+              ) else {
+            return []
+        }
+        return enumerator.compactMap { item in
+            guard let url = item as? URL,
+                  let values = try? url.resourceValues(forKeys: [.isRegularFileKey, .isSymbolicLinkKey]),
+                  values.isRegularFile == true,
+                  values.isSymbolicLink != true else {
+                return nil
+            }
+            return url
+        }
+    }
+}
+
+struct ResidualStateEvidence: Equatable {
+    var userAssetCount: Int
+    var generatedClipCount: Int
+    var snapshotCount: Int
+    var recoveryCopyCount: Int
+
+    var hasMeaningfulState: Bool {
+        userAssetCount > 0 || generatedClipCount > 0 || snapshotCount > 0 || recoveryCopyCount > 0
+    }
+
+    static let empty = ResidualStateEvidence(
+        userAssetCount: 0,
+        generatedClipCount: 0,
+        snapshotCount: 0,
+        recoveryCopyCount: 0
+    )
 }
 
 extension Cue {

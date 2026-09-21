@@ -89,9 +89,7 @@ struct GameDayTeamEntityQuery: EntityQuery {
     private func loadTeams() -> [GameDayTeamEntity] {
         guard let url = try? AppPaths.stateURL(),
               let data = try? Data(contentsOf: url) else { return [] }
-        let decoder = JSONDecoder()
-        decoder.dateDecodingStrategy = .iso8601
-        guard let state = try? decoder.decode(AppState.self, from: data) else { return [] }
+        guard let state = try? AppStatePersistenceCodec.decode(data) else { return [] }
         return state.teams.map { GameDayTeamEntity(id: $0.id, name: $0.name) }
     }
 }

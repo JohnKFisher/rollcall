@@ -3,6 +3,7 @@ import AVFoundation
 import Combine
 import Foundation
 import MusicKit
+import OSLog
 import UIKit
 import UniformTypeIdentifiers
 
@@ -120,6 +121,7 @@ enum RecoveryNavigationDestination: Equatable {
 enum StateRecoveryReason: String, Equatable {
     case unsupportedSchema
     case loadFailure
+    case missingPrimaryWithResidualData
 }
 
 struct StateRecoverySnapshot: Identifiable {
@@ -651,6 +653,7 @@ final class AppModel: ObservableObject {
     @Published private(set) var gameDayLineupProgressHintEvent: GameDayLineupProgressHintEvent?
     @Published private(set) var pendingSongClipPreparationCount = 0
     @Published private(set) var generatedClipCleanupReport: GeneratedClipCleanupReport?
+    @Published private(set) var persistenceValidationReport = AppStateConsistencyReport.empty
     @Published private(set) var activeFallbackPlayerID: UUID?
     @Published private(set) var riskyOperationCount = 0
     private var hasFinishedLaunching = false
@@ -677,6 +680,13 @@ final class AppModel: ObservableObject {
     private let appleMusicPlaybackCapabilityResolver: () async -> AppleMusicPlaybackCapability
     private let catalogBackedResultResolver: (MusicSearchResult) async throws -> MusicSearchResult
     private let previewPlaybackResolver: ((Cue) async throws -> Void)?
+    private let currentDeviceIdentityProvider: () -> DeviceIdentity
+    private var preserveResidualAssetsForNextLaunch = false
+
+    private static let persistenceLogger = Logger(
+        subsystem: Bundle.main.bundleIdentifier ?? "RollCall",
+        category: "Persistence"
+    )
 
     let audioAssetService = AudioAssetService()
     let musicCatalogService = MusicCatalogService()
@@ -706,6 +716,10 @@ final class AppModel: ObservableObject {
         FeatureFlags(environment: .current, experimental: state.experimental)
     }
 
+    var lastPlayerCardDesign: PlayerCardDesign {
+        state.settings.lastPlayerCardDesign
+    }
+
     var hasUnseenWhatsNew: Bool {
         !AppMetadata.hasSeenWhatsNewRelease(state.lastSeenWhatsNewReleaseID)
     }
@@ -729,11 +743,18 @@ final class AppModel: ObservableObject {
             try await MusicCatalogService().catalogBackedResult(for: result)
         },
         previewPlaybackResolver: ((Cue) async throws -> Void)? = nil,
-        telemetry: RollCallTelemetryCoordinator? = nil
+        telemetry: RollCallTelemetryCoordinator? = nil,
+        deviceIdentityProvider: @escaping () -> DeviceIdentity = {
+            DeviceIdentity(
+                label: UIDevice.current.name,
+                qualificationToken: UIDevice.current.identifierForVendor?.uuidString
+            )
+        }
     ) {
         self.appleMusicPlaybackCapabilityResolver = appleMusicPlaybackCapabilityResolver
         self.catalogBackedResultResolver = catalogBackedResultResolver
         self.previewPlaybackResolver = previewPlaybackResolver
+        self.currentDeviceIdentityProvider = deviceIdentityProvider
         self.songClipPreparationCoordinator = SongClipPreparationCoordinator(
             generationService: songClipGenerationService,
             audioAssetService: audioAssetService
@@ -741,10 +762,11 @@ final class AppModel: ObservableObject {
         FeatureFlags.assertReleaseSafety()
         self.playbackEngine = CuePlaybackEngine(audioAssetService: audioAssetService, musicCatalogService: musicCatalogService)
         self.readinessService = ReadinessService(audioAssetService: audioAssetService)
-        let loadResult = Self.loadInitialState()
+        let currentDeviceIdentity = deviceIdentityProvider()
+        let loadResult = Self.loadInitialState(currentDeviceIdentity: currentDeviceIdentity)
         self.state = loadResult.state
         self.stateRecovery = loadResult.recovery
-        self.stateRecoveryArchives = []
+        self.stateRecoveryArchives = AppPaths.preservedStateRecoveryFiles()
         if let telemetry {
             self.telemetry = telemetry
         } else {
@@ -777,8 +799,21 @@ final class AppModel: ObservableObject {
             }
         }
         self.initialStateLoadWarning = loadResult.warning
+        self.persistenceValidationReport = AppStateConsistencyValidator.report(for: loadResult.state)
         self.state.appVersion = AppMetadata.appVersion
         self.state.schemaVersion = max(self.state.schemaVersion, AppState.empty.schemaVersion)
+        if stateRecovery == nil {
+            if Self.deviceIdentityChanged(from: self.state.deviceIdentity, to: currentDeviceIdentity) {
+                Self.requalifyDeviceDependentState(&self.state)
+            }
+            self.state.deviceIdentity = currentDeviceIdentity
+            self.state.lastReadiness = nil
+        }
+        if persistenceValidationReport.hasIssues {
+            Self.persistenceLogger.warning(
+                "Persisted state references invalid or missing assets: photos=\(self.persistenceValidationReport.missingPhotoPaths.count), localAudio=\(self.persistenceValidationReport.missingLocalAudioPaths.count), announcements=\(self.persistenceValidationReport.missingAnnouncementPaths.count), generated=\(self.persistenceValidationReport.missingGeneratedClipPaths.count), invalid=\(self.persistenceValidationReport.invalidRelativePaths.count)"
+            )
+        }
         normalizeRatingRequestPolicyState()
         if stateRecovery == nil {
             activateNormalStateLifecycle()
@@ -861,7 +896,15 @@ final class AppModel: ObservableObject {
             await refreshAppleMusicPlaybackCapability()
             refreshReadiness()
             scheduleStartupGameDayWarmup()
-            await runAutomaticGeneratedClipCleanup()
+            if preserveResidualAssetsForNextLaunch {
+                generatedClipCleanupReport = await runGeneratedClipCleanup(
+                    activePreparationCount: await songClipPreparationCoordinator.pendingCount(),
+                    shouldRemoveOrphans: false
+                )
+                preserveResidualAssetsForNextLaunch = false
+            } else {
+                await runAutomaticGeneratedClipCleanup()
+            }
             scheduleAllSongClipPreparation(trigger: .appLaunch)
             persist()
             await preparePendingIncomingPackageIfNeeded()
@@ -894,12 +937,20 @@ final class AppModel: ObservableObject {
 
     func retryStateRecovery() async {
         guard stateRecovery != nil else { return }
+        if stateRecovery?.reason == .missingPrimaryWithResidualData {
+            let stateURL = (try? AppPaths.stateURL())
+            if stateURL.map({ FileManager.default.fileExists(atPath: $0.path) }) != true {
+                lastError = "Roll Call still could not find its primary state file. Choose a readable backup or Start Fresh."
+                return
+            }
+        }
         do {
-            let loadedState = try Self.load()
+            var loadedState = try Self.load()
             guard loadedState.schemaVersion <= AppState.currentSchemaVersion else {
                 lastError = "This saved state belongs to a newer version of Roll Call. Update Roll Call before trying again."
                 return
             }
+            loadedState.lastReadiness = nil
             await commitStateRecovery(loadedState, requireArchivedMatch: false)
         } catch {
             lastError = "Roll Call still could not read the saved state. The preserved recovery copy remains available. Error: \(error.localizedDescription)"
@@ -907,13 +958,13 @@ final class AppModel: ObservableObject {
     }
 
     func restoreStateRecoverySnapshot(_ snapshot: StateRecoverySnapshot) async {
-        guard let recovery = stateRecovery, recovery.preservedStateURL != nil else {
+        guard let recovery = stateRecovery,
+              recovery.preservedStateURL != nil || recovery.reason == .missingPrimaryWithResidualData else {
             lastError = "Roll Call could not preserve the original state file yet. Try again before restoring a backup."
             return
         }
         var restoredState = snapshot.state
         restoredState.appVersion = AppMetadata.appVersion
-        restoredState.deviceIdentity = state.deviceIdentity
         restoredState.schemaVersion = max(restoredState.schemaVersion, AppState.currentSchemaVersion)
         let recoveredSnapshotRecords = recovery.snapshots.map { snapshot in
             SnapshotRecord(
@@ -928,24 +979,36 @@ final class AppModel: ObservableObject {
             !existingSnapshotPaths.contains($0.relativeManifestPath)
         })
         restoredState.snapshots = Array(restoredState.snapshots.prefix(10))
-        await commitStateRecovery(restoredState, requireArchivedMatch: true)
+        if recovery.reason == .missingPrimaryWithResidualData {
+            await commitMissingPrimaryRecovery(recovery, replacement: restoredState)
+        } else {
+            await commitStateRecovery(restoredState, requireArchivedMatch: true)
+        }
     }
 
     func startFreshAfterStateRecovery() async {
-        guard let recovery = stateRecovery, recovery.preservedStateURL != nil else {
+        guard let recovery = stateRecovery else { return }
+        if recovery.reason == .missingPrimaryWithResidualData {
+            await commitMissingPrimaryRecovery(recovery)
+            return
+        }
+        guard recovery.preservedStateURL != nil else {
             lastError = "Roll Call will not replace the original state until a recovery copy has been preserved. Try again."
             return
         }
-        await commitStateRecovery(Self.freshEmptyState(), requireArchivedMatch: true)
+        await commitStateRecovery(
+            Self.freshEmptyState(deviceIdentity: currentDeviceIdentityProvider()),
+            requireArchivedMatch: true
+        )
     }
 
     func deleteStateRecoveryArchive(at url: URL) {
         guard stateRecoveryArchives.contains(url),
-              url.lastPathComponent.hasPrefix("state-unreadable-"),
+              AppPaths.isPreservedStateRecoveryFile(url),
               url.pathExtension == "json" else { return }
         do {
             try FileManager.default.removeItem(at: url)
-            stateRecoveryArchives = AppPaths.unreadableStateRecoveryFiles()
+            stateRecoveryArchives = AppPaths.preservedStateRecoveryFiles()
         } catch {
             lastError = "Roll Call could not remove that recovery copy. Error: \(error.localizedDescription)"
         }
@@ -963,6 +1026,13 @@ final class AppModel: ObservableObject {
                 return
             }
 
+            var replacement = replacement
+            if Self.deviceIdentityChanged(from: replacement.deviceIdentity, to: currentDeviceIdentityProvider()) {
+                Self.requalifyDeviceDependentState(&replacement)
+            }
+            replacement.deviceIdentity = currentDeviceIdentityProvider()
+            replacement.lastReadiness = nil
+            replacement.schemaVersion = AppState.currentSchemaVersion
             state = replacement
             normalizeRatingRequestPolicyState()
             normalizeSelectedTeamIfNeeded()
@@ -978,8 +1048,11 @@ final class AppModel: ObservableObject {
                     return
                 }
                 state = verifiedState
+                state.deviceIdentity = currentDeviceIdentityProvider()
+                state.lastReadiness = nil
+                persistenceValidationReport = AppStateConsistencyValidator.report(for: state)
                 stateRecovery = nil
-                stateRecoveryArchives = AppPaths.unreadableStateRecoveryFiles()
+                stateRecoveryArchives = AppPaths.preservedStateRecoveryFiles()
                 activateNormalStateLifecycle()
                 telemetry.record(.stateRecoveryTriggered, properties: [.reason: recovery.reason.rawValue])
             case .failed(_, let message):
@@ -989,6 +1062,49 @@ final class AppModel: ObservableObject {
             }
         } catch {
             lastError = "Roll Call could not complete recovery. Your original file remains preserved. Error: \(error.localizedDescription)"
+        }
+    }
+
+    private func commitMissingPrimaryRecovery(
+        _ recovery: StateRecoveryContext,
+        replacement: AppState? = nil
+    ) async {
+        guard let primaryStateURL = try? AppPaths.stateURL(),
+              primaryStateURL == recovery.primaryStateURL,
+              !FileManager.default.fileExists(atPath: primaryStateURL.path) else {
+            lastError = "Roll Call found a new state file before Start Fresh completed. Try Again."
+            return
+        }
+
+        var stateToPersist = replacement ?? Self.freshEmptyState(deviceIdentity: currentDeviceIdentityProvider())
+        if Self.deviceIdentityChanged(from: stateToPersist.deviceIdentity, to: currentDeviceIdentityProvider()) {
+            Self.requalifyDeviceDependentState(&stateToPersist)
+        }
+        stateToPersist.appVersion = AppMetadata.appVersion
+        stateToPersist.deviceIdentity = currentDeviceIdentityProvider()
+        stateToPersist.lastReadiness = nil
+        stateToPersist.schemaVersion = AppState.currentSchemaVersion
+        let result = await persistRecoveryStateAndWait(stateToPersist, destinationURL: primaryStateURL)
+        switch result {
+        case .written:
+            guard let verifiedState = try? Self.load(),
+                  verifiedState.schemaVersion <= AppState.currentSchemaVersion else {
+                lastError = "Roll Call could not verify the new state after writing it. The residual files remain untouched."
+                return
+            }
+            state = verifiedState
+            state.deviceIdentity = currentDeviceIdentityProvider()
+            state.lastReadiness = nil
+            persistenceValidationReport = AppStateConsistencyValidator.report(for: state)
+            stateRecovery = nil
+            stateRecoveryArchives = AppPaths.preservedStateRecoveryFiles()
+            preserveResidualAssetsForNextLaunch = true
+            activateNormalStateLifecycle()
+            telemetry.record(.stateRecoveryTriggered, properties: [.reason: recovery.reason.rawValue])
+        case .failed(_, let message):
+            lastError = "Roll Call could not create a new state. The residual files remain untouched. Error: \(message)"
+        case .unconfirmed:
+            lastError = "Roll Call could not confirm the new state write. The residual files remain untouched."
         }
     }
 
@@ -1314,6 +1430,7 @@ final class AppModel: ObservableObject {
         merged.photoSourceRelativePath = draft.photoSourceRelativePath
         merged.profilePhotoCrop = draft.profilePhotoCrop
         merged.playerCardPhotoCrop = draft.playerCardPhotoCrop
+        merged.playerCardDesignID = draft.playerCardDesignID
 
         if let draftCue = draft.songAssignment?.privateClip?.editingCue,
            merged.songAssignment?.privateClip?.editingCue != draftCue {
@@ -2138,6 +2255,7 @@ final class AppModel: ObservableObject {
               let player = team.players.first(where: { $0.id == playerID }),
               let clip = player.songAssignment?.privateClip,
               case .appleMusic(let source) = clip.originalSource,
+              source.libraryPersistentID == nil,
               source.isCatalogBacked != false,
               source.duration == nil else {
             return false
@@ -2262,6 +2380,13 @@ final class AppModel: ObservableObject {
         state.settings.explicitAppleMusicSearchFilteringEnabled = isEnabled
         persist()
         if changed { telemetry.recordOnce(.settingExplicitFilterFirstChanged, properties: [.newValue: isEnabled ? "on" : "off"]) }
+    }
+
+    func setLastPlayerCardDesign(_ design: PlayerCardDesign) {
+        guard PlayerCardDesign.shippingDesigns.contains(design) else { return }
+        guard state.settings.lastPlayerCardDesignID != design.rawValue else { return }
+        state.settings.lastPlayerCardDesignID = design.rawValue
+        persist()
     }
 
     var anonymousUsageAnalyticsEnabled: Bool { telemetry.analyticsEnabled }
@@ -2498,15 +2623,16 @@ final class AppModel: ObservableObject {
         pendingPackageExport = nil
     }
 
-    func confirmPendingPackageExport() async {
+    func confirmPendingPackageExport() async -> URL? {
         guard let pendingPackageExport,
               let team = state.teams.first(where: { $0.id == pendingPackageExport.teamID }) else {
-            return
+            return nil
         }
+        exportURL = nil
         await busy(operationName: "Package export") {
             self.exportURL = try self.packageService.export(team: team, state: self.state)
-            self.pendingPackageExport = nil
         }
+        return exportURL
     }
 
     func importPackage(from url: URL) async {
@@ -2801,7 +2927,7 @@ final class AppModel: ObservableObject {
     }
 
     func refreshRecoveryState() {
-        stateRecoveryArchives = AppPaths.unreadableStateRecoveryFiles()
+        stateRecoveryArchives = AppPaths.preservedStateRecoveryFiles()
         if stateRecovery == nil, purgeExpiredRecentlyDeletedItems() {
             persist()
         }
@@ -2870,9 +2996,7 @@ final class AppModel: ObservableObject {
             let currentSnapshots = self.state.snapshots
 
             let restoredState = try await Task.detached(priority: .utility) { () -> AppState in
-                let decoder = JSONDecoder()
-                decoder.dateDecodingStrategy = .iso8601
-                var restoredState = try decoder.decode(AppState.self, from: Data(contentsOf: sourceURL))
+                var restoredState = try AppStatePersistenceCodec.decode(Data(contentsOf: sourceURL))
                 restoredState.appVersion = currentVersion
                 restoredState.deviceIdentity = currentDeviceIdentity
                 restoredState.settings = currentSettings
@@ -3009,7 +3133,7 @@ final class AppModel: ObservableObject {
         let activeCount = await songClipPreparationCoordinator.pendingCount()
         generatedClipCleanupReport = await runGeneratedClipCleanup(
             activePreparationCount: activeCount,
-            shouldRemoveOrphans: true
+            shouldRemoveOrphans: false
         )
     }
 
@@ -3025,10 +3149,7 @@ final class AppModel: ObservableObject {
         }
 
         return await Task.detached(priority: .utility) {
-            let decoder = JSONDecoder()
-            decoder.dateDecodingStrategy = .iso8601
-
-            guard let decodedState = try? decoder.decode(AppState.self, from: stateData) else {
+            guard let decodedState = try? AppStatePersistenceCodec.decode(stateData) else {
                 return Self.blockedGeneratedClipCleanupReport()
             }
 
@@ -3311,15 +3432,13 @@ final class AppModel: ObservableObject {
             return cached
         }
 
-        let decoder = JSONDecoder()
-        decoder.dateDecodingStrategy = .iso8601
         var referencedPaths: Set<String> = []
         var hasUnreadableSnapshot = false
 
         for snapshot in state.snapshots {
             do {
                 let snapshotURL = try backupSnapshotURL(for: snapshot)
-                let snapshotState = try decoder.decode(AppState.self, from: Data(contentsOf: snapshotURL))
+                let snapshotState = try AppStatePersistenceCodec.decode(Data(contentsOf: snapshotURL))
                 for team in snapshotState.teams {
                     referencedPaths.formUnion(storedAssetRelativePaths(for: team))
                 }
@@ -3856,12 +3975,27 @@ final class AppModel: ObservableObject {
         }
 
         let generationKey = clip.generationKey
+        var mustRequalifyGeneratedAsset = false
         if !isExplicit,
            clip.generatedAsset.status == .ready,
            clip.generatedAsset.generationKey == generationKey {
-            return
+            if let generatedPath = clip.generatedAsset.relativePath,
+               AppPaths.isUsableAssetFile(relativePath: generatedPath) {
+                return
+            }
+            clip.generatedAsset = GeneratedClipAsset(
+                relativePath: nil,
+                status: .none,
+                renderedSelection: nil,
+                generationKey: generationKey,
+                generatedAt: nil
+            )
+            updateSongClip(clip, teamID: teamID, target: target)
+            persist()
+            mustRequalifyGeneratedAsset = true
         }
         if !isExplicit,
+           !mustRequalifyGeneratedAsset,
            shouldSkipAutomaticSongClipPreparation(for: clip, generationKey: generationKey, trigger: trigger) {
             return
         }
@@ -4169,8 +4303,24 @@ final class AppModel: ObservableObject {
     /// protected nothing — it could not stall the UI or the scene transition — while
     /// its only observable effect was dropping the final save. The work it bounds is
     /// one atomic file write on a serial actor, with no network or external locks.
-    func flushLatestState() async {
+    @discardableResult
+    func flushLatestState() async -> Bool {
         await persistLatestStateAndWait()
+    }
+
+    /// Give a scene-transition flush a bounded amount of background execution
+    /// time so iOS does not suspend the process immediately after the scene
+    /// leaves the foreground. The writer itself remains cancellable only by
+    /// process termination and uses an atomic file replacement.
+    @discardableResult
+    func flushLatestStateForLifecycleTransition() async -> Bool {
+        let backgroundTask = UIApplication.shared.beginBackgroundTask(withName: "RollCall State Flush") {}
+        defer {
+            if backgroundTask != .invalid {
+                UIApplication.shared.endBackgroundTask(backgroundTask)
+            }
+        }
+        return await flushLatestState()
     }
 
     private func makePersistenceRequest() -> PersistenceRequest? {
@@ -4199,14 +4349,16 @@ final class AppModel: ObservableObject {
         )
     }
 
-    private func persistLatestStateAndWait() async {
-        guard let request = makePersistenceRequest() else { return }
+    private func persistLatestStateAndWait() async -> Bool {
+        guard let request = makePersistenceRequest() else { return false }
         let result = await persistenceWriter.enqueueAndWait(
             request.snapshot,
             sequence: request.sequence,
             destinationURL: request.destinationURL
         )
         applyPersistenceResult(result, cleanupPaths: request.cleanupPaths)
+        if case .written = result { return true }
+        return false
     }
 
     private func applyPersistenceResult(
@@ -4246,22 +4398,39 @@ final class AppModel: ObservableObject {
     }
 
     private static func load() throws -> AppState {
-        let decoder = JSONDecoder()
-        decoder.dateDecodingStrategy = .iso8601
-        return try decoder.decode(AppState.self, from: Data(contentsOf: AppPaths.stateURL()))
+        try AppStatePersistenceCodec.decode(Data(contentsOf: AppPaths.stateURL()))
     }
 
-    private static func loadInitialState() -> InitialStateLoadResult {
+    private static func loadInitialState(currentDeviceIdentity: DeviceIdentity) -> InitialStateLoadResult {
         do {
             let stateURL = try AppPaths.stateURL()
             guard FileManager.default.fileExists(atPath: stateURL.path) else {
-                return InitialStateLoadResult(state: freshEmptyState(), warning: nil, recoveryReason: nil, recovery: nil)
+                let evidence = AppPaths.residualStateEvidence()
+                guard evidence.hasMeaningfulState else {
+                    return InitialStateLoadResult(
+                        state: freshEmptyState(deviceIdentity: currentDeviceIdentity),
+                        warning: nil,
+                        recoveryReason: nil,
+                        recovery: nil
+                    )
+                }
+                return InitialStateLoadResult(
+                    state: freshEmptyState(deviceIdentity: currentDeviceIdentity),
+                    warning: "Roll Call found local files from an earlier installation but its primary state file is missing. The files were left untouched.",
+                    recoveryReason: StateRecoveryReason.missingPrimaryWithResidualData.rawValue,
+                    recovery: makeStateRecoveryContext(
+                        reason: .missingPrimaryWithResidualData,
+                        primaryStateURL: stateURL,
+                        preservedStateURL: nil
+                    )
+                )
             }
-            let loadedState = try load()
-            guard loadedState.schemaVersion <= AppState.currentSchemaVersion else {
+            let originalData = try Data(contentsOf: stateURL)
+            let sourceSchemaVersion = try AppStatePersistenceCodec.schemaVersion(in: originalData)
+            guard sourceSchemaVersion <= AppState.currentSchemaVersion else {
                 let preservedURL = preserveUnreadableStateFile()
                 return InitialStateLoadResult(
-                    state: freshEmptyState(),
+                    state: freshEmptyState(deviceIdentity: currentDeviceIdentity),
                     warning: nil,
                     recoveryReason: StateRecoveryReason.unsupportedSchema.rawValue,
                     recovery: makeStateRecoveryContext(
@@ -4271,12 +4440,19 @@ final class AppModel: ObservableObject {
                     )
                 )
             }
-            return InitialStateLoadResult(state: loadedState, warning: nil, recoveryReason: nil, recovery: nil)
+            var migrationWarning: String?
+            if sourceSchemaVersion < AppState.currentSchemaVersion {
+                if preserveMigratingStateFile(originalData, schemaVersion: sourceSchemaVersion) == nil {
+                    migrationWarning = "Roll Call migrated saved data without being able to create a pre-migration recovery copy."
+                }
+            }
+            let loadedState = try AppStatePersistenceCodec.decode(originalData)
+            return InitialStateLoadResult(state: loadedState, warning: migrationWarning, recoveryReason: nil, recovery: nil)
         } catch {
             let stateURL = (try? AppPaths.stateURL()) ?? URL(fileURLWithPath: "state.json")
             let preservedURL = preserveUnreadableStateFile()
             return InitialStateLoadResult(
-                state: freshEmptyState(),
+                state: freshEmptyState(deviceIdentity: currentDeviceIdentity),
                 warning: nil,
                 recoveryReason: StateRecoveryReason.loadFailure.rawValue,
                 recovery: makeStateRecoveryContext(
@@ -4312,14 +4488,12 @@ final class AppModel: ObservableObject {
             return []
         }
 
-        let decoder = JSONDecoder()
-        decoder.dateDecodingStrategy = .iso8601
         return files
             .filter { $0.pathExtension.lowercased() == "json" }
             .sorted { $0.lastPathComponent < $1.lastPathComponent }
             .compactMap { url in
                 guard let data = try? Data(contentsOf: url),
-                      let snapshotState = try? decoder.decode(AppState.self, from: data),
+                      let snapshotState = try? AppStatePersistenceCodec.decode(data),
                       snapshotState.schemaVersion <= AppState.currentSchemaVersion else {
                     return nil
                 }
@@ -4329,10 +4503,58 @@ final class AppModel: ObservableObject {
             }
     }
 
-    private static func freshEmptyState() -> AppState {
+    private static func freshEmptyState(deviceIdentity: DeviceIdentity) -> AppState {
         var state = AppState.empty
-        state.deviceIdentity = DeviceIdentity(label: UIDevice.current.name)
+        state.deviceIdentity = deviceIdentity
         return state
+    }
+
+    private static func deviceIdentityChanged(from persisted: DeviceIdentity, to current: DeviceIdentity) -> Bool {
+        switch (persisted.qualificationToken, current.qualificationToken) {
+        case let (.some(oldToken), .some(newToken)):
+            return oldToken != newToken
+        case (.none, .none):
+            return persisted.label != current.label
+        default:
+            return true
+        }
+    }
+
+    private static func requalifyDeviceDependentState(_ state: inout AppState) {
+        for teamIndex in state.teams.indices {
+            for clipIndex in state.teams[teamIndex].teamClips.indices {
+                requalifyDeviceDependentClip(&state.teams[teamIndex].teamClips[clipIndex])
+            }
+            for playerIndex in state.teams[teamIndex].players.indices {
+                guard case .privateClip(var clip)? = state.teams[teamIndex].players[playerIndex].songAssignment else {
+                    continue
+                }
+                requalifyDeviceDependentClip(&clip)
+                state.teams[teamIndex].players[playerIndex].songAssignment = .privateClip(clip)
+            }
+        }
+    }
+
+    private static func requalifyDeviceDependentClip(_ clip: inout SongClip) {
+        guard case .appleMusic = clip.originalSource else { return }
+        if clip.hasCurrentGeneratedAsset,
+           let generatedPath = clip.generatedAsset.relativePath,
+           AppPaths.isUsableAssetFile(relativePath: generatedPath) {
+            return
+        }
+
+        clip.generatedAsset.status = .none
+        clip.generatedAsset.generationKey = clip.generationKey
+        clip.readinessInputs = SongClipReadinessInputs(
+            playback: .needsAppleMusic,
+            sourceAvailableOnDevice: false,
+            downloadedOnDevice: false
+        )
+        clip.portabilityInputs = SongClipPortabilityInputs(
+            portability: .sourceReferenceOnly,
+            generatedAssetCanBeExported: false
+        )
+        clip.retryMetadata = .none
     }
 
     private static func preserveUnreadableStateFile() -> URL? {
@@ -4349,11 +4571,25 @@ final class AppModel: ObservableObject {
         }
     }
 
+    private static func preserveMigratingStateFile(_ data: Data, schemaVersion: Int) -> URL? {
+        do {
+            let recoveryURL = try AppPaths.preMigrationStateRecoveryURL(schemaVersion: schemaVersion)
+            try data.write(to: recoveryURL, options: .atomic)
+            return recoveryURL
+        } catch {
+            return nil
+        }
+    }
+
     nonisolated fileprivate static func write(_ state: AppState, to destinationURL: URL) throws {
+        try encodedStateData(state).write(to: destinationURL, options: .atomic)
+    }
+
+    nonisolated fileprivate static func encodedStateData(_ state: AppState) throws -> Data {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
         encoder.dateEncodingStrategy = .iso8601
-        try encoder.encode(state).write(to: destinationURL, options: .atomic)
+        return try encoder.encode(state)
     }
 
     private func busy(
@@ -4674,7 +4910,7 @@ enum StatePersistenceFailureSemantics {
     }
 }
 
-private enum StatePersistenceResult {
+private enum StatePersistenceResult: Sendable {
     case written(sequence: Int)
     case failed(sequence: Int, String)
     case unconfirmed
@@ -4697,7 +4933,7 @@ private actor StatePersistenceWriter {
         pending = (state, sequence, destinationURL)
 
         guard !isWriting else { return .unconfirmed }
-        return writePending()
+        return await writePending()
     }
 
     func enqueueAndWait(_ state: AppState, sequence: Int, destinationURL: URL) async -> StatePersistenceResult {
@@ -4706,7 +4942,7 @@ private actor StatePersistenceWriter {
         pending = (state, sequence, destinationURL)
 
         guard isWriting else {
-            return writePending()
+            return await writePending()
         }
 
         return await withCheckedContinuation { continuation in
@@ -4714,7 +4950,7 @@ private actor StatePersistenceWriter {
         }
     }
 
-    private func writePending() -> StatePersistenceResult {
+    private func writePending() async -> StatePersistenceResult {
         isWriting = true
         defer {
             isWriting = false
@@ -4723,12 +4959,21 @@ private actor StatePersistenceWriter {
         var finalResult: StatePersistenceResult = .unconfirmed
         while let next = pending {
             pending = nil
+            let encodedState: Data
             do {
-                try AppModel.write(next.state, to: next.destinationURL)
-                finalResult = .written(sequence: next.sequence)
+                encodedState = try AppModel.encodedStateData(next.state)
             } catch {
                 finalResult = .failed(sequence: next.sequence, error.localizedDescription)
+                continue
             }
+
+            let sequence = next.sequence
+            let destinationURL = next.destinationURL
+            finalResult = await writeEncodedState(
+                encodedState,
+                sequence: sequence,
+                destinationURL: destinationURL
+            )
         }
         let completedSequence: Int
         switch finalResult {
@@ -4745,5 +4990,20 @@ private actor StatePersistenceWriter {
         let ready = waiters.filter { $0.sequence <= sequence }
         waiters.removeAll { $0.sequence <= sequence }
         ready.forEach { $0.continuation.resume(returning: result) }
+    }
+
+    private func writeEncodedState(
+        _ data: Data,
+        sequence: Int,
+        destinationURL: URL
+    ) async -> StatePersistenceResult {
+        await Task.detached(priority: .utility) {
+            do {
+                try data.write(to: destinationURL, options: .atomic)
+                return .written(sequence: sequence)
+            } catch {
+                return .failed(sequence: sequence, error.localizedDescription)
+            }
+        }.value
     }
 }

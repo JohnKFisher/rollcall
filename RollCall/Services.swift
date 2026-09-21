@@ -533,8 +533,7 @@ struct AudioAssetService: Sendable {
     }
 
     func assetExists(relativePath: String) -> Bool {
-        guard let url = try? assetURL(relativePath: relativePath) else { return false }
-        return FileManager.default.fileExists(atPath: url.path)
+        AppPaths.isUsableAssetFile(relativePath: relativePath)
     }
 
     func builtInClipExists(source: BuiltInClipSource) -> Bool {
@@ -686,6 +685,7 @@ struct MusicCatalogService: Sendable {
             previewURL: song.previewAssets?.first?.url ?? result.previewURL,
             artworkURL: song.artwork?.url(width: 120, height: 120) ?? result.artworkURL,
             isCatalogBacked: true,
+            libraryPersistentID: result.libraryPersistentID,
             isExplicit: song.contentRating == .explicit
         )
     }
@@ -1732,7 +1732,11 @@ final class CuePlaybackEngine: NSObject, ObservableObject {
                 forProperty: MPMediaItemPropertyPersistentID
             )
         )
-        return query.items?.first
+        guard let item = query.items?.first,
+              AppleMusicLibraryResolution.matches(source: source, playbackStoreID: item.value(forProperty: MPMediaItemPropertyPlaybackStoreID) as? String) else {
+            return nil
+        }
+        return item
     }
 
     private func playLibraryItem(
@@ -1968,13 +1972,24 @@ final class CuePlaybackEngine: NSObject, ObservableObject {
     }
 }
 
+enum AppleMusicLibraryResolution {
+    static func matches(source: AppleMusicSource, playbackStoreID: String?) -> Bool {
+        guard source.libraryPersistentID != nil,
+              let playbackStoreID,
+              !playbackStoreID.isEmpty else {
+            return false
+        }
+        return playbackStoreID == source.songID
+    }
+}
+
 extension CueSource {
     /// Which telemetry source family this cue actually plays back as.
     ///
-    /// `libraryPersistentID` alone decides "this came from the device's Music
-    /// Library". It is set only by the Music Library picker, and
-    /// `CuePlaybackEngine.startPrimaryCue` resolves the library item on that field
-    /// alone, before it ever considers the catalog — so this matches real playback.
+    /// `libraryPersistentID` identifies the device-local lookup candidate, while
+    /// the catalog/store ID confirms that the candidate is still the saved song.
+    /// It is set only by the Music Library picker, and all library resolution
+    /// paths must apply the same two-part check before using the item.
     ///
     /// This previously *also* required `isCatalogBacked == false`, a combination the
     /// app never produces: a library pick with a `playbackStoreID` is recorded as

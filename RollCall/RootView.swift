@@ -441,6 +441,7 @@ struct RootView: View {
     @State private var showRemoveTeamConfirmation = false
     @State private var renameTeamName = ""
     @State private var packageSharePresented = false
+    @State private var packageShareURL: URL?
     @State private var packageImportContext: PackageImportContext = .settings
     @State private var hasEnteredOnboardingFlow = false
     @State private var hasResolvedInitialTab = false
@@ -731,7 +732,7 @@ struct RootView: View {
         if newPhase != .active {
             showTeamClips = false
             if previousPhase == .active {
-                Task { await appModel.flushLatestState() }
+                Task { await appModel.flushLatestStateForLifecycleTransition() }
             }
         }
 
@@ -967,15 +968,17 @@ struct RootView: View {
 
     private var rootSheetContent: some View {
         rootAlertContent
-            .sheet(item: Binding(get: { appModel.pendingPackageExport }, set: { appModel.pendingPackageExport = $0 })) { pending in
+            .sheet(item: Binding(get: { appModel.pendingPackageExport }, set: { appModel.pendingPackageExport = $0 }), onDismiss: {
+                guard packageShareURL != nil else { return }
+                packageSharePresented = true
+            }) { pending in
                 PackageExportPreviewSheet(
                     pending: pending,
                     onExport: {
                         Task {
-                            await appModel.confirmPendingPackageExport()
-                            if appModel.exportURL != nil {
-                                packageSharePresented = true
-                            }
+                            guard let exportURL = await appModel.confirmPendingPackageExport() else { return }
+                            packageShareURL = exportURL
+                            appModel.cancelPendingPackageExport()
                         }
                     },
                     onPrepareFirst: {
@@ -988,6 +991,11 @@ struct RootView: View {
                     }
                 )
                 .interactiveDismissDisabled()
+                .alert("Roll Call", isPresented: errorBinding) {
+                    Button("OK") { appModel.lastError = nil }
+                } message: {
+                    Text(appModel.lastError ?? "")
+                }
             }
             .sheet(item: Binding(get: { appModel.pendingPackageImport }, set: { appModel.pendingPackageImport = $0 })) { pending in
                 PackageImportConfirmationSheet(
@@ -1098,8 +1106,10 @@ struct RootView: View {
             // tab's export flow, the support screen from the rating prompt. They used
             // to be mounted inside `settingsTab`, where they only present if Settings
             // happens to be the active tab. Root is the only correct host.
-            .sheet(isPresented: $packageSharePresented) {
-                if let exportURL = appModel.exportURL {
+            .sheet(isPresented: $packageSharePresented, onDismiss: {
+                packageShareURL = nil
+            }) {
+                if let exportURL = packageShareURL {
                     ActivityShareSheet(items: [exportURL]) { completed in
                         guard completed else { return }
                         appModel.telemetry.recordPackageExportCompleted()
@@ -5072,14 +5082,6 @@ private struct AttributionsView: View {
                         Text("© 2026 Sidelark Labs; John Kenneth Fisher")
                             .rollCallText(.body)
 
-                        Link(destination: URL(string: "https://github.com/JohnKFisher/rollcall")!) {
-                            SettingsRowLabel(
-                                title: "Public GitHub Project",
-                                detail: "github.com/JohnKFisher/rollcall",
-                                systemImage: "link"
-                            )
-                        }
-                        .buttonStyle(.plain)
                     }
                 }
 
@@ -5128,15 +5130,6 @@ private struct AttributionsView: View {
                             systemImage: "textformat"
                         )
 
-                        Link(destination: URL(string: "https://github.com/jpt/barlow")!) {
-                            SettingsRowLabel(
-                                title: "Barlow Project Source",
-                                detail: "github.com/jpt/barlow",
-                                systemImage: "link"
-                            )
-                        }
-                        .buttonStyle(.plain)
-
                         NavigationLink {
                             BarlowLicenseView()
                         } label: {
@@ -5154,29 +5147,12 @@ private struct AttributionsView: View {
                             systemImage: "shippingbox.fill"
                         )
 
-                        Link(destination: URL(string: "https://github.com/weichsel/ZIPFoundation")!) {
-                            SettingsRowLabel(
-                                title: "ZIPFoundation Project",
-                                detail: "github.com/weichsel/ZIPFoundation",
-                                systemImage: "link"
-                            )
-                        }
-                        .buttonStyle(.plain)
-
                         SettingsRowLabel(
                             title: "TelemetryDeck Swift SDK 2.14.2",
                             detail: "MIT License. Copyright TelemetryDeck and contributors.",
                             systemImage: "chart.bar.xaxis"
                         )
 
-                        Link(destination: URL(string: "https://github.com/TelemetryDeck/SwiftSDK")!) {
-                            SettingsRowLabel(
-                                title: "TelemetryDeck Swift SDK Project",
-                                detail: "github.com/TelemetryDeck/SwiftSDK",
-                                systemImage: "link"
-                            )
-                        }
-                        .buttonStyle(.plain)
                     }
                 }
 
@@ -7088,16 +7064,12 @@ private struct StateRecoveryLaunchView: View {
             List {
                 Section {
                     Label(
-                        appModel.stateRecovery?.reason == .unsupportedSchema
-                            ? "This saved data was created by a newer version of Roll Call."
-                            : "Roll Call could not read its saved data.",
+                        recoveryLaunchTitle,
                         systemImage: "exclamationmark.triangle.fill"
                     )
                     .foregroundStyle(Color.rollCall(.warning))
 
-                    Text(appModel.stateRecovery?.preservedStateURL == nil
-                         ? "Roll Call could not preserve the original file yet. Try Again before choosing a recovery option."
-                         : "Your original file has been preserved. Choose a recovery option before creating new teams or replacing the saved file.")
+                    Text(recoveryLaunchMessage)
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
                 }
@@ -7108,6 +7080,9 @@ private struct StateRecoveryLaunchView: View {
                             ShareLink(item: preservedStateURL) {
                                 Label("Share Preserved State File", systemImage: "square.and.arrow.up")
                             }
+                        } else if recovery.reason == .missingPrimaryWithResidualData {
+                            Text("No primary state file was found. Local assets and snapshots remain untouched while you choose a recovery option.")
+                                .foregroundStyle(.secondary)
                         } else {
                             Text("Roll Call could not create the recovery copy yet. Try Again before choosing another option.")
                                 .foregroundStyle(Color.rollCall(.warning))
@@ -7120,7 +7095,7 @@ private struct StateRecoveryLaunchView: View {
                         Button("Start Fresh", role: .destructive) {
                             showingStartFreshConfirmation = true
                         }
-                        .disabled(recovery.preservedStateURL == nil)
+                        .disabled(recovery.preservedStateURL == nil && recovery.reason != .missingPrimaryWithResidualData)
                     }
 
                     Section("Recoverable Backups") {
@@ -7151,7 +7126,7 @@ private struct StateRecoveryLaunchView: View {
             .alert(item: $pendingSnapshotRestore) { snapshot in
                 Alert(
                     title: Text("Restore This Backup?"),
-                    message: Text("This will restore the teams and setup saved in this backup. Your preserved original state file will remain available afterward."),
+                    message: Text(recoveryBackupRestoreMessage),
                     primaryButton: .cancel(),
                     secondaryButton: .default(Text("Restore Backup")) {
                         Task { await appModel.restoreStateRecoverySnapshot(snapshot) }
@@ -7164,9 +7139,43 @@ private struct StateRecoveryLaunchView: View {
                     Task { await appModel.startFreshAfterStateRecovery() }
                 }
             } message: {
-                Text("Roll Call will create a new empty state. The preserved original file will remain available in Recovery until you remove it.")
+                Text(startFreshRecoveryMessage)
             }
         }
+    }
+
+    private var recoveryLaunchTitle: String {
+        switch appModel.stateRecovery?.reason {
+        case .unsupportedSchema:
+            return "This saved data was created by a newer version of Roll Call."
+        case .missingPrimaryWithResidualData:
+            return "Roll Call found local files but its primary state is missing."
+        case .loadFailure, .none:
+            return "Roll Call could not read its saved data."
+        }
+    }
+
+    private var recoveryLaunchMessage: String {
+        if appModel.stateRecovery?.reason == .missingPrimaryWithResidualData {
+            return "The local files were left untouched. Restore a readable local snapshot if available, or choose Start Fresh to create new state without deleting those files."
+        }
+        return appModel.stateRecovery?.preservedStateURL == nil
+            ? "Roll Call could not preserve the original file yet. Try Again before choosing a recovery option."
+            : "Your original file has been preserved. Choose a recovery option before creating new teams or replacing the saved file."
+    }
+
+    private var recoveryBackupRestoreMessage: String {
+        if appModel.stateRecovery?.reason == .missingPrimaryWithResidualData {
+            return "This will restore the teams and setup saved in this local snapshot. The residual local files will remain untouched afterward."
+        }
+        return "This will restore the teams and setup saved in this backup. Your preserved original state file will remain available afterward."
+    }
+
+    private var startFreshRecoveryMessage: String {
+        if appModel.stateRecovery?.reason == .missingPrimaryWithResidualData {
+            return "Roll Call will create a new empty state and leave the residual local files untouched."
+        }
+        return "Roll Call will create a new empty state. The preserved original file will remain available in Recovery until you remove it."
     }
 }
 
@@ -7196,7 +7205,7 @@ private struct RecoveryCenterView: View {
         List {
             if !appModel.stateRecoveryArchives.isEmpty {
                 Section("Preserved State Files") {
-                    Text("These are original state files preserved after Roll Call could not read saved data. Share one with support or remove it only when you are sure it is no longer needed.")
+                    Text("These are local state copies retained for recovery or after a schema migration. Share one with support or remove it only when you are sure it is no longer needed.")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
 
@@ -7242,7 +7251,7 @@ private struct RecoveryCenterView: View {
             }
 
             Section("Backups") {
-                Text("Backups restore an earlier app state. They are separate from Recently Deleted and are best for larger recovery steps.")
+                Text("Local rollback snapshots restore an earlier app state on this device. They are separate from Recently Deleted and do not contain copies of referenced media.")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
 
@@ -7549,7 +7558,7 @@ private struct DeveloperToolsView: View {
                         } label: {
                             SettingsRowLabel(
                                 title: "Open Player Card Lab",
-                                detail: "Compare Clean, Broadcast, and Spotlight with provisional controls and exports.",
+                                detail: "Compare Impact, Broadcast, and Testing with provisional controls and exports.",
                                 systemImage: "rectangle.3.group"
                             )
                         }
@@ -8758,6 +8767,10 @@ private struct PlayerEditorSheet: View {
                     PlayerCardPreviewSheet(
                         player: $player,
                         team: team,
+                        initialDesign: appModel.lastPlayerCardDesign,
+                        onDesignChanged: { design in
+                            appModel.setLastPlayerCardDesign(design)
+                        },
                         onGenerated: {
                             appModel.telemetry.record(.playerCardGenerated)
                         },

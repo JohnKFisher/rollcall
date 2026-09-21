@@ -102,7 +102,14 @@ struct SongClipGenerationService: Sendable {
                     forProperty: MPMediaItemPropertyPersistentID
                 )
             )
-            return query.items?.first
+            guard let item = query.items?.first,
+                  AppleMusicLibraryResolution.matches(
+                      source: source,
+                      playbackStoreID: item.value(forProperty: MPMediaItemPropertyPlaybackStoreID) as? String
+                  ) else {
+                return nil
+            }
+            return item
         }
 
         return nil

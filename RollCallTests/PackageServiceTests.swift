@@ -31,14 +31,81 @@ final class PackageServiceTests: XCTestCase {
 
         let packageURL = try service.export(team: team, state: state)
         let manifest = try service.preview(packageURL: packageURL)
+        let resourceValues = try packageURL.resourceValues(forKeys: [.isRegularFileKey, .fileSizeKey])
 
         XCTAssertEqual(packageURL.pathExtension, "rollcall")
+        XCTAssertEqual(resourceValues.isRegularFile, true)
+        XCTAssertGreaterThan(resourceValues.fileSize ?? 0, 0)
         XCTAssertEqual(manifest.team.name, "Thunder")
         XCTAssertEqual(manifest.team.players.count, 1)
         guard case .localAudio(let source)? = manifest.team.players.first?.cue?.source else {
             return XCTFail("Expected exported player to keep a local audio cue")
         }
         XCTAssertNil(source.hiddenOriginNote)
+    }
+
+    func testMultiPlayerTeamWithoutOptionalClipsExportsAndRoundTripsRepeatedly() throws {
+        let alex = RollCallTestFixtures.player(
+            id: RollCallTestFixtures.alexID,
+            name: "Alex Ramirez",
+            number: "12"
+        )
+        let jordan = RollCallTestFixtures.player(
+            id: UUID(),
+            name: "Jordan Lee",
+            number: "7"
+        )
+        let team = RollCallTestFixtures.team(
+            players: [alex, jordan],
+            battingOrder: [alex.id, jordan.id]
+        )
+        let state = RollCallTestFixtures.appState(team: team)
+
+        for _ in 0..<2 {
+            let packageURL = try service.export(team: team, state: state)
+            let resourceValues = try packageURL.resourceValues(forKeys: [.isRegularFileKey, .fileSizeKey])
+            let preview = try service.preview(packageURL: packageURL)
+            let imported = try service.import(
+                packageURL: packageURL,
+                audioAssetService: AudioAssetService()
+            )
+
+            XCTAssertEqual(resourceValues.isRegularFile, true)
+            XCTAssertGreaterThan(resourceValues.fileSize ?? 0, 0)
+            XCTAssertEqual(preview.team.players.map(\.displayName), ["Alex Ramirez", "Jordan Lee"])
+            XCTAssertEqual(imported.team.players.map(\.displayName), ["Alex Ramirez", "Jordan Lee"])
+            XCTAssertTrue(imported.team.teamClips.isEmpty)
+        }
+    }
+
+    @MainActor
+    func testPackageExportWorkflowDoesNotTreatStaleURLAsSuccessfulRetry() async throws {
+        let player = RollCallTestFixtures.player(
+            id: RollCallTestFixtures.alexID,
+            name: "Alex Ramirez",
+            number: "12"
+        )
+        let team = RollCallTestFixtures.team(players: [player], battingOrder: [player.id])
+        let model = AppModel()
+        model.state = RollCallTestFixtures.appState(team: team)
+
+        model.prepareSelectedTeamExport()
+        let firstResult = await model.confirmPendingPackageExport()
+        let firstURL = try XCTUnwrap(firstResult)
+
+        XCTAssertEqual(model.exportURL, firstURL)
+        XCTAssertNotNil(model.pendingPackageExport, "The preview owns dismissal until the ready URL is handed off.")
+        XCTAssertTrue(FileManager.default.fileExists(atPath: firstURL.path))
+
+        model.cancelPendingPackageExport()
+        model.state.teams[0].players[0].photoRelativePath = "../unsafe.jpg"
+        model.prepareSelectedTeamExport()
+        let failedURL = await model.confirmPendingPackageExport()
+
+        XCTAssertNil(failedURL)
+        XCTAssertNil(model.exportURL, "A failed retry must not reuse the previous package URL.")
+        XCTAssertNotNil(model.pendingPackageExport, "A failed export must keep the preview available.")
+        XCTAssertNotNil(model.lastError)
     }
 
     func testNewPhotoMasterAndFramingsRoundTripWithoutRaisingPackageSchema() throws {
@@ -53,6 +120,7 @@ final class PackageServiceTests: XCTestCase {
         player.photoSourceRelativePath = "master.jpg"
         player.profilePhotoCrop = NormalizedPhotoCrop(x: 0.2, y: 0.1, width: 0.5, height: 0.5)
         player.playerCardPhotoCrop = NormalizedPhotoCrop(x: 0.1, y: 0.05, width: 0.8, height: 0.9)
+        player.playerCardDesign = .impact
         let team = RollCallTestFixtures.team(players: [player], battingOrder: [player.id])
 
         let packageURL = try service.export(team: team, state: RollCallTestFixtures.appState(team: team))
@@ -66,6 +134,7 @@ final class PackageServiceTests: XCTestCase {
         XCTAssertNotEqual(importedPlayer.photoSourceRelativePath, player.photoSourceRelativePath)
         XCTAssertEqual(importedPlayer.profilePhotoCrop, player.profilePhotoCrop)
         XCTAssertEqual(importedPlayer.playerCardPhotoCrop, player.playerCardPhotoCrop)
+        XCTAssertEqual(importedPlayer.playerCardDesign, .impact)
         XCTAssertTrue(AudioAssetService().assetExists(relativePath: importedPlayer.photoRelativePath ?? ""))
         XCTAssertTrue(AudioAssetService().assetExists(relativePath: importedPlayer.photoSourceRelativePath ?? ""))
     }
