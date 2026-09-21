@@ -338,6 +338,28 @@ enum SongClipPreparationTrigger: String, Codable, Equatable {
     case retry
 }
 
+enum SongClipPreparationRetryPolicy {
+    static func shouldBypassAuthorizationBackoff(
+        for clip: SongClip,
+        trigger: SongClipPreparationTrigger,
+        authorizationGranted: Bool
+    ) -> Bool {
+        trigger == .authorizationChanged
+            && authorizationGranted
+            && clip.retryMetadata.lastFailureCode == SongClipPreparationFailureCode.musicAuthorizationRequired.rawValue
+    }
+
+    static func shouldReclassifyAuthorizationNeed(
+        currentReadiness: SongClipPlaybackReadiness,
+        failureCode: SongClipPreparationFailureCode,
+        authorizationGranted: Bool
+    ) -> Bool {
+        currentReadiness == .needsAppleMusic
+            && authorizationGranted
+            && failureCode != .musicAuthorizationRequired
+    }
+}
+
 struct SongClipPreparationRequest: Equatable, Identifiable {
     enum Target: Equatable, Hashable {
         case player(UUID)

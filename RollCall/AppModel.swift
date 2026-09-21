@@ -2857,7 +2857,13 @@ final class AppModel: ObservableObject {
         let status = await MusicAuthorization.request()
         await refreshAppleMusicPlaybackCapability()
         refreshReadiness()
-        scheduleAllSongClipPreparation(trigger: .authorizationChanged)
+        if status == .authorized {
+            scheduleAllSongClipPreparation(
+                trigger: .authorizationChanged,
+                authorizationStatus: status
+            )
+            refreshReadiness()
+        }
         switch status {
         case .denied, .restricted:
             telemetry.recordOnce(.musicAccessDenied, properties: [.result: status == .denied ? "denied" : "restricted"])
@@ -3921,17 +3927,26 @@ final class AppModel: ObservableObject {
         }
     }
 
-    private func scheduleAllSongClipPreparation(trigger: SongClipPreparationTrigger) {
+    private func scheduleAllSongClipPreparation(
+        trigger: SongClipPreparationTrigger,
+        authorizationStatus: MusicAuthorization.Status? = nil
+    ) {
         for team in state.teams {
             for teamClip in team.teamClips {
                 scheduleTeamClipPreparation(
                     teamID: team.id,
                     teamClipID: teamClip.id,
-                    trigger: trigger
+                    trigger: trigger,
+                    authorizationStatus: authorizationStatus
                 )
             }
             for player in team.players where player.songAssignment?.privateClip != nil {
-                scheduleSongClipPreparation(teamID: team.id, playerID: player.id, trigger: trigger)
+                scheduleSongClipPreparation(
+                    teamID: team.id,
+                    playerID: player.id,
+                    trigger: trigger,
+                    authorizationStatus: authorizationStatus
+                )
             }
         }
     }
@@ -3940,13 +3955,15 @@ final class AppModel: ObservableObject {
         teamID: UUID,
         playerID: UUID,
         trigger: SongClipPreparationTrigger,
-        isExplicit: Bool = false
+        isExplicit: Bool = false,
+        authorizationStatus: MusicAuthorization.Status? = nil
     ) {
         scheduleSongClipPreparation(
             teamID: teamID,
             target: .player(playerID),
             trigger: trigger,
-            isExplicit: isExplicit
+            isExplicit: isExplicit,
+            authorizationStatus: authorizationStatus
         )
     }
 
@@ -3954,13 +3971,15 @@ final class AppModel: ObservableObject {
         teamID: UUID,
         teamClipID: UUID,
         trigger: SongClipPreparationTrigger,
-        isExplicit: Bool = false
+        isExplicit: Bool = false,
+        authorizationStatus: MusicAuthorization.Status? = nil
     ) {
         scheduleSongClipPreparation(
             teamID: teamID,
             target: .teamClip(teamClipID),
             trigger: trigger,
-            isExplicit: isExplicit
+            isExplicit: isExplicit,
+            authorizationStatus: authorizationStatus
         )
     }
 
@@ -3968,13 +3987,19 @@ final class AppModel: ObservableObject {
         teamID: UUID,
         target: SongClipPreparationRequest.Target,
         trigger: SongClipPreparationTrigger,
-        isExplicit: Bool
+        isExplicit: Bool,
+        authorizationStatus: MusicAuthorization.Status? = nil
     ) {
         guard var clip = songClip(teamID: teamID, target: target) else {
             return
         }
 
         let generationKey = clip.generationKey
+        let bypassAuthorizationBackoff = SongClipPreparationRetryPolicy.shouldBypassAuthorizationBackoff(
+            for: clip,
+            trigger: trigger,
+            authorizationGranted: authorizationStatus == .authorized
+        )
         var mustRequalifyGeneratedAsset = false
         if !isExplicit,
            clip.generatedAsset.status == .ready,
@@ -3995,11 +4020,13 @@ final class AppModel: ObservableObject {
             mustRequalifyGeneratedAsset = true
         }
         if !isExplicit,
+           !bypassAuthorizationBackoff,
            !mustRequalifyGeneratedAsset,
            shouldSkipAutomaticSongClipPreparation(for: clip, generationKey: generationKey, trigger: trigger) {
             return
         }
         if !isExplicit,
+           !bypassAuthorizationBackoff,
            let nextRetryAt = clip.retryMetadata.nextRetryAt,
            nextRetryAt > .now {
             return
@@ -4068,13 +4095,14 @@ final class AppModel: ObservableObject {
         case .failedPermanent:
             return true
         case .failedRetryable:
+            if trigger == .authorizationChanged {
+                return true
+            }
             if clip.retryMetadata.lastFailureCode == SongClipPreparationFailureCode.musicAuthorizationRequired.rawValue,
-               MusicAuthorization.currentStatus != .authorized,
-               trigger != .authorizationChanged {
+               MusicAuthorization.currentStatus != .authorized {
                 return true
             }
             return clip.retryMetadata.attemptCount >= 3
-                && trigger != .authorizationChanged
         case .pending, .ready:
             return false
         }
@@ -4221,6 +4249,14 @@ final class AppModel: ObservableObject {
             let hasReadyGeneratedAsset = clip.generatedAsset.status == .ready
             if !hasReadyGeneratedAsset {
                 clip.generatedAsset.status = retryable ? .failedRetryable : .failedPermanent
+                if SongClipPreparationRetryPolicy.shouldReclassifyAuthorizationNeed(
+                    currentReadiness: clip.readinessInputs.playback,
+                    failureCode: code,
+                    authorizationGranted: MusicAuthorization.currentStatus == .authorized
+                ) {
+                    clip.readinessInputs.playback = .needsRepair
+                    clip.readinessInputs.sourceAvailableOnDevice = false
+                }
                 if !retryable {
                     clip.readinessInputs.playback = .needsRepair
                     clip.readinessInputs.sourceAvailableOnDevice = false

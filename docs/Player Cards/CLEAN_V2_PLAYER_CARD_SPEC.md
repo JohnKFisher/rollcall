@@ -193,7 +193,7 @@ Requirements:
 
 This is a signature Impact visual element.
 
-The hero photo should receive subtle team-derived edge lighting that reads as ambient reflected light rather than a stroke or neon border.
+The hero photo should receive subtle team-derived edge lighting that reads as ambient reflected light rather than a neon effect. Impact also uses a thin, solid, inset team-color border around the photo; this border is a separate restrained graphic treatment from the soft edge illumination.
 
 ### 7.1 Visual Construction
 
@@ -665,16 +665,17 @@ A very faint horizontal separator may appear above the footer, fading at both en
 
 ---
 
-## 19. Rounded Geometry
+## 19. Card and Photo Geometry
 
 Approximate hierarchy:
 
 ```text
 Outer card radius: ~32 px
-Hero photo radius: ~20 px
+Hero photo corners: square (90°)
+Photo border: thin, solid, inset team-color stroke
 ```
 
-The hero photo should be less rounded than the overall card.
+The photo border must not change the established photo dimensions, crop, or position.
 
 Avoid repeated UI-style rounded containers elsewhere in Impact.
 

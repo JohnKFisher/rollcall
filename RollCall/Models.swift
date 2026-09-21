@@ -798,6 +798,7 @@ struct Team: Codable, Equatable, Identifiable {
 enum ReadinessState: String, Codable {
     case ready
     case enhanced
+    case preparing
     case needsAudio
     case optional
     case gameDayCheck
@@ -811,6 +812,8 @@ enum ReadinessState: String, Codable {
             self = .ready
         case "enhanced":
             self = .enhanced
+        case "preparing":
+            self = .preparing
         case "needsAudio", "warning":
             self = .needsAudio
         case "optional":
@@ -839,6 +842,23 @@ enum ReadinessCheckCategory: String, Codable, Equatable {
 enum ReadinessCheckAction: String, Codable, Equatable {
     case none
     case requestAppleMusicAccess
+}
+
+enum ReadinessNavigationSection: String, Equatable {
+    case playerAudio
+    case announcements
+    case optionalPolish
+    case beforeYouStart
+
+    var scrollID: String {
+        "readiness-section-\(rawValue)"
+    }
+}
+
+enum GameDayWarningDestination: Equatable {
+    case teams
+    case lineupEditor
+    case readiness(section: ReadinessNavigationSection, checkID: String?)
 }
 
 struct ReadinessCheck: Codable, Equatable, Identifiable {
@@ -906,6 +926,21 @@ struct ReadinessCheck: Codable, Equatable, Identifiable {
         case "network": return .network
         case "music-auth": return .appleMusicAccess
         default: return .lineup
+        }
+    }
+
+    var gameDayWarningDestination: GameDayWarningDestination {
+        switch category {
+        case .playerAudio:
+            return .readiness(section: .playerAudio, checkID: id)
+        case .playerAnnouncement:
+            return .readiness(section: .announcements, checkID: id)
+        case .playerPhoto:
+            return .readiness(section: .optionalPolish, checkID: id)
+        case .audioRoute, .volume, .network, .appleMusicAccess:
+            return .readiness(section: .beforeYouStart, checkID: id)
+        case .lineup:
+            return .lineupEditor
         }
     }
 }

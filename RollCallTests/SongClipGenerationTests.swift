@@ -294,6 +294,72 @@ final class SongClipGenerationTests: XCTestCase {
         XCTAssertFalse(SongClipPolicy.current.autoDownloadEligibleSongsEnabled)
     }
 
+    func testAuthorizationChangeOnlyBypassesAppleMusicAuthorizationBackoff() {
+        var clip = SongClip(
+            cue: RollCallTestFixtures.appleMusicCue(
+                songID: "apple-auth-retry",
+                title: "Needs Authorization",
+                artistName: "Artist"
+            )
+        )
+        clip.generatedAsset.status = .failedRetryable
+        clip.readinessInputs.playback = .needsAppleMusic
+        clip.retryMetadata = SongClipRetryMetadata(
+            attemptCount: 1,
+            lastAttemptAt: RollCallTestFixtures.now,
+            nextRetryAt: .distantFuture,
+            lastFailureCode: SongClipPreparationFailureCode.musicAuthorizationRequired.rawValue
+        )
+
+        XCTAssertTrue(
+            SongClipPreparationRetryPolicy.shouldBypassAuthorizationBackoff(
+                for: clip,
+                trigger: .authorizationChanged,
+                authorizationGranted: true
+            )
+        )
+        XCTAssertFalse(
+            SongClipPreparationRetryPolicy.shouldBypassAuthorizationBackoff(
+                for: clip,
+                trigger: .authorizationChanged,
+                authorizationGranted: false
+            )
+        )
+
+        clip.retryMetadata.lastFailureCode = SongClipPreparationFailureCode.transientSystemFailure.rawValue
+        XCTAssertFalse(
+            SongClipPreparationRetryPolicy.shouldBypassAuthorizationBackoff(
+                for: clip,
+                trigger: .authorizationChanged,
+                authorizationGranted: true
+            )
+        )
+    }
+
+    func testAuthorizedNonAuthorizationFailureReclassifiesStaleAppleMusicNeed() {
+        XCTAssertTrue(
+            SongClipPreparationRetryPolicy.shouldReclassifyAuthorizationNeed(
+                currentReadiness: .needsAppleMusic,
+                failureCode: .transientSystemFailure,
+                authorizationGranted: true
+            )
+        )
+        XCTAssertFalse(
+            SongClipPreparationRetryPolicy.shouldReclassifyAuthorizationNeed(
+                currentReadiness: .needsAppleMusic,
+                failureCode: .musicAuthorizationRequired,
+                authorizationGranted: true
+            )
+        )
+        XCTAssertFalse(
+            SongClipPreparationRetryPolicy.shouldReclassifyAuthorizationNeed(
+                currentReadiness: .needsAppleMusic,
+                failureCode: .transientSystemFailure,
+                authorizationGranted: false
+            )
+        )
+    }
+
     func testAppleMusicSearchRecognizesCancellationErrors() {
         XCTAssertTrue(MusicCatalogService.isCancellation(CancellationError()))
         XCTAssertTrue(

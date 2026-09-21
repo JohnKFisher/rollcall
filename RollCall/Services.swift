@@ -2113,6 +2113,17 @@ final class ReadinessService {
             )
         }
 
+        if clip.generatedAsset.status == .pending {
+            return ReadinessCheck(
+                id: "player-\(player.id)-preparing",
+                title: player.displayName,
+                detail: "Roll Call is checking this song and preparing the most reliable playback option it can.",
+                state: .preparing,
+                category: .playerAudio,
+                playerID: player.id
+            )
+        }
+
         if clip.hasCurrentGeneratedAsset,
            let generatedPath = clip.generatedAsset.relativePath,
            audioAssetService.assetExists(relativePath: generatedPath) {

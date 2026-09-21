@@ -161,6 +161,7 @@ struct PlayerCardProductionCleanDerivedColors: Sendable {
     let displayAccent: PlayerCardProductionRGBColor
     let illuminationAccent: PlayerCardProductionRGBColor
     let numberAccent: PlayerCardProductionRGBColor
+    let contrastAccent: PlayerCardProductionRGBColor
 }
 
 struct PlayerCardProductionBroadcastDerivedColors: Sendable {
@@ -226,7 +227,9 @@ enum PlayerCardProductionCleanColorResolver {
     static func resolve(_ raw: PlayerCardProductionRGBColor) -> PlayerCardProductionCleanDerivedColors {
         let display = PlayerCardProductionColorMath.readableAccent(from: raw)
         let illumination = PlayerCardProductionColorMath.light(from: raw, saturation: max(PlayerCardProductionColorMath.hsv(raw).saturation * 0.72, 0.20), brightness: 0.78)
-        return PlayerCardProductionCleanDerivedColors(displayAccent: display, illuminationAccent: illumination, numberAccent: PlayerCardProductionColorMath.mix(display, .white, amount: 0.10))
+        let number = PlayerCardProductionColorMath.mix(display, .white, amount: 0.10)
+        let contrast = display.luminance > 0.58 ? PlayerCardProductionRGBColor(red: 0.04, green: 0.05, blue: 0.07) : .white
+        return PlayerCardProductionCleanDerivedColors(displayAccent: display, illuminationAccent: illumination, numberAccent: number, contrastAccent: contrast)
     }
 }
 
@@ -697,6 +700,7 @@ enum PlayerCardProductionCleanLayout {
     static let songRect = CGRect(x: 70, y: 1_053, width: 880, height: 58)
     static let artistRect = CGRect(x: 70, y: 1_111, width: 880, height: 48)
     static let waveformRect = CGRect(x: 70, y: 1_195, width: 560, height: 46)
+    static let musicAccentRect = CGRect(x: 56, y: musicLabelRect.minY, width: 5, height: waveformRect.maxY - musicLabelRect.minY)
     static let footerY: CGFloat = 1_274
 }
 
@@ -705,33 +709,33 @@ private enum PlayerCardProductionImpactRenderer {
         let colors = PlayerCardProductionCleanColorResolver.resolve(model.teamColor)
         PlayerCardProductionArtworkRenderer.drawBackground(in: context, accent: colors.illuminationAccent, atmosphere: 0.065)
         let photoRect = PlayerCardProductionCleanLayout.photoRect
-        PlayerCardProductionArtworkRenderer.drawPhoto(model.photo, crop: model.crop, in: photoRect, context: context, cornerRadius: 22)
-        PlayerCardProductionArtworkRenderer.drawAsymmetricEdgeLight(in: photoRect, accent: colors.illuminationAccent, strength: model.tuning.cleanEdgeLight, context: context, cornerRadius: 22)
+        PlayerCardProductionArtworkRenderer.drawPhoto(model.photo, crop: model.crop, in: photoRect, context: context, cornerRadius: 0)
+        PlayerCardProductionArtworkRenderer.drawAsymmetricEdgeLight(in: photoRect, accent: colors.illuminationAccent, strength: model.tuning.cleanEdgeLight, context: context, cornerRadius: 0)
 
         if let teamName = model.teamName {
             PlayerCardProductionArtworkRenderer.drawText(teamName.uppercased(), in: CGRect(x: 70, y: 82, width: 690, height: 40), font: PlayerCardProductionCleanTypography.condensed(size: 25, weight: .semibold), color: .white.withAlphaComponent(0.92), alignment: .left, tracking: 2.2, context: context)
-            context.setStrokeColor(colors.displayAccent.uiColor.cgColor)
-            context.setLineWidth(5)
-            context.move(to: CGPoint(x: 70, y: 134))
-            context.addLine(to: CGPoint(x: 250, y: 134))
-            context.strokePath()
         }
         if let number = model.playerNumber {
+            let numberBadgeRect = CGRect(x: 904, y: 74, width: 120, height: 76)
+            context.setFillColor(colors.displayAccent.uiColor.cgColor)
+            context.fill(numberBadgeRect)
             let numberFont = PlayerCardProductionArtworkRenderer.fittedFont(number, maxSize: 60, minimumSize: 30, width: 120, fontProvider: { PlayerCardProductionCleanTypography.condensed(size: $0, weight: .black) })
-            PlayerCardProductionArtworkRenderer.drawText(number, in: CGRect(x: 904, y: 74, width: 120, height: 76), font: numberFont, color: .white, alignment: .right, context: context)
-            context.setStrokeColor(colors.displayAccent.uiColor.cgColor)
-            context.setLineWidth(4)
-            context.move(to: CGPoint(x: 918, y: 158))
-            context.addLine(to: CGPoint(x: 1_024, y: 158))
-            context.strokePath()
+            PlayerCardProductionArtworkRenderer.drawText(number, in: numberBadgeRect.insetBy(dx: 8, dy: 0), font: numberFont, color: colors.contrastAccent.uiColor, alignment: .center, context: context)
         }
 
         let gradientRect = PlayerCardProductionCleanLayout.gradientRect
         let gradient = CGGradient(colorsSpace: PlayerCardProductionArtworkRenderer.sRGB, colors: [UIColor.clear.cgColor, UIColor(red: 0.025, green: 0.032, blue: 0.05, alpha: model.tuning.cleanGradientStrength).cgColor] as CFArray, locations: [model.tuning.cleanGradientStart, 1])
         if let gradient { context.drawLinearGradient(gradient, start: CGPoint(x: gradientRect.midX, y: gradientRect.minY), end: CGPoint(x: gradientRect.midX, y: gradientRect.maxY), options: []) }
+        context.saveGState()
+        context.setStrokeColor(colors.displayAccent.uiColor.cgColor)
+        context.setLineWidth(3)
+        context.stroke(photoRect.insetBy(dx: 1.5, dy: 1.5))
+        context.restoreGState()
 
         PlayerCardProductionArtworkRenderer.drawCleanName(first: model.firstName, last: model.lastName, x: 70, y: model.tuning.cleanNameY, width: 860, context: context)
         if model.songTitle != nil || model.artistName != nil {
+            context.setFillColor(colors.displayAccent.uiColor.cgColor)
+            context.fill(PlayerCardProductionCleanLayout.musicAccentRect)
             if let icon = UIImage(systemName: "music.note")?.withTintColor(colors.displayAccent.uiColor, renderingMode: .alwaysOriginal) {
                 icon.draw(in: PlayerCardProductionCleanLayout.musicIconRect)
             }
@@ -1379,38 +1383,24 @@ private struct PlayerCardCarousel: View {
     let onSelect: (PlayerCardDesign) -> Void
 
     var body: some View {
-        ScrollViewReader { proxy in
-            GeometryReader { geometry in
-                let cardWidth = min(max(geometry.size.width * 0.78, 220), 360)
-                let cardHeight = cardWidth * 1.25
-                let sideInset = max(0, (geometry.size.width - cardWidth) / 2)
+        GeometryReader { geometry in
+            let cardWidth = min(max(geometry.size.width * 0.78, 220), 360)
+            let cardHeight = cardWidth * 1.25
+            let sideInset = max(0, (geometry.size.width - cardWidth) / 2)
 
-                ScrollView(.horizontal, showsIndicators: false) {
-                    LazyHStack(spacing: 12) {
-                        ForEach(PlayerCardDesign.shippingDesigns) { design in
-                            card(for: design, width: cardWidth, height: cardHeight)
-                                .id(design.id)
-                        }
-                    }
-                    .padding(.horizontal, sideInset)
-                    .scrollTargetLayout()
-                }
-                .scrollTargetBehavior(.viewAligned)
-                .scrollPosition(id: $selection, anchor: .center)
-                .frame(height: cardHeight + 28)
-                .onChange(of: selection) { _, id in
-                    guard let id else { return }
-                    withAnimation(.easeInOut(duration: 0.25)) {
-                        proxy.scrollTo(id, anchor: .center)
+            ScrollView(.horizontal, showsIndicators: false) {
+                LazyHStack(spacing: 12) {
+                    ForEach(PlayerCardDesign.shippingDesigns) { design in
+                        card(for: design, width: cardWidth, height: cardHeight)
+                            .id(design.id)
                     }
                 }
+                .padding(.horizontal, sideInset)
+                .scrollTargetLayout()
             }
-            .onAppear {
-                guard let id = selection else { return }
-                DispatchQueue.main.async {
-                    proxy.scrollTo(id, anchor: .center)
-                }
-            }
+            .scrollTargetBehavior(.viewAligned)
+            .scrollPosition(id: $selection, anchor: .center)
+            .frame(height: cardHeight + 28)
         }
         .aspectRatio(0.94, contentMode: .fit)
         .accessibilityElement(children: .contain)

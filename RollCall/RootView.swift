@@ -426,6 +426,12 @@ struct RootView: View {
         let id: UUID
     }
 
+    private struct ReadinessNavigationRequest: Identifiable, Equatable {
+        let id: UUID
+        let section: ReadinessNavigationSection
+        let checkID: String?
+    }
+
     @Environment(\.colorScheme) private var deviceColorScheme
     @Environment(\.scenePhase) private var scenePhase
     @ObservedObject var appModel: AppModel
@@ -433,6 +439,7 @@ struct RootView: View {
     @ObservedObject private var openGameDayRequestCenter = OpenGameDayRequestCenter.shared
     @State private var newTeamName = ""
     @State private var playerEditorRoute: PlayerEditorRoute?
+    @State private var readinessNavigationRequest: ReadinessNavigationRequest?
     @State private var packageImportPresented = false
     @State private var csvImportPresented = false
     @State private var selectedTab: RootTab = .players
@@ -603,6 +610,34 @@ struct RootView: View {
     private func presentPlayerEditor(for player: Player) {
         appModel.prepareSongClipForPlayerEditor(player.id)
         playerEditorRoute = PlayerEditorRoute(id: player.id)
+    }
+
+    private func handleGameDayWarning(_ destination: GameDayWarningDestination) {
+        switch destination {
+        case .teams:
+            selectedTab = .teams
+        case .lineupEditor:
+            selectedTab = .gameDay
+            showLineupEditor = true
+        case .readiness(let section, let checkID):
+            readinessNavigationRequest = ReadinessNavigationRequest(
+                id: UUID(),
+                section: section,
+                checkID: checkID
+            )
+            selectedTab = .readiness
+        }
+    }
+
+    private func readinessScrollTargetID(
+        for request: ReadinessNavigationRequest,
+        in readiness: ReadinessStatus
+    ) -> String {
+        if let checkID = request.checkID,
+           readiness.checks.contains(where: { $0.id == checkID }) {
+            return checkID
+        }
+        return request.section.scrollID
     }
 
     private func updateIdleTimer() {
@@ -1750,9 +1785,11 @@ struct RootView: View {
             ZStack {
                 GameDayBackground()
                     .ignoresSafeArea()
-                GameDayBoard(appModel: appModel) {
-                    showLineupEditor = true
-                }
+                GameDayBoard(
+                    appModel: appModel,
+                    onLineup: { showLineupEditor = true },
+                    onWarning: handleGameDayWarning
+                )
             }
             .navigationTitle("Game Day")
             .toolbar(.hidden, for: .navigationBar)
@@ -1769,57 +1806,84 @@ struct RootView: View {
 
     private var readinessTab: some View {
         NavigationStack {
-            ScrollView {
-                VStack(alignment: .leading, spacing: RollCallSpacingTier.large.value) {
-                    if let readiness = appModel.selectedTeamReadiness {
-                        ReadinessOverviewCard(
-                            readiness: readiness,
-                            team: appModel.selectedTeam,
-                            onOpenGameDay: { selectedTab = .gameDay }
-                        ) {
-                            appModel.refreshReadiness()
-                        }
-
-                        ReadinessPlayerAudioCard(
-                            checks: playerAudioReadinessChecks(from: readiness.checks),
-                            playerForCheck: playerForReadinessCheck,
-                            onEditPlayer: presentPlayerEditor
-                        )
-
-                        ReadinessEnhancementsCard(
-                            checks: announcementReadinessChecks(from: readiness.checks),
-                            playerAudioChecks: playerAudioReadinessChecks(from: readiness.checks),
-                            playerForCheck: playerForReadinessCheck,
-                            onEditPlayer: presentPlayerEditor
-                        )
-
-                        ReadinessOptionalUpgradesCard(
-                            checks: optionalUpgradeReadinessChecks(from: readiness.checks),
-                            playerForCheck: playerForReadinessCheck,
-                            onEditPlayer: presentPlayerEditor
-                        )
-
-                        ReadinessGameDayChecksCard(
-                            checks: gameDayReadinessChecks(from: readiness.checks),
-                            onRequestAppleMusicAccess: {
-                                Task { await appModel.requestAppleMusicAccess() }
+            ScrollViewReader { proxy in
+                ScrollView {
+                    VStack(alignment: .leading, spacing: RollCallSpacingTier.large.value) {
+                        if let readiness = appModel.selectedTeamReadiness {
+                            ReadinessOverviewCard(
+                                readiness: readiness,
+                                team: appModel.selectedTeam,
+                                onOpenGameDay: { selectedTab = .gameDay }
+                            ) {
+                                appModel.refreshReadiness()
                             }
-                        )
-                    } else {
-                        ReadinessEmptyCard {
-                            appModel.refreshReadiness()
+
+                            ReadinessPlayerAudioCard(
+                                checks: playerAudioReadinessChecks(from: readiness.checks),
+                                playerForCheck: playerForReadinessCheck,
+                                onEditPlayer: presentPlayerEditor
+                            )
+                            .id(ReadinessNavigationSection.playerAudio.scrollID)
+
+                            ReadinessEnhancementsCard(
+                                checks: announcementReadinessChecks(from: readiness.checks),
+                                playerAudioChecks: playerAudioReadinessChecks(from: readiness.checks),
+                                playerForCheck: playerForReadinessCheck,
+                                onEditPlayer: presentPlayerEditor
+                            )
+                            .id(ReadinessNavigationSection.announcements.scrollID)
+
+                            ReadinessOptionalUpgradesCard(
+                                checks: optionalUpgradeReadinessChecks(from: readiness.checks),
+                                playerForCheck: playerForReadinessCheck,
+                                onEditPlayer: presentPlayerEditor
+                            )
+                            .id(ReadinessNavigationSection.optionalPolish.scrollID)
+
+                            ReadinessGameDayChecksCard(
+                                checks: gameDayReadinessChecks(from: readiness.checks),
+                                onRequestAppleMusicAccess: {
+                                    Task { await appModel.requestAppleMusicAccess() }
+                                }
+                            )
+                            .id(ReadinessNavigationSection.beforeYouStart.scrollID)
+                        } else {
+                            ReadinessEmptyCard {
+                                appModel.refreshReadiness()
+                            }
                         }
                     }
+                    .padding(.horizontal, 16)
+                    .padding(.top, RollCallSpacingTier.tight.value)
+                    .padding(.bottom, RollCallSpacingTier.large.value)
                 }
-                .padding(.horizontal, 16)
-                .padding(.top, RollCallSpacingTier.tight.value)
-                .padding(.bottom, RollCallSpacingTier.large.value)
+                .onAppear {
+                    scrollToPendingReadinessRequest(using: proxy)
+                }
+                .onChange(of: readinessNavigationRequest) { _, _ in
+                    scrollToPendingReadinessRequest(using: proxy)
+                }
             }
             .accentWashBackground()
             .navigationTitle("Readiness")
             .toolbar(.hidden, for: .navigationBar)
             .safeAreaInset(edge: .top, spacing: 0) {
                 rootTeamBannerHeader()
+            }
+        }
+    }
+
+    private func scrollToPendingReadinessRequest(using proxy: ScrollViewProxy) {
+        guard let request = readinessNavigationRequest,
+              let readiness = appModel.selectedTeamReadiness else { return }
+
+        let targetID = readinessScrollTargetID(for: request, in: readiness)
+        DispatchQueue.main.async {
+            withAnimation(.easeInOut(duration: 0.22)) {
+                proxy.scrollTo(targetID, anchor: .top)
+            }
+            if readinessNavigationRequest?.id == request.id {
+                readinessNavigationRequest = nil
             }
         }
     }
@@ -3389,12 +3453,16 @@ private struct ReadinessOverviewCard: View {
         playerChecks.filter { $0.state == .needsAudio }.count
     }
 
+    private var preparingCount: Int {
+        playerChecks.filter { $0.state == .preparing }.count
+    }
+
     private var issueCount: Int {
         playerChecks.filter { $0.state == .issue }.count
     }
 
     private var isReadyForGameDay: Bool {
-        presentCount > 0 && needsAudioCount == 0 && issueCount == 0
+        presentCount > 0 && preparingCount == 0 && needsAudioCount == 0 && issueCount == 0
     }
 
     var body: some View {
@@ -3432,6 +3500,9 @@ private struct ReadinessOverviewCard: View {
                     if needsAudioCount > 0 {
                         StatusChip(text: "\(needsAudioCount) need audio", role: .warning, systemImage: "music.note", emphasis: .subdued)
                     }
+                    if preparingCount > 0 {
+                        StatusChip(text: "\(preparingCount) preparing", role: .neutral, systemImage: "clock", emphasis: .subdued)
+                    }
                     if enhancedCount > 0 {
                         StatusChip(text: "\(enhancedCount) enhanced", role: .live, systemImage: "mic.fill", emphasis: .subdued)
                     }
@@ -3459,6 +3530,9 @@ private struct ReadinessOverviewCard: View {
         if needsAudioCount > 0 {
             return "Some Players Need Audio"
         }
+        if preparingCount > 0 {
+            return "Preparing Player Audio"
+        }
         return "Ready for Game Day"
     }
 
@@ -3471,6 +3545,9 @@ private struct ReadinessOverviewCard: View {
         }
         if needsAudioCount > 0 {
             return "Game Day can still use Small Cheer fallback, but these players need their own audio to feel ready."
+        }
+        if preparingCount > 0 {
+            return "Roll Call is checking these songs. You can keep using the app while preparation finishes."
         }
         return "Every present player has player-specific audio. Optional upgrades can add more delight, but they are not required."
     }
@@ -3486,6 +3563,9 @@ private struct ReadinessOverviewCard: View {
         if needsAudioCount > 0 || presentCount == 0 {
             return .warning
         }
+        if preparingCount > 0 {
+            return .warning
+        }
         return .ready
     }
 
@@ -3495,6 +3575,9 @@ private struct ReadinessOverviewCard: View {
         }
         if needsAudioCount > 0 || presentCount == 0 {
             return "music.note"
+        }
+        if preparingCount > 0 {
+            return "clock"
         }
         return "checkmark.circle"
     }
@@ -3587,6 +3670,7 @@ private struct ReadinessGameDayChecksCard: View {
                             check: check,
                             onRequestAppleMusicAccess: onRequestAppleMusicAccess
                         )
+                        .id(check.id)
                     }
                 }
             }
@@ -3792,8 +3876,10 @@ private struct ReadinessSectionCard: View {
                             }
                             .buttonStyle(.plain)
                             .accessibilityHint("Opens this player’s setup.")
+                            .id(check.id)
                         } else {
                             ReadinessCheckDisplayRow(check: check)
+                                .id(check.id)
                         }
                     }
                 }
@@ -3802,7 +3888,7 @@ private struct ReadinessSectionCard: View {
     }
 
     private var cardFamily: RollCallCardFamily {
-        if checks.contains(where: { $0.state == .issue || $0.state == .needsAudio }) {
+        if checks.contains(where: { $0.state == .issue || $0.state == .needsAudio || $0.state == .preparing }) {
             return .status
         }
         return .utility
@@ -4786,6 +4872,7 @@ private extension ReadinessState {
         switch self {
         case .ready: return "Ready"
         case .enhanced: return "Enhanced"
+        case .preparing: return "Preparing"
         case .needsAudio: return "Needs Audio"
         case .optional: return "Optional"
         case .gameDayCheck: return "Check"
@@ -4797,6 +4884,7 @@ private extension ReadinessState {
         switch self {
         case .ready: return .ready
         case .enhanced: return .live
+        case .preparing: return .warning
         case .needsAudio: return .warning
         case .optional, .gameDayCheck: return .neutral
         case .issue: return .destructive
@@ -4807,6 +4895,7 @@ private extension ReadinessState {
         switch self {
         case .ready: return "checkmark.circle"
         case .enhanced: return "star.circle"
+        case .preparing: return "clock"
         case .needsAudio: return "music.note"
         case .optional: return "circle"
         case .gameDayCheck: return "checklist"
@@ -4818,6 +4907,7 @@ private extension ReadinessState {
         switch self {
         case .ready: return Color.rollCall(.ready)
         case .enhanced: return Color.rollCall(.live)
+        case .preparing: return Color.rollCall(.warning)
         case .needsAudio: return Color.rollCall(.warning)
         case .optional, .gameDayCheck: return Color(uiColor: .secondaryLabel)
         case .issue: return Color.rollCall(.destructive)
@@ -4828,7 +4918,7 @@ private extension ReadinessState {
         switch self {
         case .ready, .enhanced, .optional, .gameDayCheck:
             return .utility
-        case .needsAudio, .issue:
+        case .preparing, .needsAudio, .issue:
             return .status
         }
     }
@@ -5309,6 +5399,14 @@ private struct PackageExportPreviewSheet: View {
                         .rollCallText(.helperText)
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
+                    Label {
+                        Text("Compatibility: Team Packages work best with Roll Call 1.3 or later. Older versions can import your team for walk-up use, but may not preserve all Player Card photo and design information.")
+                            .rollCallText(.helperText)
+                            .fixedSize(horizontal: false, vertical: true)
+                    } icon: {
+                        Image(systemName: "info.circle")
+                            .foregroundStyle(.secondary)
+                    }
                 }
 
                 PackageTransferSummarySection(summary: pending.summary)
@@ -5763,6 +5861,7 @@ private struct AccentWashBackground: View {
 private struct GameDayBoard: View {
     @ObservedObject var appModel: AppModel
     let onLineup: () -> Void
+    let onWarning: (GameDayWarningDestination) -> Void
 
     private enum Layout {
         static let sectionSpacing: CGFloat = 12
@@ -5775,9 +5874,14 @@ private struct GameDayBoard: View {
         ScrollView {
             VStack(alignment: .leading, spacing: Layout.sectionSpacing) {
                 if let team = appModel.selectedTeam {
-                    GameDayTeamStack(appModel: appModel, team: team, onLineup: onLineup)
+                    GameDayTeamStack(
+                        appModel: appModel,
+                        team: team,
+                        onLineup: onLineup,
+                        onWarning: onWarning
+                    )
                 } else {
-                    GameDayNoTeamStack()
+                    GameDayNoTeamStack(onWarning: onWarning)
                 }
             }
             .padding(.horizontal, Layout.horizontalPadding)
@@ -5792,15 +5896,22 @@ private struct GameDayTeamStack: View {
     @ObservedObject private var playbackEngine: CuePlaybackEngine
     let team: Team
     let onLineup: () -> Void
+    let onWarning: (GameDayWarningDestination) -> Void
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var lineupProgressFocus: GameDayLineupProgressFocus?
     @State private var lineupProgressTask: Task<Void, Never>?
 
-    init(appModel: AppModel, team: Team, onLineup: @escaping () -> Void) {
+    init(
+        appModel: AppModel,
+        team: Team,
+        onLineup: @escaping () -> Void,
+        onWarning: @escaping (GameDayWarningDestination) -> Void
+    ) {
         self.appModel = appModel
         self.team = team
         self.onLineup = onLineup
+        self.onWarning = onWarning
         _playbackEngine = ObservedObject(initialValue: appModel.playbackEngine)
     }
 
@@ -5864,16 +5975,28 @@ private struct GameDayTeamStack: View {
 
     private var liveWarning: GameDayLiveWarning? {
         if presentPlayers.isEmpty {
-            return GameDayLiveWarning(text: "No present players in the lineup", role: .warning)
+            return GameDayLiveWarning(
+                text: "No present players in the lineup",
+                role: .warning,
+                destination: .lineupEditor
+            )
         }
 
         guard let readiness = appModel.selectedTeamReadiness else { return nil }
         let issues = readiness.checks.filter(isLiveReadinessIssue)
         guard let firstIssue = issues.first else { return nil }
         if issues.count == 1 {
-            return GameDayLiveWarning(text: firstIssue.detail, role: role(for: firstIssue.state))
+            return GameDayLiveWarning(
+                text: firstIssue.detail,
+                role: role(for: firstIssue.state),
+                destination: firstIssue.gameDayWarningDestination
+            )
         }
-        return GameDayLiveWarning(text: "\(issues.count) live warnings - \(firstIssue.title)", role: role(for: firstIssue.state))
+        return GameDayLiveWarning(
+            text: "\(issues.count) live warnings - \(firstIssue.title)",
+            role: role(for: firstIssue.state),
+            destination: firstIssue.gameDayWarningDestination
+        )
     }
 
     var body: some View {
@@ -5886,7 +6009,10 @@ private struct GameDayTeamStack: View {
             )
 
             if let liveWarning {
-                GameDayWarningStrip(warning: liveWarning)
+                GameDayWarningStrip(
+                    warning: liveWarning,
+                    onTap: { onWarning(liveWarning.destination) }
+                )
             }
 
             if let displayedNowPlayer {
@@ -6043,9 +6169,18 @@ private enum GameDayLineupProgressFocus: Equatable {
 }
 
 private struct GameDayNoTeamStack: View {
+    let onWarning: (GameDayWarningDestination) -> Void
+
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            GameDayWarningStrip(warning: GameDayLiveWarning(text: "No team selected", role: .warning))
+            GameDayWarningStrip(
+                warning: GameDayLiveWarning(
+                    text: "No team selected",
+                    role: .warning,
+                    destination: .teams
+                ),
+                onTap: { onWarning(.teams) }
+            )
             GameDayEmptyHero(
                 title: "No Team Selected",
                 detail: "Choose or create a team before using live player cues."
@@ -6057,32 +6192,41 @@ private struct GameDayNoTeamStack: View {
 private struct GameDayLiveWarning {
     let text: String
     let role: StatusChipRole
+    let destination: GameDayWarningDestination
 }
 
 private struct GameDayWarningStrip: View {
     let warning: GameDayLiveWarning
+    let onTap: () -> Void
 
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.rollCallTeamAccentTheme) private var teamAccentTheme
 
     var body: some View {
-        HStack(spacing: 8) {
-            Image(systemName: warning.role == .destructive ? "xmark.octagon.fill" : "exclamationmark.triangle.fill")
-            Text(warning.text)
-                .font(.footnote.weight(.semibold))
-                .lineLimit(2)
-                .fixedSize(horizontal: false, vertical: true)
-            Spacer(minLength: 0)
+        Button(action: onTap) {
+            HStack(spacing: 8) {
+                Image(systemName: warning.role == .destructive ? "xmark.octagon.fill" : "exclamationmark.triangle.fill")
+                Text(warning.text)
+                    .font(.footnote.weight(.semibold))
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
+                Spacer(minLength: 0)
+                Image(systemName: "chevron.right")
+                    .font(.caption.weight(.semibold))
+                    .accessibilityHidden(true)
+            }
+            .foregroundStyle(warning.role == .destructive ? Color.rollCall(.destructive, surface: .live) : Color.rollCall(.warning, surface: .live))
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .frame(minHeight: 44)
+            .background(Color.rollCall(.neutralSurface, surface: .live), in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 9, style: .continuous)
+                    .strokeBorder(liveAccentOutlineColor(theme: teamAccentTheme, colorScheme: colorScheme, lightOpacity: 0.75, darkOpacity: 0.37), lineWidth: 1)
+            )
         }
-        .foregroundStyle(warning.role == .destructive ? Color.rollCall(.destructive, surface: .live) : Color.rollCall(.warning, surface: .live))
-        .padding(.horizontal, 12)
-        .padding(.vertical, 8)
-        .background(Color.rollCall(.neutralSurface, surface: .live), in: RoundedRectangle(cornerRadius: 9, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 9, style: .continuous)
-                .strokeBorder(liveAccentOutlineColor(theme: teamAccentTheme, colorScheme: colorScheme, lightOpacity: 0.75, darkOpacity: 0.37), lineWidth: 1)
-        )
-        .accessibilityElement(children: .combine)
+        .buttonStyle(.plain)
+        .accessibilityHint("Opens the place where this warning can be resolved.")
     }
 }
 

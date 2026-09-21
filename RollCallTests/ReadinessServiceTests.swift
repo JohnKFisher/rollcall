@@ -45,6 +45,66 @@ final class ReadinessServiceTests: XCTestCase {
     }
 
     @MainActor
+    func testGameDayWarningDestinationCoversEveryReadinessCategory() {
+        let expectedDestinations: [(ReadinessCheckCategory, GameDayWarningDestination)] = [
+            (.playerAudio, .readiness(section: .playerAudio, checkID: "player-audio")),
+            (.playerAnnouncement, .readiness(section: .announcements, checkID: "player-announcement")),
+            (.playerPhoto, .readiness(section: .optionalPolish, checkID: "player-photo")),
+            (.audioRoute, .readiness(section: .beforeYouStart, checkID: "audio-route")),
+            (.volume, .readiness(section: .beforeYouStart, checkID: "volume")),
+            (.network, .readiness(section: .beforeYouStart, checkID: "network")),
+            (.appleMusicAccess, .readiness(section: .beforeYouStart, checkID: "apple-music-access")),
+            (.lineup, .lineupEditor),
+        ]
+
+        for (category, expectedDestination) in expectedDestinations {
+            let checkID = expectedCheckID(for: expectedDestination)
+            let check = ReadinessCheck(
+                id: checkID,
+                title: category.rawValue,
+                detail: "Needs attention",
+                state: .issue,
+                category: category
+            )
+
+            XCTAssertEqual(
+                check.gameDayWarningDestination,
+                expectedDestination,
+                "Unexpected Game Day destination for \(category.rawValue)."
+            )
+        }
+
+        let photoCheck = ReadinessCheck(
+            id: "player-photo",
+            title: "Alex Ramirez",
+            detail: "Optional photo",
+            state: .issue,
+            category: .playerPhoto,
+            playerID: RollCallTestFixtures.alexID
+        )
+        let context = GameDayReadinessWarningContext(
+            presentPlayerIDs: [RollCallTestFixtures.alexID],
+            announcerMode: .announcerAndSong,
+            volumeAutomationEnabled: false
+        )
+        XCTAssertFalse(
+            GameDayReadinessWarningPolicy.shouldSurface(photoCheck, context: context),
+            "Optional photo issues must not become live Game Day warnings."
+        )
+    }
+
+    private func expectedCheckID(for destination: GameDayWarningDestination) -> String {
+        switch destination {
+        case .readiness(_, let checkID):
+            return checkID ?? "missing-check-id"
+        case .lineupEditor:
+            return "lineup"
+        case .teams:
+            return "teams"
+        }
+    }
+
+    @MainActor
     func testSnapshotMarksMissingPlayerAudioAsNeedsAudioWithoutBlockingGameDayFallback() {
         let team = RollCallTestFixtures.team(players: [
             RollCallTestFixtures.player(id: RollCallTestFixtures.alexID, name: "Alex Ramirez", number: "12", cue: nil),
@@ -248,6 +308,33 @@ final class ReadinessServiceTests: XCTestCase {
 
         XCTAssertEqual(check?.state, .issue)
         XCTAssertTrue(check?.detail.contains("song choice is preserved") == true)
+    }
+
+    @MainActor
+    func testSnapshotMarksAppleMusicPreparationAsPreparingWhileAuthorizationRetryRuns() {
+        var player = RollCallTestFixtures.player(
+            id: RollCallTestFixtures.alexID,
+            name: "Alex Ramirez",
+            number: "12",
+            cue: RollCallTestFixtures.appleMusicCue(
+                songID: "catalog.preparing",
+                title: "Preparing Song",
+                artistName: "Test Artist"
+            )
+        )
+        guard case .privateClip(var clip)? = player.songAssignment else {
+            return XCTFail("Expected private song clip.")
+        }
+        clip.generatedAsset.status = .pending
+        clip.readinessInputs.playback = .needsAppleMusic
+        player.songAssignment = .privateClip(clip)
+        let team = RollCallTestFixtures.team(players: [player])
+
+        let snapshot = ReadinessService(audioAssetService: AudioAssetService()).snapshot(for: team)
+        let check = snapshot.checks.first { $0.category == .playerAudio }
+
+        XCTAssertEqual(check?.state, .preparing)
+        XCTAssertTrue(check?.detail.contains("preparing") == true)
     }
 
     @MainActor

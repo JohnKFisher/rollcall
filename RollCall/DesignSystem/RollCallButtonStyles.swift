@@ -28,7 +28,10 @@ struct RollCallButtonStyle: ButtonStyle {
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .rollCallText(.body, surface: surface)
+            // Keep button typography consistent without applying the standard
+            // label color. Primary buttons choose a readable foreground below.
+            .font(.body)
+            .fontWeight(.regular)
             .padding(.vertical, verticalPadding)
             .padding(.horizontal, horizontalPadding)
             .frame(minHeight: minHeight)
