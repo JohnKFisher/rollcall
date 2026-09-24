@@ -9032,6 +9032,15 @@ private struct PlayerEditorSheet: View {
                         onSharePresented: {
                             appModel.telemetry.record(.playerCardShareInitiated)
                         },
+                        onShareCompleted: { design in
+                            guard let telemetryDesign = RollCallPlayerCardTelemetryDesign.value(for: design) else {
+                                return
+                            }
+                            appModel.telemetry.record(
+                                .playerCardShareCompleted,
+                                properties: [.design: telemetryDesign]
+                            )
+                        },
                         onCardFramingAdjusted: {
                             didAdjustCardFraming = true
                         }

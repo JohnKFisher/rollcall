@@ -54,6 +54,34 @@ final class TelemetryTests: XCTestCase {
         return (coordinator, provider, store)
     }
 
+    private func recordConfirmedCue(
+        coordinator: RollCallTelemetryCoordinator,
+        teamID: UUID,
+        playerID: UUID,
+        sourceFamily: PlaybackSourceFamily = .importedLocal,
+        at date: Date
+    ) async -> Bool {
+        let requestID = UUID()
+        let result = PlaybackRequestResult(
+            requestID: requestID,
+            confirmations: [PlaybackStartConfirmation(
+                requestID: requestID,
+                component: .primaryCue,
+                sourceFamily: sourceFamily,
+                outcome: .started
+            )],
+            wasDebounced: false
+        )
+        let accepted = coordinator.handlePlayerPlayback(
+            teamID: teamID,
+            playerID: playerID,
+            result: result,
+            now: date
+        )
+        await coordinator.waitForPendingPersistenceForTesting()
+        return accepted
+    }
+
     func testAllowlistRejectsUnknownNamesIdentifiersAndArbitraryStrings() {
         XCTAssertThrowsError(try RollCallTelemetryValidator.shared.validate(eventName: "madeUp.event"))
         XCTAssertThrowsError(try RollCallTelemetryValidator.shared.validate(eventName: RollCallTelemetryEvent.liveEntered.rawValue, properties: ["freeText": "anything"]))
@@ -61,6 +89,40 @@ final class TelemetryTests: XCTestCase {
         XCTAssertThrowsError(try RollCallTelemetryValidator.shared.validate(eventName: RollCallTelemetryEvent.liveEntered.rawValue, properties: ["appVersion": "1.2.3"]))
         XCTAssertThrowsError(try RollCallTelemetryValidator.shared.validate(eventName: RollCallTelemetryEvent.liveEntered.rawValue, properties: ["buildNumber": "82"]))
         XCTAssertThrowsError(try RollCallTelemetryValidator.shared.validate(event: .gameRecoveryPathUsed, properties: [.sourceFamily: "builtinIntentional"]))
+    }
+
+    func testPlayerCardShareCompletedAllowsOnlyShippingDesignCategories() throws {
+        for design in ["spotlight", "impact", "broadcast"] {
+            let signal = try RollCallTelemetryValidator.shared.validate(
+                event: .playerCardShareCompleted,
+                properties: [.design: design]
+            )
+            XCTAssertEqual(signal.event, .playerCardShareCompleted)
+            XCTAssertEqual(signal.properties["design"], design)
+        }
+
+        for invalidDesign in ["Testing", "testing", "default", "clean-v2", "player-123"] {
+            XCTAssertThrowsError(try RollCallTelemetryValidator.shared.validate(
+                event: .playerCardShareCompleted,
+                properties: [.design: invalidDesign]
+            ))
+        }
+        XCTAssertThrowsError(try RollCallTelemetryValidator.shared.validate(
+            event: .playerCardShareCompleted,
+            properties: [.source: "inApp"]
+        ))
+    }
+
+    func testPlayerCardShareCompletedRespectsAnalyticsOptOut() {
+        let (coordinator, provider, _) = makeCoordinator()
+        coordinator.setAnalyticsEnabled(false)
+        coordinator.record(.playerCardShareCompleted, properties: [.design: "spotlight"])
+
+        XCTAssertFalse(provider.signals.contains { $0.event == .playerCardShareCompleted })
+        XCTAssertEqual(
+            provider.signals.filter { $0.event == .analyticsPreferenceChanged }.map { $0.properties["newValue"] },
+            ["off"]
+        )
     }
 
     func testEveryEventStartsWithAnExplicitAllowlistEntry() throws {
@@ -456,6 +518,120 @@ final class TelemetryTests: XCTestCase {
         XCTAssertFalse(LiveAnalyticsSessionReducer.playerCue(checkpoint: &justBelowGap, teamID: teamID, playerID: playerIDs[2], now: start.addingTimeInterval(358), sourceFamily: .importedLocal))
         XCTAssertFalse(LiveAnalyticsSessionReducer.playerCue(checkpoint: &justBelowGap, teamID: teamID, playerID: playerIDs[0], now: start.addingTimeInterval(537), sourceFamily: .importedLocal))
         XCTAssertFalse(justBelowGap?.hasThreeMinuteGap == true)
+    }
+
+    func testCompletePlaybackFailuresEmitOneAggregatePerCombinationAfterQualification() async {
+        let (coordinator, provider, store) = makeCoordinator()
+        let teamID = RollCallTestFixtures.teamID
+        let playerIDs = [RollCallTestFixtures.alexID, RollCallTestFixtures.jordanID, RollCallTestFixtures.caseyID]
+        let start = store.state.enrollmentDate
+
+        for (index, playerID) in [playerIDs[0], playerIDs[1], playerIDs[2], playerIDs[0]].enumerated() {
+            let accepted = await recordConfirmedCue(
+                coordinator: coordinator,
+                teamID: teamID,
+                playerID: playerID,
+                at: start.addingTimeInterval([0, 180, 900, 900][index])
+            )
+            XCTAssertTrue(accepted)
+        }
+
+        coordinator.recordPlaybackFailure(
+            teamID: teamID,
+            sourceFamily: .importedLocal,
+            liveContext: "gameDay",
+            fallbackAttempted: true,
+            reason: .playbackError,
+            now: start.addingTimeInterval(901)
+        )
+        await coordinator.waitForPendingPersistenceForTesting()
+        coordinator.recordPlaybackFailure(
+            teamID: teamID,
+            sourceFamily: .importedLocal,
+            liveContext: "gameDay",
+            fallbackAttempted: true,
+            reason: .playbackError,
+            now: start.addingTimeInterval(902)
+        )
+        await coordinator.waitForPendingPersistenceForTesting()
+        coordinator.recordPlaybackFailure(
+            teamID: teamID,
+            sourceFamily: .generatedLocal,
+            liveContext: "gameDay",
+            fallbackAttempted: true,
+            reason: .startRejected,
+            now: start.addingTimeInterval(903)
+        )
+        await coordinator.waitForPendingPersistenceForTesting()
+
+        let rawFailures = provider.signals.filter { $0.event == .playbackFailedCompletely }
+        XCTAssertEqual(rawFailures.count, 3, "Raw complete failures remain repeatable.")
+        XCTAssertEqual(rawFailures.filter {
+            $0.properties["sourceFamily"] == "importedLocal" && $0.properties["reason"] == "playbackError"
+        }.count, 2)
+
+        let aggregates = provider.signals.filter { $0.event == .gameCompletePlaybackFailureObserved }
+        XCTAssertEqual(aggregates.count, 2, "Each distinct source/reason combination contributes one affected-game event.")
+        XCTAssertEqual(aggregates.filter {
+            $0.properties["sourceFamily"] == "importedLocal" && $0.properties["reason"] == "playbackError"
+        }.count, 1)
+        XCTAssertEqual(aggregates.filter {
+            $0.properties["sourceFamily"] == "generatedLocal" && $0.properties["reason"] == "startRejected"
+        }.count, 1)
+    }
+
+    func testPreQualificationCompletePlaybackFailureIsBufferedAndAggregatedOnce() async {
+        let (coordinator, provider, store) = makeCoordinator()
+        let teamID = RollCallTestFixtures.teamID
+        let playerIDs = [RollCallTestFixtures.alexID, RollCallTestFixtures.jordanID, RollCallTestFixtures.caseyID]
+        let start = store.state.enrollmentDate
+
+        let firstCueAccepted = await recordConfirmedCue(
+            coordinator: coordinator,
+            teamID: teamID,
+            playerID: playerIDs[0],
+            at: start
+        )
+        XCTAssertTrue(firstCueAccepted)
+        for offset in [10.0, 11.0] {
+            coordinator.recordPlaybackFailure(
+                teamID: teamID,
+                sourceFamily: .importedLocal,
+                liveContext: "gameDay",
+                fallbackAttempted: true,
+                reason: .playbackError,
+                now: start.addingTimeInterval(offset)
+            )
+            await coordinator.waitForPendingPersistenceForTesting()
+        }
+
+        for (index, playerID) in [playerIDs[1], playerIDs[2], playerIDs[0]].enumerated() {
+            let accepted = await recordConfirmedCue(
+                coordinator: coordinator,
+                teamID: teamID,
+                playerID: playerID,
+                at: start.addingTimeInterval([180, 900, 900][index])
+            )
+            XCTAssertTrue(accepted)
+        }
+
+        XCTAssertEqual(provider.signals.filter { $0.event == .playbackFailedCompletely }.count, 2)
+        let aggregatesAfterQualification = provider.signals.filter { $0.event == .gameCompletePlaybackFailureObserved }
+        XCTAssertEqual(aggregatesAfterQualification.count, 1)
+        XCTAssertEqual(aggregatesAfterQualification.first?.properties["sourceFamily"], "importedLocal")
+        XCTAssertEqual(aggregatesAfterQualification.first?.properties["reason"], "playbackError")
+
+        coordinator.recordPlaybackFailure(
+            teamID: teamID,
+            sourceFamily: .importedLocal,
+            liveContext: "gameDay",
+            fallbackAttempted: true,
+            reason: .playbackError,
+            now: start.addingTimeInterval(901)
+        )
+        await coordinator.waitForPendingPersistenceForTesting()
+        XCTAssertEqual(provider.signals.filter { $0.event == .playbackFailedCompletely }.count, 3)
+        XCTAssertEqual(provider.signals.filter { $0.event == .gameCompletePlaybackFailureObserved }.count, 1)
     }
 
     func testDoubleheaderCreatesTwoRawGamesButOneDateMilestone() async {

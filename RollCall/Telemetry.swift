@@ -101,6 +101,7 @@ enum RollCallTelemetryEvent: String, CaseIterable, Codable, Hashable {
     case playerCardGenerated = "playerCard.generated"
     case playerCardGenerationFailed = "playerCard.generationFailed"
     case playerCardShareInitiated = "playerCard.shareInitiated"
+    case playerCardShareCompleted = "playerCard.shareCompleted"
     case playerPhotoProfileFramingAdjusted = "playerPhoto.profileFramingAdjusted"
     case playerPhotoCardFramingAdjusted = "playerPhoto.cardFramingAdjusted"
     case playerPhotoDetectionCompleted = "playerPhoto.detectionCompleted"
@@ -144,6 +145,18 @@ enum RollCallTelemetryProperty: String, CaseIterable, Codable, Hashable {
     case source
     case detection
     case target
+    case design
+}
+
+enum RollCallPlayerCardTelemetryDesign {
+    static func value(for design: PlayerCardDesign) -> String? {
+        guard PlayerCardDesign.shippingDesigns.contains(design) else { return nil }
+        return switch design {
+        case .spotlight: "spotlight"
+        case .impact: "impact"
+        case .broadcast: "broadcast"
+        }
+    }
 }
 
 struct RollCallTelemetrySignal: Equatable {
@@ -223,6 +236,7 @@ struct RollCallTelemetryValidator {
         allow([.musicAccessDenied, .microphoneAccessDenied], [.result])
         allow([.playerCardGenerationFailed, .quickGameDayFallback, .quickGameDayFailed], [.reason])
         allow([.playerPhotoDetectionCompleted], [.detection])
+        allow([.playerCardShareCompleted], [.design])
         allow([.quickGameDayInvoked], [.source])
         allow([.quickGameDayTargetResolved], [.target])
         let baselineEvents: [RollCallTelemetryEvent] = [
@@ -257,6 +271,7 @@ struct RollCallTelemetryValidator {
         // completes successfully, never while the blocking recovery flow is active.
         "state.recoveryTriggered.reason": ["unsupportedSchema", "loadFailure", "missingPrimaryWithResidualData"],
         "playerCard.generationFailed.reason": ["missingAsset", "unreadableImage", "encodingFailed", "unknown"],
+        "playerCard.shareCompleted.design": ["spotlight", "impact", "broadcast"],
         "quickGameDay.fallback.reason": ["noTeams", "noRememberedTeam", "rememberedTeamMissing", "explicitTeamMissing"],
         "quickGameDay.failed.reason": ["operationFailed", "unknown"],
         "rating.sheetShown.source": ["automatic", "manual"],
@@ -1983,13 +1998,13 @@ final class RollCallTelemetryCoordinator {
         var candidate = store.state
         var checkpoint = current
         let key = "\(sourceFamily.rawValue)|\(reason.rawValue)"
-        checkpoint.bufferedCompleteFailureKeys.insert(key)
-        if checkpoint.didQualify {
+        let isNewCombination = checkpoint.bufferedCompleteFailureKeys.insert(key).inserted
+        if checkpoint.didQualify && isNewCombination {
             checkpoint.emittedFeatureKeys.insert("emitted:failure:\(key)")
         }
         candidate.liveCheckpoint = checkpoint
         guard persistLive(candidate) else { return }
-        if checkpoint.didQualify {
+        if checkpoint.didQualify && isNewCombination {
             record(.gameCompletePlaybackFailureObserved, properties: [.sourceFamily: sourceFamily.rawValue, .reason: reason.rawValue])
         }
     }

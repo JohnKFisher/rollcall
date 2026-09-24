@@ -539,6 +539,14 @@ The current accent is also attached to the probable-game event so live-use accen
 **Properties:** None in schema v1.  
 **Does not mean:** The user selected a destination, completed a share, or saved the image. Roll Call does not inspect the destination.
 
+### `playerCard.shareCompleted`
+**Granularity:** Raw successful system activity, once per completed Share Sheet presentation
+**Properties:** `design = spotlight | impact | broadcast`
+**Meaning:** The system activity callback reported `completed == true` with no activity error for the generated Player Card image. The design is captured with the image when sharing begins.
+**Question answered:** Which shipping Player Card designs are used in completed system sharing activities?
+
+Dismissed/cancelled and failed activities do not emit this event. It does not prove that an image was durably saved or delivered to a recipient. Do not send the activity type, destination, player/team content, or image data. Only the three shipping designs are valid; renderer/internal design values are not telemetry values.
+
 ### `playerPhoto.profileFramingAdjusted`
 **Granularity:** Raw committed adjustment  
 **Meaning:** A manual profile-framing change was included in the player's successful Save transaction.  

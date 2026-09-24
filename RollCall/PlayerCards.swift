@@ -1184,6 +1184,21 @@ struct PlayerCardPreviewRenderGate {
     }
 }
 
+struct PlayerCardShareCompletionGate {
+    private(set) var didRecordSuccess = false
+
+    mutating func claimSuccessfulCompletion(completed: Bool, hasError: Bool) -> Bool {
+        guard completed, !hasError, !didRecordSuccess else { return false }
+        didRecordSuccess = true
+        return true
+    }
+}
+
+private struct PlayerCardShareArtifact {
+    let image: UIImage
+    let design: PlayerCardDesign
+}
+
 struct PlayerCardPreviewSheet: View {
     private struct RenderOutput: @unchecked Sendable {
         let cards: [PlayerCardDesign: UIImage]
@@ -1199,11 +1214,12 @@ struct PlayerCardPreviewSheet: View {
     let onGenerated: () -> Void
     let onGenerationFailed: (String) -> Void
     let onSharePresented: () -> Void
+    let onShareCompleted: (PlayerCardDesign) -> Void
     let onCardFramingAdjusted: () -> Void
 
     @State private var renderGate = PlayerCardPreviewRenderGate()
     @State private var renderTaskID = UUID()
-    @State private var shareImage: UIImage?
+    @State private var shareArtifact: PlayerCardShareArtifact?
     @State private var framingRequest: PlayerCardPreviewRenderRequest?
     @State private var selectedDesignID: String
 
@@ -1215,6 +1231,7 @@ struct PlayerCardPreviewSheet: View {
         onGenerated: @escaping () -> Void,
         onGenerationFailed: @escaping (String) -> Void,
         onSharePresented: @escaping () -> Void,
+        onShareCompleted: @escaping (PlayerCardDesign) -> Void,
         onCardFramingAdjusted: @escaping () -> Void
     ) {
         self._player = player
@@ -1224,6 +1241,7 @@ struct PlayerCardPreviewSheet: View {
         self.onGenerated = onGenerated
         self.onGenerationFailed = onGenerationFailed
         self.onSharePresented = onSharePresented
+        self.onShareCompleted = onShareCompleted
         self.onCardFramingAdjusted = onCardFramingAdjusted
         self._selectedDesignID = State(initialValue: initialDesign.rawValue)
     }
@@ -1339,11 +1357,13 @@ struct PlayerCardPreviewSheet: View {
                 renderTaskID = UUID()
             }
             .sheet(isPresented: Binding(
-                get: { shareImage != nil },
-                set: { if !$0 { shareImage = nil } }
+                get: { shareArtifact != nil },
+                set: { if !$0 { shareArtifact = nil } }
             )) {
-                if let shareImage {
-                    PlayerCardActivityShareSheet(items: [shareImage])
+                if let shareArtifact {
+                    PlayerCardActivityShareSheet(items: [shareArtifact.image]) {
+                        onShareCompleted(shareArtifact.design)
+                    }
                         .onAppear(perform: onSharePresented)
                 }
             }
@@ -1406,7 +1426,7 @@ struct PlayerCardPreviewSheet: View {
             for: selectedDesign,
             currentIdentity: renderIdentity
         ) else { return }
-        shareImage = renderedImage
+        shareArtifact = PlayerCardShareArtifact(image: renderedImage, design: selectedDesign)
     }
 
     private func render(_ request: PlayerCardPreviewRenderRequest) async {
@@ -1581,10 +1601,39 @@ private struct PlayerCardCarousel: View {
 
 private struct PlayerCardActivityShareSheet: UIViewControllerRepresentable {
     let items: [Any]
+    let onCompleted: () -> Void
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(onCompleted: onCompleted)
+    }
 
     func makeUIViewController(context: Context) -> UIActivityViewController {
-        UIActivityViewController(activityItems: items, applicationActivities: nil)
+        let controller = UIActivityViewController(activityItems: items, applicationActivities: nil)
+        controller.completionWithItemsHandler = { _, completed, _, activityError in
+            context.coordinator.activityDidComplete(
+                completed: completed,
+                activityError: activityError
+            )
+        }
+        return controller
     }
 
     func updateUIViewController(_ uiViewController: UIActivityViewController, context: Context) {}
+
+    final class Coordinator {
+        private let onCompleted: () -> Void
+        private var completionGate = PlayerCardShareCompletionGate()
+
+        init(onCompleted: @escaping () -> Void) {
+            self.onCompleted = onCompleted
+        }
+
+        func activityDidComplete(completed: Bool, activityError: Error?) {
+            guard completionGate.claimSuccessfulCompletion(
+                completed: completed,
+                hasError: activityError != nil
+            ) else { return }
+            onCompleted()
+        }
+    }
 }

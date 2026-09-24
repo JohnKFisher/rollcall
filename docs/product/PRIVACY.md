@@ -10,10 +10,12 @@ of those Roll Call-owned transfer or recovery formats.
 Anonymous Usage Analytics is on by default. Roll Call sends a small set of
 predefined product-use and reliability signals to TelemetryDeck, the analytics
 provider. The signals describe coarse actions such as opening a feature, a
-confirmed playback route, or a fixed playback failure category. They do not
-contain team names, player information, song or media identifiers, filenames,
-paths, photos, recordings, free-form text, exact content, or Roll Call-defined
-cross-app or cross-device identifiers.
+confirmed playback route, a fixed playback failure category, or completion of a
+user-initiated Player Card sharing activity with its shipping design category.
+That completion signal does not identify the destination or prove delivery.
+Signals do not contain team names, player information, song or media
+identifiers, filenames, paths, photos, recordings, free-form text, exact
+content, or Roll Call-defined cross-app or cross-device identifiers.
 
 You can turn Anonymous Usage Analytics off in Settings. The opt-out itself is
 the only analytics signal allowed during shutdown. Signals already handed to

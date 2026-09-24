@@ -11,6 +11,26 @@ final class PlayerCardTests: XCTestCase {
         XCTAssertEqual(PlayerCardDesign.shippingDesigns.map(\.title), ["Spotlight", "Impact", "Broadcast"])
     }
 
+    func testPlayerCardShareTelemetryUsesOnlyShippingDesignNames() {
+        XCTAssertEqual(RollCallPlayerCardTelemetryDesign.value(for: .spotlight), "spotlight")
+        XCTAssertEqual(RollCallPlayerCardTelemetryDesign.value(for: .impact), "impact")
+        XCTAssertEqual(RollCallPlayerCardTelemetryDesign.value(for: .broadcast), "broadcast")
+        XCTAssertEqual(
+            PlayerCardDesign.shippingDesigns.compactMap(RollCallPlayerCardTelemetryDesign.value(for:)),
+            ["spotlight", "impact", "broadcast"]
+        )
+    }
+
+    func testPlayerCardShareCompletionGateAcceptsOnlyOneSuccessfulActivity() {
+        var gate = PlayerCardShareCompletionGate()
+
+        XCTAssertFalse(gate.claimSuccessfulCompletion(completed: false, hasError: false)) // dismissed/cancelled
+        XCTAssertFalse(gate.claimSuccessfulCompletion(completed: false, hasError: true))
+        XCTAssertFalse(gate.claimSuccessfulCompletion(completed: true, hasError: true)) // activity failed
+        XCTAssertTrue(gate.claimSuccessfulCompletion(completed: true, hasError: false))
+        XCTAssertFalse(gate.claimSuccessfulCompletion(completed: true, hasError: false)) // duplicate callback
+    }
+
     func testLastPlayerCardDesignPreferenceFallsBackForMissingOrUnknownValues() throws {
         XCTAssertNil(AppSettings.default.lastPlayerCardDesignID)
         XCTAssertEqual(AppSettings.default.lastPlayerCardDesign, .spotlight)
