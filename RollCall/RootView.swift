@@ -2233,6 +2233,10 @@ struct RootView: View {
         }
     }
 
+    private func presentSupportScreen() {
+        supportScreenPresented = true
+    }
+
     private var settingsTab: some View {
         NavigationStack {
             ScrollView {
@@ -2290,6 +2294,19 @@ struct RootView: View {
                             }
                             .rollCallButtonStyle(.secondary)
                         }
+                    }
+
+                    SettingsSectionGroup(title: "Support") {
+                        Button {
+                            presentSupportScreen()
+                        } label: {
+                            SettingsRowLabel(
+                                title: "Support Roll Call",
+                                detail: "Optional contributions help keep Roll Call free.",
+                                systemImage: "heart.fill"
+                            )
+                        }
+                        .buttonStyle(.plain)
                     }
 
                     SettingsSectionGroup(
@@ -2480,6 +2497,17 @@ struct RootView: View {
 
                 SettingsSectionGroup(title: "Support") {
                     VStack(alignment: .leading, spacing: RollCallSpacingTier.standard.value) {
+                        Button {
+                            presentSupportScreen()
+                        } label: {
+                            SettingsRowLabel(
+                                title: "Support Roll Call",
+                                detail: "Optional contributions help keep Roll Call free.",
+                                systemImage: "heart.fill"
+                            )
+                        }
+                        .buttonStyle(.plain)
+
                         Link(destination: URL(string: "https://sidelarklabs.com/rollcall/")!) {
                             SettingsRowLabel(
                                 title: "Roll Call Website",
@@ -8022,9 +8050,9 @@ private struct SupportRollCallScreen: View {
                     VStack(alignment: .leading, spacing: RollCallSpacingTier.standard.value) {
                         Text("Roll Call is free, ad-free, and fully functional for every team.")
                             .rollCallText(.body)
-                        Text("Optional support helps keep the app maintained, compatible with iOS updates, and improving over time.")
+                        Text("If Roll Call is useful to your team, an optional contribution helps support continued development and maintenance. Nobody needs to contribute.")
                             .rollCallText(.body)
-                        Text("Support never unlocks Game Day features, teams, imports, exports, or reliability.")
+                        Text("Nothing is locked behind payment, and a contribution doesn't unlock extra features. Roll Call works the same for everyone. Thanks for being here.")
                             .rollCallText(.helperText)
                     }
                 }
@@ -8341,7 +8369,7 @@ private struct RatingRequestSheet: View {
                             dismiss()
                             onSupportDevelopment()
                         } label: {
-                            Text("You can also contribute in Settings.")
+                            Text("You can also support Roll Call.")
                                 .font(.footnote.weight(.semibold))
                                 .multilineTextAlignment(.center)
                         }

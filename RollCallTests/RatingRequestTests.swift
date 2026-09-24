@@ -133,4 +133,35 @@ final class RatingRequestTests: XCTestCase {
         XCTAssertTrue(developer.store.state.rating.permanentlySuppressed)
         XCTAssertNil(RollCallRatingPolicy.automaticOpportunity(for: developer.store.state.rating, now: now.addingTimeInterval(365 * 86_400)))
     }
+
+    func testRatingSheetSupportSelectionKeepsSuppressionAndTelemetrySemantics() {
+        let now = Date(timeIntervalSince1970: 5_000_000)
+        let provider = RecordingTelemetryProvider()
+        let store = TelemetryStore(url: temp.fileURL("support-rating-telemetry.json"), now: now)
+        let preference = AnonymousUsageAnalyticsPreference(
+            defaults: UserDefaults(suiteName: "RatingSupportSelectionTests.\(UUID().uuidString)")!
+        )
+        let coordinator = RollCallTelemetryCoordinator(
+            provider: provider,
+            store: store,
+            preference: preference,
+            buildContext: TelemetryBuildContext(
+                isAppStoreBuild: true,
+                isTestFlightBuild: false,
+                isDeveloperBuild: false,
+                isSwiftUIPreview: false
+            )
+        )
+
+        coordinator.recordRatingAction(.ratingSupportSelected, suppressesAutomatic: true)
+
+        XCTAssertTrue(coordinator.store.state.rating.permanentlySuppressed)
+        XCTAssertEqual(provider.signals.map(\.event), [.ratingSupportSelected])
+        XCTAssertNil(
+            RollCallRatingPolicy.automaticOpportunity(
+                for: coordinator.store.state.rating,
+                now: now.addingTimeInterval(365 * 86_400)
+            )
+        )
+    }
 }

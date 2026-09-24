@@ -159,13 +159,13 @@ There is no percentage score, no Bronze/Silver/Gold, no red player errors. A pla
 A scroll view of grouped sections:
 
 - **Setup Guide & Teams** — Open Setup Guide, plus a row that sends users to Teams for import/export tools.
-- **Support Roll Call** — opens the optional support screen with one-time and recurring StoreKit contribution options.
+- **Support** — a permanent, passive **Support Roll Call** row with the subtitle “Optional contributions help keep Roll Call free.” It opens the optional support screen with one-time and recurring StoreKit contribution options.
 - **Music & Playback** — Hide Explicit Apple Music Results, Volume Automation.
 - **Privacy** — Anonymous Usage Analytics is on by default and can be disabled
   independently of teams and app-state recovery; see [Privacy](./PRIVACY.md).
 - **Game Day** — permanent Quick Game Day explanation, Always Use Dark Live Screens, Game Day Haptics, Keep Screen Awake, Show Lineup Progress Hints.
 - **Recovery** — navigation into Recovery, where `Recently Deleted` handles everyday team/player undelete for 60 days and backups remain available for restoring an earlier app state.
-- **About Roll Call** — top doorway row into version, build, environment chip, copyright credit to John Kenneth Fisher, optional Support Roll Call entry, public web/GitHub-style link, Email Feedback link, What's New, earned Rate Roll Call entry, and Attributions & Licenses.
+- **About Roll Call** — top doorway row into version, build, environment chip, copyright credit to John Kenneth Fisher, a permanent Support Roll Call row at the top of its Support section, public web/GitHub-style link, Email Feedback link, What's New, earned Rate Roll Call entry, and Attributions & Licenses.
 - **Advanced / Developer Tools** (only visible when feature flag is on) — environment gates, runtime testing flags, experimental actions, diagnostics.
 
 ---
@@ -216,7 +216,7 @@ Opened only when the user chooses to adjust either the profile or Player Card fr
 
 ### 6.7 Support Roll Call screen
 
-Opened from Settings, About Roll Call, or the rating prompt's low-pressure support link. This screen explains that Roll Call is free, ad-free, and fully functional for every team, then offers optional StoreKit support contributions.
+Opened from the permanent Support Roll Call rows in Settings and About Roll Call, or from the rating prompt's lower-prominence support link. The introduction says Roll Call is free, ad-free, and fully functional for every team; an optional contribution supports continued development and maintenance; nobody needs to contribute; and a contribution unlocks no features while Roll Call works the same for everyone. The screen then offers optional StoreKit support contributions.
 
 The support screen uses a segmented control:
 
@@ -229,7 +229,7 @@ Support state is intentionally comfort UI only. It does not unlock features, rem
 
 ### 6.8 Rating Request sheet
 
-The earned rating prompt remains a calm post-success sheet, never a Game Day interruption. It asks satisfied users to rate Roll Call, offers "Email Me Instead" for support problems, and includes a quiet "You can also contribute in Settings." path into Support Roll Call.
+The earned rating prompt remains a calm post-success sheet, never a Game Day interruption. It asks satisfied users to rate Roll Call, offers "Email Me Instead" for support problems, and includes the lower-prominence "You can also support Roll Call." path into Support Roll Call.
 
 ---
 
