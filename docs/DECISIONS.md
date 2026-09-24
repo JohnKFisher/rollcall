@@ -2,6 +2,18 @@
 
 Use this file as a concise decision log for project-specific architectural, behavioral, tooling, and scope decisions.
 
+## 2026-09-24
+
+- Approved and implemented for Roll Call 1.3: retain the legacy `state.recoveryTriggered` name as a successful recovery-completion signal. Emit it only after an explicit recovery choice has written, reread, and verified replacement state and resumed the normal lifecycle. Use the fixed reasons `unsupportedSchema`, `loadFailure`, and `missingPrimaryWithResidualData`; keep unresolved recovery unreported so telemetry remains blocked during the recovery flow. Permit only one recovery operation at a time.
+  Rationale: this preserves the approved recovery-isolation boundary, gives the existing event one clear meaning, covers every real launch-recovery condition, and prevents overlapping user choices from double-counting completion or racing the recovered state.
+  Status: implemented and focused-verified in Debug and Release configurations; invalid telemetry asserts in Debug and is dropped in Release/Internal.
+
+## 2026-09-22
+
+- Approved and implemented for Roll Call 1.3: remove the remaining compatibility-only built-in announcer model and generated-file reference. Built-in announcer files never shipped, and any future built-in announcer will be designed from scratch. Keep recorded Announcement Cues, Game Day announcer modes, and their current asset lifecycle unchanged.
+  Rationale: retaining dormant profile, decoder, and generated-path state created a false compatibility contract and unnecessary file-ownership surface without protecting released user data. Unknown legacy JSON keys remain safely ignored; no speculative disk scan or deletion is added.
+  Status: implemented in the working tree; focused package verification is recorded with the related 1.3 regression investigation.
+
 ## 2026-09-19
 
 - Approved and implemented for Roll Call 1.3: expose the production Player Card choices **Spotlight**, **Impact**, and **Broadcast** in Player Editor. Spotlight keeps the existing unnamed/default production renderer; Impact promotes the existing `clean-v2` artwork; Broadcast keeps its existing renderer/defaults; Testing remains a DEBUG-only Lab template. Persist the choice additively by stable renderer lineage, defaulting older players to the existing production renderer and preserving unknown future identifiers.
@@ -22,7 +34,7 @@ Use this file as a concise decision log for project-specific architectural, beha
   Rationale: fixed three-item joins understated maximally degraded restores, weakening the user's understanding of what a partial restore could not recover.
   Status: implemented and focused-verified in build 147; formatter and four-type partial-restore tests plus `BackupRestoreTests` passed on the iOS 27 simulator. Physical-device presentation acceptance remains open.
 
-- Approved and implemented: remove unreachable Music Render Probe, Player Editor-only legacy trim UI, and built-in announcer speech generation from the app and test targets. Retain only the explicitly required compatibility storage/decoding for old announcer profiles, nested legacy announcer payloads, generated announcer asset paths, and playlist experiment fields; preserve the current Song Clip Editor, Apple Music playlist behavior, playback paths, Announcement Cue recordings, and package/recovery cleanup semantics.
+- Approved and implemented: remove unreachable Music Render Probe, Player Editor-only legacy trim UI, and built-in announcer speech generation from the app and test targets. At the time, retain compatibility storage/decoding for old announcer profiles, nested legacy announcer payloads, generated announcer asset paths, and playlist experiment fields; preserve the current Song Clip Editor, Apple Music playlist behavior, playback paths, Announcement Cue recordings, and package/recovery cleanup semantics. The announcer-compatibility portion was superseded on 2026-09-22 after confirming it never shipped.
   Rationale: disconnected production code and tests increased the Release surface and could obscure the authoritative current flows, while deleting persisted compatibility fields would risk losing access to existing user state or legacy assets.
   Status: implemented in the working tree; Debug build-for-testing, Release app compile, Internal app compile, three new persistence compatibility tests, and the surviving PackageServiceTests target completed successfully at app build 147. The full-suite harness reached test execution but stalled in Xcode's simulator-diagnostics finalization; physical-device smoke acceptance remains open.
 

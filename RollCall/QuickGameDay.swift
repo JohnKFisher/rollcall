@@ -37,6 +37,48 @@ enum OpenGameDayResolver {
     }
 }
 
+enum OpenGameDayRequestProcessingResult: Equatable {
+    case noPendingRequest
+    case deferred
+    case gameDay(teamID: UUID)
+    case fallback(reason: QuickGameDayFallbackReason)
+}
+
+@MainActor
+enum OpenGameDayRequestProcessor {
+    @discardableResult
+    static func processPendingRequestIfPossible(
+        in requestCenter: OpenGameDayRequestCenter,
+        using appModel: AppModel,
+        hasResolvedInitialTab: Bool,
+        hasBlockingPresentation: Bool,
+        onboardingIsPresented: Bool,
+        onNavigateToGameDay: () -> Void,
+        onNavigateToFallback: () -> Void
+    ) -> OpenGameDayRequestProcessingResult {
+        guard let request = requestCenter.pendingRequest else { return .noPendingRequest }
+        guard hasResolvedInitialTab, !hasBlockingPresentation else { return .deferred }
+
+        let previewResolution = OpenGameDayResolver.resolve(request, in: appModel.state)
+        if case .gameDay = previewResolution, onboardingIsPresented {
+            return .deferred
+        }
+
+        let resolution = appModel.resolveOpenGameDay(request)
+        switch resolution {
+        case .gameDay(let teamID, _):
+            onNavigateToGameDay()
+            appModel.recordQuickGameDayReached()
+            requestCenter.consume(id: request.id)
+            return .gameDay(teamID: teamID)
+        case .fallback(let reason):
+            onNavigateToFallback()
+            requestCenter.consume(id: request.id)
+            return .fallback(reason: reason)
+        }
+    }
+}
+
 extension URL {
     enum RollCallGameDayTarget: Equatable {
         case rememberedTeam

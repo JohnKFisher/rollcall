@@ -83,6 +83,22 @@ final class TelemetryTests: XCTestCase {
             event: .stateRecoveryTriggered,
             properties: [.reason: "loadFailure"]
         ))
+        XCTAssertNoThrow(try RollCallTelemetryValidator.shared.validate(
+            event: .stateRecoveryTriggered,
+            properties: [.reason: "missingPrimaryWithResidualData"]
+        ))
+        XCTAssertThrowsError(try RollCallTelemetryValidator.shared.validate(
+            event: .stateRecoveryTriggered,
+            properties: [.reason: "unapprovedRecoveryReason"]
+        ))
+    }
+
+    func testInvalidRecoverySignalIsDroppedOutsideDebugBuilds() {
+        #if !DEBUG
+        let (coordinator, provider, _) = makeCoordinator()
+        coordinator.record(.stateRecoveryTriggered, properties: [.reason: "unapprovedRecoveryReason"])
+        XCTAssertFalse(provider.signals.contains { $0.event == .stateRecoveryTriggered })
+        #endif
     }
 
     func testPlayerCardAndQuickGameDayPropertiesAreCoarseAndAllowlisted() throws {

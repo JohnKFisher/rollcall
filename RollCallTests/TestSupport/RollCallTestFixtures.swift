@@ -17,8 +17,7 @@ enum RollCallTestFixtures {
         isPresent: Bool = true,
         cue: Cue? = nil,
         photoRelativePath: String? = nil,
-        customAnnouncerRelativePath: String? = nil,
-        generatedBuiltInAnnouncerRelativePath: String? = nil
+        customAnnouncerRelativePath: String? = nil
     ) -> Player {
         Player(
             id: id,
@@ -28,8 +27,7 @@ enum RollCallTestFixtures {
             photoRelativePath: photoRelativePath,
             cue: cue,
             isPresent: isPresent,
-            customAnnouncerRelativePath: customAnnouncerRelativePath,
-            generatedBuiltInAnnouncerRelativePath: generatedBuiltInAnnouncerRelativePath
+            customAnnouncerRelativePath: customAnnouncerRelativePath
         )
     }
 
@@ -105,8 +103,7 @@ enum RollCallTestFixtures {
                 nextBatterIndex: nextBatterIndex,
                 gameDayAnnouncerMode: .announcerAndSong,
                 battingOrderIsCustomized: battingOrderIsCustomized
-            ),
-            announcerProfile: .default
+            )
         )
     }
 

@@ -16,9 +16,16 @@ final class BackupRestoreTests: XCTestCase {
 
     @MainActor
     func testPackageImportCreatesAutomaticBackupBeforeChangingTeams() async throws {
-        let originalTeam = RollCallTestFixtures.team(players: [
+        var originalTeam = RollCallTestFixtures.team(players: [
             RollCallTestFixtures.player(id: RollCallTestFixtures.alexID, name: "Alex Ramirez", number: "12"),
         ])
+        originalTeam.customColor = TeamCustomColor(
+            colorSpace: "sRGB",
+            red: 0.123456,
+            green: 0.654321,
+            blue: 0.777777,
+            alpha: 1.0
+        )
         let incomingTeam = RollCallTestFixtures.team(players: [
             RollCallTestFixtures.player(id: RollCallTestFixtures.caseyID, name: "Casey Morgan", number: "9"),
         ])
@@ -43,6 +50,7 @@ final class BackupRestoreTests: XCTestCase {
         XCTAssertEqual(model.state.snapshots.first?.reason, "Automatic backup before package import")
         let backupState = try readStateSnapshot(model.state.snapshots[0])
         XCTAssertEqual(backupState.teams.map(\.name), initialState.teams.map(\.name))
+        XCTAssertEqual(backupState.teams.first?.customColor, originalTeam.customColor)
     }
 
     @MainActor
@@ -67,9 +75,16 @@ final class BackupRestoreTests: XCTestCase {
         let currentTeam = RollCallTestFixtures.team(players: [
             RollCallTestFixtures.player(id: RollCallTestFixtures.alexID, name: "Alex Ramirez", number: "12"),
         ])
-        let restoredTeam = RollCallTestFixtures.team(players: [
+        var restoredTeam = RollCallTestFixtures.team(players: [
             RollCallTestFixtures.player(id: RollCallTestFixtures.caseyID, name: "Casey Morgan", number: "9"),
         ])
+        restoredTeam.customColor = TeamCustomColor(
+            colorSpace: "vendor:future-wide-gamut-v2",
+            red: -0.25,
+            green: 2.5,
+            blue: 0.0000000000123456,
+            alpha: 1.25
+        )
         let restoredSnapshot = SnapshotRecord(
             id: UUID(),
             createdAt: RollCallTestFixtures.now,
@@ -85,7 +100,41 @@ final class BackupRestoreTests: XCTestCase {
 
         XCTAssertNil(model.lastError)
         XCTAssertEqual(model.state.teams.first?.players.map(\.displayName), ["Casey Morgan"])
+        XCTAssertEqual(model.state.teams.first?.customColor, restoredTeam.customColor)
         XCTAssertEqual(model.state.snapshots.first?.reason, "Automatic backup before restore")
+    }
+
+    @MainActor
+    func testRestoreRecentlyDeletedTeamPreservesDormantCustomColor() throws {
+        let activeTeam = RollCallTestFixtures.team(players: [])
+        var deletedTeam = RollCallTestFixtures.team(players: [])
+        deletedTeam.id = UUID()
+        deletedTeam.name = activeTeam.name
+        deletedTeam.accentPreset = .blue
+        deletedTeam.customColor = TeamCustomColor(
+            colorSpace: "vendor:future-wide-gamut-v2",
+            red: -0.25,
+            green: 2.5,
+            blue: 0.0000000000123456,
+            alpha: 1.25
+        )
+        let deletedItem = RecentlyDeletedItem(
+            id: UUID(),
+            deletedAt: RollCallTestFixtures.now,
+            payload: .team(DeletedTeamRecord(team: deletedTeam))
+        )
+        var state = RollCallTestFixtures.appState(team: activeTeam)
+        state.recentlyDeleted = [deletedItem]
+        try writeState(state)
+        let model = AppModel()
+
+        model.restoreRecentlyDeletedItem(deletedItem, allowPartial: true)
+
+        let restoredTeam = try XCTUnwrap(model.state.teams.first(where: { $0.id == deletedTeam.id }))
+        XCTAssertEqual(restoredTeam.name, "Thunder (Restored)")
+        XCTAssertEqual(restoredTeam.customColor, deletedTeam.customColor)
+        XCTAssertEqual(restoredTeam.accentPreset, .blue)
+        XCTAssertTrue(model.state.recentlyDeleted.isEmpty)
     }
 
     @MainActor

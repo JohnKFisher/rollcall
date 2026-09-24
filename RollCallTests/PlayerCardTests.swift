@@ -69,6 +69,158 @@ final class PlayerCardTests: XCTestCase {
         XCTAssertNotEqual(images[.impact], images[.broadcast])
     }
 
+    func testStalePlayerCardRenderCannotReplaceOrApplyAfterPhotoReplacement() {
+        let cropA = NormalizedPhotoCrop(x: 0.05, y: 0.1, width: 0.7, height: 0.8)
+        let cropB = NormalizedPhotoCrop(x: 0.2, y: 0.15, width: 0.6, height: 0.7)
+        let player = playerWithSong()
+        let content = PlayerCardContent(player: player, team: team(containing: player, accent: .blue))
+        let identityA = PlayerCardPreviewRenderIdentity(
+            content: content,
+            photoRelativePath: "Players/A-profile.jpg",
+            photoSourceRelativePath: "Players/A-master.jpg",
+            playerCardPhotoCrop: cropA
+        )
+        let identityB = PlayerCardPreviewRenderIdentity(
+            content: content,
+            photoRelativePath: "Players/B-profile.jpg",
+            photoSourceRelativePath: "Players/B-master.jpg",
+            playerCardPhotoCrop: cropB
+        )
+        let photoA = solidPhoto(.systemRed)
+        let photoB = solidPhoto(.systemBlue)
+        let optionsA = framingOptions(profileCrop: cropA, cardCrop: cropA)
+        let optionsB = framingOptions(profileCrop: .full, cardCrop: cropB)
+
+        var gate = PlayerCardPreviewRenderGate()
+        let requestA = gate.begin(identity: identityA)
+        let requestB = gate.begin(identity: identityB)
+        let resultB = previewResult(request: requestB, image: photoB, options: optionsB)
+        XCTAssertTrue(gate.publish(resultB, currentIdentity: identityB))
+
+        let staleSuccessA = previewResult(request: requestA, image: photoA, options: optionsA)
+        XCTAssertFalse(gate.publish(staleSuccessA, currentIdentity: identityB))
+        XCTAssertFalse(gate.accepts(requestA, currentIdentity: identityB))
+        XCTAssertNil(gate.currentResult(for: requestA, currentIdentity: identityB))
+
+        var draft = RollCallTestFixtures.player(id: UUID(), name: "Alex", number: "12")
+        draft.photoRelativePath = identityB.photoRelativePath
+        draft.photoSourceRelativePath = identityB.photoSourceRelativePath
+        draft.profilePhotoCrop = NormalizedPhotoCrop(x: 0.15, y: 0.2, width: 0.65, height: 0.7)
+        draft.playerCardPhotoCrop = cropB
+        let profileCropBeforeStaleApply = draft.profilePhotoCrop
+        let cropBeforeStaleApply = draft.playerCardPhotoCrop
+        if let staleFraming = gate.currentResult(for: requestA, currentIdentity: identityB) {
+            if draft.photoSourceRelativePath != nil, !staleFraming.usesWorkingMaster {
+                draft.photoSourceRelativePath = nil
+                draft.profilePhotoCrop = nil
+            }
+            draft.playerCardPhotoCrop = optionsA.card[.automatic]
+        }
+        XCTAssertEqual(draft.photoRelativePath, identityB.photoRelativePath)
+        XCTAssertEqual(draft.photoSourceRelativePath, identityB.photoSourceRelativePath)
+        XCTAssertEqual(draft.profilePhotoCrop, profileCropBeforeStaleApply)
+        XCTAssertEqual(draft.playerCardPhotoCrop, cropBeforeStaleApply)
+
+        let published = gate.currentResult(for: identityB)
+        XCTAssertEqual(published?.request, requestB)
+        XCTAssertEqual(published?.request.identity.photoRelativePath, identityB.photoRelativePath)
+        XCTAssertEqual(published?.request.identity.photoSourceRelativePath, identityB.photoSourceRelativePath)
+        XCTAssertEqual(published?.request.identity.playerCardPhotoCrop, cropB)
+        XCTAssertTrue(published?.framingImage === photoB)
+        XCTAssertEqual(published?.framingOptions, optionsB)
+        XCTAssertEqual(published?.cards.count, PlayerCardDesign.shippingDesigns.count)
+        XCTAssertTrue(gate.shareableImage(for: .broadcast, currentIdentity: identityB) === photoB)
+
+        let staleFailureA = PlayerCardPreviewRenderResult(
+            request: requestA,
+            cards: [:],
+            framingImage: nil,
+            framingOptions: nil,
+            usesWorkingMaster: false,
+            errorMessage: "old A failure"
+        )
+        XCTAssertFalse(gate.publish(staleFailureA, currentIdentity: identityB))
+        XCTAssertNil(gate.currentResult(for: identityA))
+        XCTAssertEqual(gate.currentResult(for: identityB)?.request, requestB)
+    }
+
+    func testPlayerCardRenderRequestUUIDRejectsEarlierAAfterBThenA() {
+        let crop = NormalizedPhotoCrop(x: 0.1, y: 0.1, width: 0.8, height: 0.8)
+        let player = playerWithSong()
+        let content = PlayerCardContent(player: player, team: team(containing: player, accent: .blue))
+        let identityA = PlayerCardPreviewRenderIdentity(
+            content: content,
+            photoRelativePath: "Players/A-profile.jpg",
+            photoSourceRelativePath: "Players/A-master.jpg",
+            playerCardPhotoCrop: crop
+        )
+        let identityB = PlayerCardPreviewRenderIdentity(
+            content: content,
+            photoRelativePath: "Players/B-profile.jpg",
+            photoSourceRelativePath: "Players/B-master.jpg",
+            playerCardPhotoCrop: crop
+        )
+        var gate = PlayerCardPreviewRenderGate()
+        let firstA = gate.begin(identity: identityA)
+        _ = gate.begin(identity: identityB)
+        let secondA = gate.begin(identity: identityA)
+
+        XCTAssertNotEqual(firstA.id, secondA.id)
+        XCTAssertFalse(gate.accepts(firstA, currentIdentity: identityA))
+        XCTAssertTrue(gate.accepts(secondA, currentIdentity: identityA))
+        XCTAssertFalse(gate.publish(
+            previewResult(request: firstA, image: solidPhoto(.systemRed), options: framingOptions(profileCrop: crop, cardCrop: crop)),
+            currentIdentity: identityA
+        ))
+
+        let imageA = solidPhoto(.systemGreen)
+        XCTAssertTrue(gate.publish(
+            previewResult(request: secondA, image: imageA, options: framingOptions(profileCrop: crop, cardCrop: crop)),
+            currentIdentity: identityA
+        ))
+        XCTAssertTrue(gate.shareableImage(for: .spotlight, currentIdentity: identityA) === imageA)
+    }
+
+    func testCurrentPlayerCardRenderPublishesEveryShippingDesignAndFramingForShare() {
+        let player = playerWithSong()
+        let team = team(containing: player, accent: .blue)
+        let photo = samplePhoto()
+        let crop = PlayerPhotoFramingGeometry.centeredCrop(
+            aspectRatio: PlayerPhotoFramingGeometry.playerCardPhotoAspectRatio,
+            imageSize: photo.size
+        )
+        let content = PlayerCardContent(player: player, team: team)
+        let identity = PlayerCardPreviewRenderIdentity(
+            content: content,
+            photoRelativePath: "Players/current-profile.jpg",
+            photoSourceRelativePath: "Players/current-master.jpg",
+            playerCardPhotoCrop: crop
+        )
+        let cards = Dictionary(uniqueKeysWithValues: PlayerCardDesign.shippingDesigns.map { design in
+            (design, PlayerCardRenderer().render(content: content, photo: photo, crop: crop, design: design))
+        })
+        let options = PlayerPhotoFramingGeometry.framingOptions(faces: [], people: [], imageSize: photo.size)
+        var gate = PlayerCardPreviewRenderGate()
+        let request = gate.begin(identity: identity)
+        let result = PlayerCardPreviewRenderResult(
+            request: request,
+            cards: cards,
+            framingImage: photo,
+            framingOptions: options,
+            usesWorkingMaster: true,
+            errorMessage: nil
+        )
+
+        XCTAssertTrue(gate.publish(result, currentIdentity: identity))
+        XCTAssertEqual(gate.currentResult(for: identity)?.cards.count, PlayerCardDesign.shippingDesigns.count)
+        XCTAssertNotNil(gate.currentResult(for: identity)?.framingOptions?.card[.automatic])
+        for design in PlayerCardDesign.shippingDesigns {
+            let card = gate.shareableImage(for: design, currentIdentity: identity)
+            XCTAssertEqual(card?.size, PlayerCardRenderer.outputSize)
+            XCTAssertNotNil(card?.pngData())
+        }
+    }
+
     func testSpotlightDesignKeepsTheExistingDefaultRenderer() throws {
         let player = playerWithSong()
         let team = team(containing: player, accent: .blue)
@@ -276,6 +428,38 @@ final class PlayerCardTests: XCTestCase {
         XCTAssertEqual(marked.size, PlayerCardRenderer.outputSize)
         XCTAssertEqual(unmarked.size, PlayerCardRenderer.outputSize)
         XCTAssertNotEqual(try XCTUnwrap(marked.pngData()), try XCTUnwrap(unmarked.pngData()))
+    }
+
+    private func previewResult(
+        request: PlayerCardPreviewRenderRequest,
+        image: UIImage,
+        options: PlayerPhotoFramingOptionSet
+    ) -> PlayerCardPreviewRenderResult {
+        PlayerCardPreviewRenderResult(
+            request: request,
+            cards: Dictionary(uniqueKeysWithValues: PlayerCardDesign.shippingDesigns.map { ($0, image) }),
+            framingImage: image,
+            framingOptions: options,
+            usesWorkingMaster: true,
+            errorMessage: nil
+        )
+    }
+
+    private func framingOptions(
+        profileCrop: NormalizedPhotoCrop,
+        cardCrop: NormalizedPhotoCrop
+    ) -> PlayerPhotoFramingOptionSet {
+        PlayerPhotoFramingOptionSet(
+            profile: [.automatic: profileCrop],
+            card: [.automatic: cardCrop]
+        )
+    }
+
+    private func solidPhoto(_ color: UIColor) -> UIImage {
+        UIGraphicsImageRenderer(size: CGSize(width: 160, height: 200)).image { context in
+            color.setFill()
+            context.fill(CGRect(x: 0, y: 0, width: 160, height: 200))
+        }
     }
 
     private func playerWithSong() -> Player {

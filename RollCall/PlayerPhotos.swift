@@ -106,6 +106,59 @@ enum PlayerPhotoPreparationError: LocalizedError {
     }
 }
 
+enum PlayerPhotoFramingSourceIdentity: Equatable {
+    case workingMaster(relativePath: String)
+    case legacyProfile(relativePath: String)
+
+    var relativePath: String {
+        switch self {
+        case .workingMaster(let relativePath), .legacyProfile(let relativePath):
+            return relativePath
+        }
+    }
+
+    func matches(_ player: Player) -> Bool {
+        switch self {
+        case .workingMaster(let relativePath):
+            return player.photoSourceRelativePath == relativePath
+        case .legacyProfile(let relativePath):
+            return player.photoSourceRelativePath == nil
+                && player.photoRelativePath == relativePath
+        }
+    }
+}
+
+struct PlayerPhotoFramingRequest: Equatable, Identifiable {
+    let id: UUID
+    let source: PlayerPhotoFramingSourceIdentity
+
+    init(source: PlayerPhotoFramingSourceIdentity) {
+        id = UUID()
+        self.source = source
+    }
+
+    func validatedSourcePath(activeRequestID: UUID?, player: Player) -> String? {
+        guard activeRequestID == id, source.matches(player) else { return nil }
+        return source.relativePath
+    }
+
+    @discardableResult
+    func applyProfileFraming(
+        _ crop: NormalizedPhotoCrop,
+        profileRelativePath: String,
+        activeRequestID: UUID?,
+        to player: inout Player
+    ) -> Bool {
+        guard let sourcePath = validatedSourcePath(activeRequestID: activeRequestID, player: player) else {
+            return false
+        }
+        player.photoSourceRelativePath = sourcePath
+        player.photoRelativePath = profileRelativePath
+        player.profilePhotoCrop = crop
+        return true
+    }
+}
+
 struct PlayerPhotoPreparationService: Sendable {
     static let masterMaximumDimension: CGFloat = 3_000
     static let profilePixelSize = CGSize(width: 640, height: 640)
@@ -224,7 +277,7 @@ enum PlayerPhotoFramingGeometry {
         let validUpperBodies = upperBodies.map(clampUnitRect).filter { !$0.isEmpty }
         let detectionPeople = validPeople.isEmpty ? validUpperBodies : validPeople
         let selectedPerson = bestCandidate(in: detectionPeople)
-        let selectedFace = bestFace(in: validFaces, matching: selectedPerson)
+        let selectedFace = selectPrimaryFace(from: validFaces)
         let faceMatchesSelectedPerson = selectedFace.map { face in
             selectedPerson?.insetBy(dx: -0.04, dy: -0.04)
                 .contains(CGPoint(x: face.midX, y: face.midY)) == true
@@ -263,8 +316,7 @@ enum PlayerPhotoFramingGeometry {
         let validPeople = people.map(clampUnitRect).filter { !$0.isEmpty }
         let validUpperBodies = upperBodies.map(clampUnitRect).filter { !$0.isEmpty }
         let selectedPerson = bestCandidate(in: validPeople)
-        let personForMatching = selectedPerson ?? bestCandidate(in: validUpperBodies)
-        let selectedFace = bestFace(in: validFaces, matching: personForMatching)
+        let selectedFace = selectPrimaryFace(from: validFaces)
         let selectedUpperBody = bestUpperBody(
             in: validUpperBodies,
             matching: selectedPerson,
@@ -273,7 +325,7 @@ enum PlayerPhotoFramingGeometry {
 
         let profileAnchor: CGRect
         if let selectedFace {
-            profileAnchor = selectedFace.insetBy(dx: -selectedFace.width * 0.8, dy: -selectedFace.height * 1.15)
+            profileAnchor = selectedFace.insetBy(dx: -selectedFace.width * 0.6, dy: -selectedFace.height * 0.85)
                 .offsetBy(dx: 0, dy: selectedFace.height * 0.35)
         } else if let selectedPerson {
             profileAnchor = CGRect(
@@ -300,7 +352,15 @@ enum PlayerPhotoFramingGeometry {
             fallback: upperBodyAnchor
         )
         let fullBodyAnchor = selectedPerson ?? selectedUpperBody ?? faceAnchor
-        let automaticCardAnchor = upperBodyAnchor.union(faceAnchor)
+        let automaticCardBodyAnchor: CGRect
+        if let selectedFace {
+            automaticCardBodyAnchor = bestAssociatedBody(in: validUpperBodies, matching: selectedFace)
+                ?? bestAssociatedBody(in: validPeople, matching: selectedFace).map(upperPortion(of:))
+                ?? faceAnchor
+        } else {
+            automaticCardBodyAnchor = upperBodyAnchor
+        }
+        let automaticCardAnchor = automaticCardBodyAnchor.union(faceAnchor)
 
         func crop(_ anchor: CGRect, _ aspectRatio: CGFloat) -> NormalizedPhotoCrop {
             NormalizedPhotoCrop(aspectCrop(containing: anchor, aspectRatio: aspectRatio, imageSize: imageSize))
@@ -341,12 +401,36 @@ enum PlayerPhotoFramingGeometry {
         candidates.max { score($0) < score($1) }
     }
 
-    private static func bestFace(in faces: [CGRect], matching person: CGRect?) -> CGRect? {
-        if let person {
-            let matching = faces.filter { person.insetBy(dx: -0.04, dy: -0.04).contains(CGPoint(x: $0.midX, y: $0.midY)) }
-            if let best = bestCandidate(in: matching) { return best }
-        }
-        return bestCandidate(in: faces)
+    /// Selects the most prominent face using its size, image position, and distance from an edge.
+    /// Human-rectangle detections are not used to constrain this choice because Vision can miss the
+    /// primary subject while still detecting a secondary person near an edge.
+    static func selectPrimaryFace(from faces: [CGRect]) -> CGRect? {
+        faces
+            .map(clampUnitRect)
+            .filter { !$0.isEmpty }
+            .sorted(by: isPreferredPrimaryFace)
+            .first
+    }
+
+    /// Larger faces get a prominence advantage; central faces get a modest position advantage;
+    /// faces within 6% of an image edge receive up to a 0.12 penalty.
+    static func primaryFaceScore(for rawRect: CGRect) -> CGFloat {
+        let rect = clampUnitRect(rawRect)
+        let area = rect.width * rect.height
+        let centerDistance = hypot(rect.midX - 0.5, rect.midY - 0.5)
+        let edgeMargin = min(min(rect.minX, rect.minY), min(1 - rect.maxX, 1 - rect.maxY))
+        let edgePenalty = max(0, (0.06 - edgeMargin) / 0.06) * 0.12
+        return area * 4 - centerDistance * 0.35 - edgePenalty
+    }
+
+    private static func isPreferredPrimaryFace(_ lhs: CGRect, _ rhs: CGRect) -> Bool {
+        let lhsScore = primaryFaceScore(for: lhs)
+        let rhsScore = primaryFaceScore(for: rhs)
+        if lhsScore != rhsScore { return lhsScore > rhsScore }
+        if lhs.minX != rhs.minX { return lhs.minX < rhs.minX }
+        if lhs.minY != rhs.minY { return lhs.minY < rhs.minY }
+        if lhs.width != rhs.width { return lhs.width > rhs.width }
+        return lhs.height > rhs.height
     }
 
     private static func bestUpperBody(in bodies: [CGRect], matching person: CGRect?, face: CGRect?) -> CGRect? {
@@ -361,6 +445,64 @@ enum PlayerPhotoFramingGeometry {
             return true
         }
         return bestCandidate(in: matching.isEmpty ? bodies : matching)
+    }
+
+    /// Selects a body observation that has plausible geometric association with the selected face.
+    /// Vision rectangles use top-left normalized coordinates here. This is intentionally separate
+    /// from `bestUpperBody`, whose global fallback remains available to explicit framing presets.
+    static func bestAssociatedBody(in candidates: [CGRect], matching rawFace: CGRect) -> CGRect? {
+        let face = clampUnitRect(rawFace)
+        guard !face.isEmpty else { return nil }
+
+        return candidates
+            .map(clampUnitRect)
+            .filter { isGeometricallyAssociated(face: face, body: $0) }
+            .sorted { isStrongerAssociation(face: face, lhs: $0, rhs: $1) }
+            .first
+    }
+
+    private static func isGeometricallyAssociated(face: CGRect, body: CGRect) -> Bool {
+        guard !body.isEmpty else { return false }
+
+        let horizontalTolerance = max(0.01, face.width * 0.1)
+        let faceCenterX = face.midX
+        guard faceCenterX >= body.minX - horizontalTolerance,
+              faceCenterX <= body.maxX + horizontalTolerance,
+              horizontalOverlapFraction(face: face, body: body) >= 0.5 else {
+            return false
+        }
+
+        let verticalTolerance = max(0.01, face.height * 0.25)
+        let faceCenterFromBodyTop = face.midY - body.minY
+        return faceCenterFromBodyTop >= -verticalTolerance
+            && faceCenterFromBodyTop <= body.height * 0.55
+    }
+
+    private static func isStrongerAssociation(face: CGRect, lhs: CGRect, rhs: CGRect) -> Bool {
+        let lhsOverlap = horizontalOverlapFraction(face: face, body: lhs)
+        let rhsOverlap = horizontalOverlapFraction(face: face, body: rhs)
+        if lhsOverlap != rhsOverlap { return lhsOverlap > rhsOverlap }
+
+        let lhsDistance = normalizedDistanceToHead(face: face, body: lhs)
+        let rhsDistance = normalizedDistanceToHead(face: face, body: rhs)
+        if lhsDistance != rhsDistance { return lhsDistance < rhsDistance }
+        if lhs.minX != rhs.minX { return lhs.minX < rhs.minX }
+        if lhs.minY != rhs.minY { return lhs.minY < rhs.minY }
+        if lhs.width != rhs.width { return lhs.width < rhs.width }
+        return lhs.height < rhs.height
+    }
+
+    private static func horizontalOverlapFraction(face: CGRect, body: CGRect) -> CGFloat {
+        let overlap = max(0, min(face.maxX, body.maxX) - max(face.minX, body.minX))
+        return overlap / max(face.width, 0.001)
+    }
+
+    private static func normalizedDistanceToHead(face: CGRect, body: CGRect) -> CGFloat {
+        let expectedHeadX = body.midX
+        let expectedHeadY = body.minY + body.height * 0.25
+        let dx = (face.midX - expectedHeadX) / max(body.width, 0.001)
+        let dy = (face.midY - expectedHeadY) / max(body.height, 0.001)
+        return hypot(dx, dy)
     }
 
     private static func upperPortion(of person: CGRect) -> CGRect {

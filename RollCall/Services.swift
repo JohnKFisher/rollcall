@@ -12,6 +12,7 @@ import ZIPFoundation
 enum AppError: LocalizedError {
     case missingPreview
     case invalidImport
+    case packageSizeLimitExceeded
     case unsupportedImportVersion
     case unsupportedSavedStateVersion
     case invalidSearchTerm
@@ -37,6 +38,8 @@ enum AppError: LocalizedError {
             return "This Apple Music selection does not expose preview media for fallback playback."
         case .invalidImport:
             return "That file could not be imported."
+        case .packageSizeLimitExceeded:
+            return "This team package exceeds Roll Call's safe sharing limits. Remove some large media files and try again."
         case .unsupportedImportVersion:
             return "That package was created by a newer Roll Call version. Update Roll Call, then try importing it again."
         case .unsupportedSavedStateVersion:
@@ -2274,13 +2277,38 @@ final class ReadinessService {
 
 struct PackageService: Sendable {
     private enum ArchiveLimits {
-        // These limits are intentionally above the normal size of a team export,
-        // while keeping an untrusted archive from reserving unbounded resources.
-        static let maximumArchiveBytes: UInt64 = 256 * 1024 * 1024
+        // Local media imports and Announcement Cue recordings have no source-size
+        // ceiling. A 256 MiB Assets entry covers about 25 minutes of uncompressed
+        // 44.1 kHz stereo 16-bit PCM, while the 1 GiB aggregate keeps package
+        // extraction bounded for a full team transfer.
+        private static let mebibyte: UInt64 = 1_024 * 1_024
+        // Leave 16 MiB beyond the uncompressed ceiling for ZIP headers and
+        // compression overhead when an asset is not compressible.
+        static let maximumArchiveBytes: UInt64 = 1_040 * mebibyte
         static let maximumEntryCount = 1_024
-        static let maximumEntryUncompressedBytes: UInt64 = 64 * 1024 * 1024
-        static let maximumTotalUncompressedBytes: UInt64 = 512 * 1024 * 1024
+        static let maximumManifestBytes: UInt64 = 8 * mebibyte
+        static let maximumAssetEntryBytes: UInt64 = 256 * mebibyte
+        static let maximumOtherEntryBytes: UInt64 = 8 * mebibyte
+        static let maximumTotalUncompressedBytes: UInt64 = 1_024 * mebibyte
+        // Roll Call writes stored entries; retain this for structural entries in
+        // recompressed or malicious archives. Assets have absolute byte ceilings.
         static let maximumCompressionRatio: UInt64 = 1_000
+
+        static func maximumEntryBytes(for normalizedPath: String) -> UInt64 {
+            if normalizedPath == "manifest.json" {
+                return maximumManifestBytes
+            }
+            if normalizedPath.hasPrefix("assets/") {
+                return maximumAssetEntryBytes
+            }
+            return maximumOtherEntryBytes
+        }
+
+        static func compressionRatioLimit(for normalizedPath: String) -> UInt64? {
+            // Valid PCM media can compress beyond 1,000:1. Its expansion is
+            // already bounded by the per-entry and aggregate byte ceilings.
+            normalizedPath.hasPrefix("assets/") ? nil : maximumCompressionRatio
+        }
     }
 
     struct PreviewResult {
@@ -2327,14 +2355,54 @@ struct PackageService: Sendable {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
         encoder.dateEncodingStrategy = .iso8601
-        try encoder.encode(manifest).write(to: stagingDirectory.appendingPathComponent("manifest.json"), options: .atomic)
+        let manifestData = try encoder.encode(manifest)
+        guard UInt64(manifestData.count) <= ArchiveLimits.maximumManifestBytes else {
+            throw AppError.packageSizeLimitExceeded
+        }
+        try manifestData.write(to: stagingDirectory.appendingPathComponent("manifest.json"), options: .atomic)
 
         let packageAssetsURL = stagingDirectory.appendingPathComponent("Assets", isDirectory: true)
         try FileManager.default.createDirectory(at: packageAssetsURL, withIntermediateDirectories: true)
-        try copyAssets(for: manifest.team, into: packageAssetsURL)
+        var totalPackageBytes = UInt64(manifestData.count)
+        var copiedAssetPaths: [String: String] = [:]
+        var packageEntryPaths: Set<String> = ["manifest.json", "assets"]
+        try copyAssets(
+            for: manifest.team,
+            into: packageAssetsURL,
+            totalPackageBytes: &totalPackageBytes,
+            copiedAssetPaths: &copiedAssetPaths,
+            packageEntryPaths: &packageEntryPaths
+        )
+        do {
+            try validatePackageDirectory(at: stagingDirectory)
+        } catch {
+            throw AppError.packageSizeLimitExceeded
+        }
         try FileManager.default.zipItem(at: stagingDirectory, to: exportURL, shouldKeepParent: false)
 
+        do {
+            // Keep the writer inside the same bounded contract as preview/import.
+            try validateArchiveBeforeExtraction(at: exportURL)
+        } catch {
+            try? FileManager.default.removeItem(at: exportURL)
+            throw AppError.packageSizeLimitExceeded
+        }
+
         return exportURL
+    }
+
+    /// Removes only the exact package archive retained for a completed share.
+    /// The caller owns the share lifecycle and must wait for the activity sheet
+    /// to dismiss before invoking this best-effort cleanup.
+    func cleanupExportedPackage(at url: URL) {
+        let standardizedURL = url.standardizedFileURL
+        let temporaryDirectory = FileManager.default.temporaryDirectory.standardizedFileURL
+        guard standardizedURL.isFileURL,
+              standardizedURL.pathExtension.lowercased() == "rollcall",
+              standardizedURL.deletingLastPathComponent() == temporaryDirectory else {
+            return
+        }
+        try? FileManager.default.removeItem(at: standardizedURL)
     }
 
     func `import`(packageURL: URL, audioAssetService: AudioAssetService) throws -> TeamPackageManifest {
@@ -2363,7 +2431,7 @@ struct PackageService: Sendable {
         let manifestURL = try manifestURL(for: packageRootURL)
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601
-        var manifest = try decoder.decode(TeamPackageManifest.self, from: Data(contentsOf: manifestURL))
+        var manifest = try decoder.decode(TeamPackageManifest.self, from: manifestData(at: manifestURL))
         guard manifest.schemaVersion <= TeamPackageManifest.currentSchemaVersion else { throw AppError.unsupportedImportVersion }
         try validateImportableTeam(manifest.team)
 
@@ -2447,7 +2515,7 @@ struct PackageService: Sendable {
         let manifestURL = try manifestURL(for: packageRootURL)
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601
-        let manifest = try decoder.decode(TeamPackageManifest.self, from: Data(contentsOf: manifestURL))
+        let manifest = try decoder.decode(TeamPackageManifest.self, from: manifestData(at: manifestURL))
         guard manifest.schemaVersion <= TeamPackageManifest.currentSchemaVersion else { throw AppError.unsupportedImportVersion }
         try validateImportableTeam(manifest.team)
         let packageAssetsURL = packageRootURL.appendingPathComponent("Assets", isDirectory: true)
@@ -2712,16 +2780,16 @@ struct PackageService: Sendable {
 
     private func extractedDirectoryIfNeeded(for packageURL: URL) throws -> URL? {
         if try isDirectory(packageURL) {
+            try validatePackageDirectory(at: packageURL)
             return nil
         }
-        try validateArchiveBeforeExtraction(at: packageURL)
         let extractedURL = FileManager.default.temporaryDirectory.appendingPathComponent("RollCall-Import-\(UUID().uuidString)", isDirectory: true)
         if FileManager.default.fileExists(atPath: extractedURL.path) {
             try FileManager.default.removeItem(at: extractedURL)
         }
         try FileManager.default.createDirectory(at: extractedURL, withIntermediateDirectories: true)
         do {
-            try FileManager.default.unzipItem(at: packageURL, to: extractedURL)
+            try extractArchive(at: packageURL, to: extractedURL)
             return extractedURL
         } catch {
             try? FileManager.default.removeItem(at: extractedURL)
@@ -2730,6 +2798,61 @@ struct PackageService: Sendable {
     }
 
     private func validateArchiveBeforeExtraction(at packageURL: URL) throws {
+        _ = try openValidatedArchive(at: packageURL)
+    }
+
+    private func extractArchive(at packageURL: URL, to destinationDirectory: URL) throws {
+        let (archive, entries) = try openValidatedArchive(at: packageURL)
+        var totalExtractedBytes: UInt64 = 0
+
+        for entry in entries {
+            let destinationURL = destinationDirectory.appendingPathComponent(entry.path)
+            let normalizedPath = entry.path.precomposedStringWithCanonicalMapping.lowercased()
+            switch entry.type {
+            case .directory:
+                guard entry.uncompressedSize == 0 else { throw AppError.invalidImport }
+                try FileManager.default.createDirectory(at: destinationURL, withIntermediateDirectories: true)
+                let checksum = try archive.extract(entry, consumer: { _ in })
+                guard checksum == entry.checksum else { throw AppError.invalidImport }
+
+            case .file:
+                let parentURL = destinationURL.deletingLastPathComponent()
+                try FileManager.default.createDirectory(at: parentURL, withIntermediateDirectories: true)
+                guard FileManager.default.createFile(atPath: destinationURL.path, contents: nil) else {
+                    throw AppError.invalidImport
+                }
+                let fileHandle = try FileHandle(forWritingTo: destinationURL)
+                var entryExtractedBytes: UInt64 = 0
+                do {
+                    let checksum = try archive.extract(entry, consumer: { chunk in
+                        let chunkBytes = UInt64(chunk.count)
+                        let entryLimit = ArchiveLimits.maximumEntryBytes(for: normalizedPath)
+                        guard chunkBytes <= entryLimit - entryExtractedBytes,
+                              chunkBytes <= ArchiveLimits.maximumTotalUncompressedBytes - totalExtractedBytes,
+                              chunkBytes <= entry.uncompressedSize - entryExtractedBytes else {
+                            throw AppError.invalidImport
+                        }
+                        try fileHandle.write(contentsOf: chunk)
+                        entryExtractedBytes += chunkBytes
+                        totalExtractedBytes += chunkBytes
+                    })
+                    try fileHandle.close()
+                    guard entryExtractedBytes == entry.uncompressedSize,
+                          checksum == entry.checksum else {
+                        throw AppError.invalidImport
+                    }
+                } catch {
+                    try? fileHandle.close()
+                    throw error
+                }
+
+            default:
+                throw AppError.invalidImport
+            }
+        }
+    }
+
+    private func openValidatedArchive(at packageURL: URL) throws -> (archive: Archive, entries: [Entry]) {
         let values = try packageURL.resourceValues(forKeys: [.fileSizeKey])
         guard let fileSize = values.fileSize,
               fileSize >= 0,
@@ -2747,6 +2870,7 @@ struct PackageService: Sendable {
         var entryCount = 0
         var totalUncompressedBytes: UInt64 = 0
         var normalizedPaths = Set<String>()
+        var entries: [Entry] = []
         for entry in archive {
             entryCount += 1
             guard entryCount <= ArchiveLimits.maximumEntryCount else {
@@ -2764,8 +2888,8 @@ struct PackageService: Sendable {
             }
 
             let uncompressedBytes = entry.uncompressedSize
-            guard entry.type != .symlink,
-                  uncompressedBytes <= ArchiveLimits.maximumEntryUncompressedBytes else {
+            guard entry.type == .file || entry.type == .directory,
+                  uncompressedBytes <= ArchiveLimits.maximumEntryBytes(for: normalizedPath) else {
                 throw AppError.invalidImport
             }
             guard uncompressedBytes <= ArchiveLimits.maximumTotalUncompressedBytes - totalUncompressedBytes else {
@@ -2774,14 +2898,88 @@ struct PackageService: Sendable {
             totalUncompressedBytes += uncompressedBytes
 
             let compressedBytes = entry.compressedSize
-            if uncompressedBytes > 0 {
+            if let ratioLimit = ArchiveLimits.compressionRatioLimit(for: normalizedPath),
+               uncompressedBytes > 0 {
                 guard compressedBytes > 0,
-                      compressedBytes <= UInt64.max / ArchiveLimits.maximumCompressionRatio,
-                      uncompressedBytes <= compressedBytes * ArchiveLimits.maximumCompressionRatio else {
+                      compressedBytes <= UInt64.max / ratioLimit,
+                      uncompressedBytes <= compressedBytes * ratioLimit else {
                     throw AppError.invalidImport
                 }
             }
+            entries.append(entry)
         }
+        return (archive, entries)
+    }
+
+    private func validatePackageDirectory(at packageURL: URL) throws {
+        let rootURL = packageURL.standardizedFileURL
+        let rootValues = try rootURL.resourceValues(forKeys: [.isDirectoryKey, .isSymbolicLinkKey])
+        guard rootValues.isDirectory == true, rootValues.isSymbolicLink != true,
+              let enumerator = FileManager.default.enumerator(
+                at: rootURL,
+                includingPropertiesForKeys: [.isDirectoryKey, .isRegularFileKey, .isSymbolicLinkKey, .fileSizeKey]
+              ) else {
+            throw AppError.invalidImport
+        }
+
+        var entryCount = 0
+        var totalUncompressedBytes: UInt64 = 0
+        var normalizedPaths = Set<String>()
+        let rootPrefix = rootURL.path.hasSuffix("/") ? rootURL.path : rootURL.path + "/"
+
+        while let entryURL = enumerator.nextObject() as? URL {
+            entryCount += 1
+            guard entryCount <= ArchiveLimits.maximumEntryCount else {
+                throw AppError.invalidImport
+            }
+
+            let values = try entryURL.resourceValues(
+                forKeys: [.isDirectoryKey, .isRegularFileKey, .isSymbolicLinkKey, .fileSizeKey]
+            )
+            guard values.isSymbolicLink != true else {
+                throw AppError.invalidImport
+            }
+            let entryType: Entry.EntryType
+            if values.isDirectory == true {
+                entryType = .directory
+            } else if values.isRegularFile == true {
+                entryType = .file
+            } else {
+                throw AppError.invalidImport
+            }
+
+            let path = String(entryURL.standardizedFileURL.path.dropFirst(rootPrefix.count))
+            guard isSafeArchiveEntryPath(path, type: entryType) else {
+                throw AppError.invalidImport
+            }
+            let normalizedPath = path.precomposedStringWithCanonicalMapping.lowercased()
+            guard normalizedPaths.insert(normalizedPath).inserted else {
+                throw AppError.invalidImport
+            }
+
+            let fileSize = values.fileSize ?? 0
+            guard entryType == .directory || (values.isRegularFile == true && fileSize >= 0) else {
+                throw AppError.invalidImport
+            }
+            let uncompressedBytes = entryType == .directory ? 0 : UInt64(fileSize)
+            guard uncompressedBytes <= ArchiveLimits.maximumEntryBytes(for: normalizedPath),
+                  uncompressedBytes <= ArchiveLimits.maximumTotalUncompressedBytes - totalUncompressedBytes else {
+                throw AppError.invalidImport
+            }
+            totalUncompressedBytes += uncompressedBytes
+        }
+    }
+
+    private func manifestData(at manifestURL: URL) throws -> Data {
+        let values = try manifestURL.resourceValues(forKeys: [.isRegularFileKey, .isSymbolicLinkKey, .fileSizeKey])
+        guard values.isRegularFile == true,
+              values.isSymbolicLink != true,
+              let fileSize = values.fileSize,
+              fileSize >= 0,
+              UInt64(fileSize) <= ArchiveLimits.maximumManifestBytes else {
+            throw AppError.invalidImport
+        }
+        return try Data(contentsOf: manifestURL)
     }
 
     private func isSafeArchiveEntryPath(_ path: String, type: Entry.EntryType) -> Bool {
@@ -2817,49 +3015,139 @@ struct PackageService: Sendable {
         return packageURL
     }
 
-    private func copyAssets(for team: Team, into assetsDirectory: URL) throws {
-        try copyPlayerAssets(for: team.players, into: assetsDirectory)
+    private func copyAssets(
+        for team: Team,
+        into assetsDirectory: URL,
+        totalPackageBytes: inout UInt64,
+        copiedAssetPaths: inout [String: String],
+        packageEntryPaths: inout Set<String>
+    ) throws {
+        try copyPlayerAssets(
+            for: team.players,
+            into: assetsDirectory,
+            totalPackageBytes: &totalPackageBytes,
+            copiedAssetPaths: &copiedAssetPaths,
+            packageEntryPaths: &packageEntryPaths
+        )
         for clip in uniqueSongClips(in: team) {
-            try copyClipAssets(for: clip, into: assetsDirectory)
+            try copyClipAssets(
+                for: clip,
+                into: assetsDirectory,
+                totalPackageBytes: &totalPackageBytes,
+                copiedAssetPaths: &copiedAssetPaths,
+                packageEntryPaths: &packageEntryPaths
+            )
         }
     }
 
-    private func copyPlayerAssets(for players: [Player], into assetsDirectory: URL) throws {
+    private func copyPlayerAssets(
+        for players: [Player],
+        into assetsDirectory: URL,
+        totalPackageBytes: inout UInt64,
+        copiedAssetPaths: inout [String: String],
+        packageEntryPaths: inout Set<String>
+    ) throws {
         for player in players {
             if let photoRelativePath = player.photoRelativePath {
-                try copyAssetIfPresent(relativePath: photoRelativePath, into: assetsDirectory)
+                try copyAssetIfPresent(
+                    relativePath: photoRelativePath,
+                    into: assetsDirectory,
+                    totalPackageBytes: &totalPackageBytes,
+                    copiedAssetPaths: &copiedAssetPaths,
+                    packageEntryPaths: &packageEntryPaths
+                )
             }
             if let photoSourceRelativePath = player.photoSourceRelativePath {
-                try copyAssetIfPresent(relativePath: photoSourceRelativePath, into: assetsDirectory)
+                try copyAssetIfPresent(
+                    relativePath: photoSourceRelativePath,
+                    into: assetsDirectory,
+                    totalPackageBytes: &totalPackageBytes,
+                    copiedAssetPaths: &copiedAssetPaths,
+                    packageEntryPaths: &packageEntryPaths
+                )
             }
-            try copyAssetIfPresent(relativePath: player.customAnnouncerRelativePath, into: assetsDirectory)
+            try copyAssetIfPresent(
+                relativePath: player.customAnnouncerRelativePath,
+                into: assetsDirectory,
+                totalPackageBytes: &totalPackageBytes,
+                copiedAssetPaths: &copiedAssetPaths,
+                packageEntryPaths: &packageEntryPaths
+            )
         }
     }
 
-    private func copyClipAssets(for clip: SongClip, into assetsDirectory: URL) throws {
+    private func copyClipAssets(
+        for clip: SongClip,
+        into assetsDirectory: URL,
+        totalPackageBytes: inout UInt64,
+        copiedAssetPaths: inout [String: String],
+        packageEntryPaths: inout Set<String>
+    ) throws {
         if case .localAudio(let source) = clip.originalSource {
-            try copyAssetIfPresent(relativePath: source.relativePath, into: assetsDirectory)
+            try copyAssetIfPresent(
+                relativePath: source.relativePath,
+                into: assetsDirectory,
+                totalPackageBytes: &totalPackageBytes,
+                copiedAssetPaths: &copiedAssetPaths,
+                packageEntryPaths: &packageEntryPaths
+            )
         }
         if clip.hasCurrentGeneratedAsset,
            clip.portabilityInputs.generatedAssetCanBeExported {
             try copyAssetIfPresent(
                 relativePath: clip.generatedAsset.relativePath,
-                into: assetsDirectory
+                into: assetsDirectory,
+                totalPackageBytes: &totalPackageBytes,
+                copiedAssetPaths: &copiedAssetPaths,
+                packageEntryPaths: &packageEntryPaths
             )
         }
     }
 
-    private func copyAssetIfPresent(relativePath: String?, into packageAssetsDirectory: URL) throws {
+    private func copyAssetIfPresent(
+        relativePath: String?,
+        into packageAssetsDirectory: URL,
+        totalPackageBytes: inout UInt64,
+        copiedAssetPaths: inout [String: String],
+        packageEntryPaths: inout Set<String>
+    ) throws {
         guard let relativePath else { return }
         let sourceURL = try AppPaths.assetURL(relativePath: relativePath)
         guard FileManager.default.fileExists(atPath: sourceURL.path) else { return }
         let packagePath = try validatedPackageAssetRelativePath(relativePath)
+        let normalizedPackagePath = packagePath.precomposedStringWithCanonicalMapping.lowercased()
+        if let existingPath = copiedAssetPaths[normalizedPackagePath] {
+            guard existingPath == packagePath else { throw AppError.invalidImport }
+            return
+        }
+
+        let sourceValues = try sourceURL.resourceValues(forKeys: [.isRegularFileKey, .isSymbolicLinkKey, .fileSizeKey])
+        guard sourceValues.isRegularFile == true,
+              sourceValues.isSymbolicLink != true,
+              let sourceSize = sourceValues.fileSize,
+              sourceSize >= 0 else {
+            throw AppError.invalidImport
+        }
+        let sourceBytes = UInt64(sourceSize)
+        guard sourceBytes <= ArchiveLimits.maximumAssetEntryBytes,
+              sourceBytes <= ArchiveLimits.maximumTotalUncompressedBytes - totalPackageBytes else {
+            throw AppError.packageSizeLimitExceeded
+        }
+
+        let pathComponents = packagePath.split(separator: "/")
+        for componentCount in 1...pathComponents.count {
+            let entryPath = "assets/" + pathComponents.prefix(componentCount).joined(separator: "/")
+            packageEntryPaths.insert(entryPath.precomposedStringWithCanonicalMapping.lowercased())
+        }
+        guard packageEntryPaths.count <= ArchiveLimits.maximumEntryCount else {
+            throw AppError.packageSizeLimitExceeded
+        }
+
         let destinationURL = packageAssetsDirectory.appendingPathComponent(packagePath)
         try FileManager.default.createDirectory(at: destinationURL.deletingLastPathComponent(), withIntermediateDirectories: true)
-        if FileManager.default.fileExists(atPath: destinationURL.path) {
-            try FileManager.default.removeItem(at: destinationURL)
-        }
         try FileManager.default.copyItem(at: sourceURL, to: destinationURL)
+        copiedAssetPaths[normalizedPackagePath] = packagePath
+        totalPackageBytes += sourceBytes
     }
 
     private func importAssets(

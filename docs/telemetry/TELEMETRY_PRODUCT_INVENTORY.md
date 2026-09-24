@@ -115,7 +115,6 @@ Back navigation is available through most steps. It is not available from the ma
 - an empty batting order and next-batter index `0`;
 - `Announcer+Song` mode;
 - the selected accent preset;
-- the default team announcer profile in the persisted model.
 
 The new team becomes selected. The onboarding flow and active team ID are set when the call is onboarding-related.
 
@@ -194,7 +193,7 @@ If old state has no onboarding key, decoding treats an empty app as not started 
 
 Teams are managed on the Teams tab and during onboarding.
 
-**Create:** A non-empty trimmed name is required. New teams receive a UUID, timestamps, default built-ins, default session state, default announcer profile, and Roll Call Orange unless another accent is selected.
+**Create:** A non-empty trimmed name is required. New teams receive a UUID, timestamps, default built-ins, default session state, and Roll Call Orange unless another accent is selected.
 
 **Select:** Selecting a team changes `AppState.selectedTeamID`, persists it, prewarms the next batter, and refreshes readiness.
 
@@ -477,7 +476,7 @@ Missing recorded-announcement files are identified as repair issues. A present c
 
 The bundled built-in sounds are the five default clips listed in the Clips section. Small Cheer is the default fallback source ID when a player has no song or a selected Apple Music cue fails during playback. The fallback is intended to preserve live-use intent; it does not convert the player’s missing source into a saved song assignment.
 
-Built-in Voice generation and its renderer are removed. `TeamAnnouncerProfile`, `AnnouncerTemplate`, `AnnouncerConfig`, the generated-announcer player path, and the legacy decoder remain only as compatibility storage/decoding so existing state and recovery assets are not invalidated. Current playback and Player Editor behavior use recorded Announcement Cues.
+Built-in Voice generation, its renderer, and its never-shipped compatibility-only model are removed. Current playback and Player Editor behavior use recorded Announcement Cues.
 
 ### Playback combinations and timing
 
@@ -527,7 +526,7 @@ Readiness checks can detect:
 
 These checks produce warnings and repair actions but do not block Game Day. The Readiness UI can open the Player Editor, request Music access, retry preparation, or explain why a clip is device-dependent.
 
-**Relevant sources:** `Models.swift` (`CueSource`, source structs, `Cue`, `TeamAnnouncerProfile`, readiness types, settings), `SongClipModels.swift`, `SongPickerFlow.swift`, `AppModel.swift` (assignment/playback/preparation methods), and `Services.swift` (`AudioAssetService`, `MusicCatalogService`, `CuePlaybackEngine`, `ReadinessService`, `SongClipGenerationService`).
+**Relevant sources:** `Models.swift` (`CueSource`, source structs, `Cue`, readiness types, settings), `SongClipModels.swift`, `SongPickerFlow.swift`, `AppModel.swift` (assignment/playback/preparation methods), and `Services.swift` (`AudioAssetService`, `MusicCatalogService`, `CuePlaybackEngine`, `ReadinessService`, `SongClipGenerationService`).
 
 ## 6. Import, export, sharing, backup, and restore
 
@@ -616,10 +615,9 @@ These are user-editable or user-controlled team-level values, stored inside each
 - Game Day announcer mode: Announcer Only, Announcer+Song, Song Only;
 - batting order and whether it is customized;
 - next-batter index;
-- team-scoped Custom Clips;
-- the compatibility-only persisted `TeamAnnouncerProfile` model.
+- team-scoped Custom Clips.
 
-`activeSessionDate` is also stored per team but no active user-facing setter/consumer was found. `TeamAnnouncerProfile` remains legacy/model state rather than a functioning settings surface; no current code generates or previews speech from it.
+`activeSessionDate` is also stored per team but no active user-facing setter/consumer was found.
 
 ### Per-player configuration
 
@@ -627,7 +625,7 @@ Stored inside each `Player` in the selected team:
 
 - display name — required for creation;
 - uniform number — optional string;
-- pronunciation override — optional string used by announcement-generation/legacy paths;
+- pronunciation override — optional persisted string with no current active consumer;
 - photo relative path — optional, app-owned asset;
 - song assignment — optional player-scoped `SongClip`;
 - custom Announcement Cue relative path — optional app-owned recording;
@@ -656,7 +654,7 @@ Developer/Internal builds can expose a Developer Tools surface. Debug builds may
 - `deviceIdentity.label` is persisted and defaults to “This iPhone”; no current normal user-facing edit control was found.
 - `ratingRequest` stores rating counters/flags described below.
 
-**Relevant sources:** `Models.swift` (`AppSettings`, `ExperimentalSettings`, `TrimDefaults`, `TeamSessionState`, `TeamAnnouncerProfile`, `AppState`), `AppModel.swift` setting methods, and `RootView.swift` Settings/Developer Tools/Player Editor/Song Clip Editor UI.
+**Relevant sources:** `Models.swift` (`AppSettings`, `ExperimentalSettings`, `TrimDefaults`, `TeamSessionState`, `AppState`), `AppModel.swift` setting methods, and `RootView.swift` Settings/Developer Tools/Player Editor/Song Clip Editor UI.
 
 ## 8. Rating/review behavior
 
@@ -968,7 +966,7 @@ The following findings should remain explicit for the separate telemetry/product
 
 3. **Current source and tests disagree on rating thresholds.** `AppModel.swift` currently implements 10 sessions, then a retry at 20, while `RollCallTests/RatingRequestTests.swift` expects 5 and 10. `docs/DECISIONS.md` describes 5/10 as superseded by 10/20. The source implementation and the test expectations cannot both describe the same current behavior.
 
-4. **Built-in Voice is removed from active behavior, with compatibility storage retained.** Speech-rendering code and the removed profile-save/preview entry points are gone. `TeamAnnouncerProfile`, `AnnouncerTemplate`, `AnnouncerConfig`, generated-announcer paths, and legacy migration remain only to decode and protect older stored state and recovery assets; current behavior uses recorded Announcement Cues.
+4. **Built-in Voice is fully removed.** Speech-rendering code, profile-save/preview entry points, and the never-shipped compatibility-only model are gone; current behavior uses recorded Announcement Cues.
 
 5. **There is no formal Game Day session despite session-shaped state.** `TeamSessionState.activeSessionDate` is persisted, while the active implementation uses lineup state, the in-memory playback session, and rating visit flags. No current user-facing game-date/session lifecycle was found that sets or consumes `activeSessionDate`.
 

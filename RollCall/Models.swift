@@ -1,3 +1,4 @@
+import CoreFoundation
 import Foundation
 
 private enum CueDefaults {
@@ -203,43 +204,12 @@ enum TeamAccentPreset: String, Codable, CaseIterable, Identifiable, Sendable {
     var id: String { rawValue }
 }
 
-/// Compatibility-only decoder for the removed built-in announcer configuration.
-enum AnnouncerTemplate: String, Codable, CaseIterable, Identifiable {
-    case nameOnly
-    case numberAndName
-    case nowBatting
-
-    var id: String { rawValue }
-}
-
-/// Compatibility-only storage for the removed built-in announcer profile.
-/// Roll Call now uses recorded Announcement Cues for announcer audio.
-struct TeamAnnouncerProfile: Codable, Equatable {
-    var phraseTemplate: String
-    var requestedVoiceIdentifier: String?
-    var resolvedVoiceIdentifier: String?
-    var voiceLanguageCode: String?
-    var rate: Float
-    var pitchMultiplier: Float
-    var volume: Float
-
-    static let `default` = TeamAnnouncerProfile(
-        phraseTemplate: "Now batting, number <number>, <name>",
-        requestedVoiceIdentifier: nil,
-        resolvedVoiceIdentifier: nil,
-        voiceLanguageCode: "en-US",
-        rate: 0.46,
-        pitchMultiplier: 1.0,
-        volume: 1.0
-    )
-}
-
-/// Compatibility-only decoder for the removed legacy built-in announcer payload.
-struct AnnouncerConfig: Codable, Equatable {
-    var isEnabled: Bool
-    var template: AnnouncerTemplate
-    var customPrefix: String
-    var generatedAssetRelativePath: String?
+struct TeamCustomColor: Codable, Equatable, Sendable {
+    var colorSpace: String
+    var red: Double
+    var green: Double
+    var blue: Double
+    var alpha: Double
 }
 
 struct Cue: Codable, Equatable, Identifiable {
@@ -259,8 +229,6 @@ struct Cue: Codable, Equatable, Identifiable {
         case duration
         case fadeOutDuration
         case pauseAfterAnnouncer
-        /// Legacy built-in announcer payload; decoded only for old data compatibility.
-        case announcer
     }
 
     init(
@@ -290,7 +258,6 @@ struct Cue: Codable, Equatable, Identifiable {
         duration = try container.decodeIfPresent(TimeInterval.self, forKey: .duration) ?? 12
         fadeOutDuration = try container.decodeIfPresent(TimeInterval.self, forKey: .fadeOutDuration) ?? CueDefaults.fadeOutDuration
         pauseAfterAnnouncer = try container.decodeIfPresent(TimeInterval.self, forKey: .pauseAfterAnnouncer) ?? 0.2
-        _ = try container.decodeIfPresent(AnnouncerConfig.self, forKey: .announcer)
     }
 
     func encode(to encoder: Encoder) throws {
@@ -357,9 +324,6 @@ struct Player: Codable, Equatable, Identifiable {
     }
     var isPresent: Bool
     var customAnnouncerRelativePath: String?
-    /// Compatibility-only reference retained so old state and recovery cleanup
-    /// continue to protect generated built-in announcer assets.
-    var generatedBuiltInAnnouncerRelativePath: String?
     enum CodingKeys: String, CodingKey {
         case id
         case displayName
@@ -376,7 +340,6 @@ struct Player: Codable, Equatable, Identifiable {
         case songAssignment
         case isPresent
         case customAnnouncerRelativePath
-        case generatedBuiltInAnnouncerRelativePath
     }
 
     init(
@@ -391,8 +354,7 @@ struct Player: Codable, Equatable, Identifiable {
         playerCardDesign: PlayerCardDesign = .defaultDesign,
         cue: Cue?,
         isPresent: Bool,
-        customAnnouncerRelativePath: String? = nil,
-        generatedBuiltInAnnouncerRelativePath: String? = nil
+        customAnnouncerRelativePath: String? = nil
     ) {
         self.id = id
         self.displayName = displayName
@@ -406,7 +368,6 @@ struct Player: Codable, Equatable, Identifiable {
         self.songAssignment = cue.map { .privateClip(SongClip(cue: $0)) }
         self.isPresent = isPresent
         self.customAnnouncerRelativePath = customAnnouncerRelativePath
-        self.generatedBuiltInAnnouncerRelativePath = generatedBuiltInAnnouncerRelativePath
     }
 
     init(from decoder: Decoder) throws {
@@ -433,13 +394,6 @@ struct Player: Codable, Equatable, Identifiable {
         }
         isPresent = try container.decodeIfPresent(Bool.self, forKey: .isPresent) ?? true
         customAnnouncerRelativePath = try container.decodeIfPresent(String.self, forKey: .customAnnouncerRelativePath)
-        generatedBuiltInAnnouncerRelativePath = try container.decodeIfPresent(String.self, forKey: .generatedBuiltInAnnouncerRelativePath)
-
-        if generatedBuiltInAnnouncerRelativePath == nil,
-           let legacyPayload = try? LegacyPlayerDecoder.LegacyPlayerPayload(from: decoder),
-           let legacyGenerated = legacyPayload.cue?.announcer?.generatedAssetRelativePath {
-           generatedBuiltInAnnouncerRelativePath = legacyGenerated
-        }
     }
 
     func encode(to encoder: Encoder) throws {
@@ -458,7 +412,6 @@ struct Player: Codable, Equatable, Identifiable {
         }
         try container.encode(isPresent, forKey: .isPresent)
         try container.encodeIfPresent(customAnnouncerRelativePath, forKey: .customAnnouncerRelativePath)
-        try container.encodeIfPresent(generatedBuiltInAnnouncerRelativePath, forKey: .generatedBuiltInAnnouncerRelativePath)
     }
 
     mutating func migrateLegacySharedTeamClip(using clip: SongClip) {
@@ -645,9 +598,8 @@ struct Team: Codable, Equatable, Identifiable {
     var teamClips: [SongClip]
     var builtInClips: [BuiltInClip]
     var session: TeamSessionState
-    /// Compatibility-only persisted profile for the removed built-in announcer.
-    var announcerProfile: TeamAnnouncerProfile
     var accentPreset: TeamAccentPreset
+    var customColor: TeamCustomColor? = nil
 
     enum CodingKeys: String, CodingKey {
         case id
@@ -658,8 +610,8 @@ struct Team: Codable, Equatable, Identifiable {
         case teamClips
         case builtInClips
         case session
-        case announcerProfile
         case accentPreset
+        case customColor
     }
 
     init(
@@ -671,8 +623,8 @@ struct Team: Codable, Equatable, Identifiable {
         teamClips: [SongClip] = [],
         builtInClips: [BuiltInClip],
         session: TeamSessionState,
-        announcerProfile: TeamAnnouncerProfile,
-        accentPreset: TeamAccentPreset = .rollCallOrange
+        accentPreset: TeamAccentPreset = .rollCallOrange,
+        customColor: TeamCustomColor? = nil
     ) {
         self.id = id
         self.name = name
@@ -682,8 +634,8 @@ struct Team: Codable, Equatable, Identifiable {
         self.teamClips = teamClips
         self.builtInClips = builtInClips
         self.session = session
-        self.announcerProfile = announcerProfile
         self.accentPreset = accentPreset
+        self.customColor = customColor
     }
 
     init(from decoder: Decoder) throws {
@@ -697,21 +649,10 @@ struct Team: Codable, Equatable, Identifiable {
         builtInClips = try container.decodeIfPresent([BuiltInClip].self, forKey: .builtInClips) ?? BuiltInClip.defaults
         session = try container.decodeIfPresent(TeamSessionState.self, forKey: .session) ?? TeamSessionState(activeSessionDate: nil, battingOrder: alphabeticalPlayerIDs(for: players), nextBatterIndex: 0, gameDayAnnouncerMode: .announcerAndSong, battingOrderIsCustomized: false)
         accentPreset = try container.decodeIfPresent(TeamAccentPreset.self, forKey: .accentPreset) ?? .rollCallOrange
-        let legacyPlayers = (try? container.decodeIfPresent([LegacyPlayerDecoder.LegacyPlayerPayload].self, forKey: .players)) ?? []
-
-        if let decodedProfile = try container.decodeIfPresent(TeamAnnouncerProfile.self, forKey: .announcerProfile) {
-            announcerProfile = decodedProfile
-        } else {
-            announcerProfile = LegacyPlayerDecoder.teamAnnouncerProfile(from: legacyPlayers) ?? .default
-        }
+        customColor = try container.decodeIfPresent(TeamCustomColor.self, forKey: .customColor)
         // Team-owned legacy assignments can be resolved here because both the
         // player payloads and their referenced team clips are available.
         migrateLegacySharedAssignments()
-
-        if try container.decodeIfPresent(TeamAnnouncerProfile.self, forKey: .announcerProfile) == nil,
-           LegacyPlayerDecoder.legacyAnnouncerEnabled(in: legacyPlayers) {
-            session.gameDayAnnouncerMode = .announcerAndSong
-        }
 
         let alphabeticalIDs = alphabeticalPlayerIDs(for: players)
         if !session.battingOrderIsCustomized, !session.battingOrder.isEmpty, session.battingOrder != alphabeticalIDs {
@@ -1424,18 +1365,18 @@ enum AppStatePersistenceCodec {
             throw AppStateMigrationError.invalidRoot
         }
         guard let rawVersion = object["schemaVersion"] else { return 1 }
-        guard !(rawVersion is Bool),
-              let number = rawVersion as? NSNumber else {
+        guard let number = rawVersion as? NSNumber,
+              CFGetTypeID(number) != CFBooleanGetTypeID() else {
             throw AppStateMigrationError.invalidSchemaVersion
         }
         let doubleValue = number.doubleValue
         guard doubleValue.isFinite,
               doubleValue.rounded() == doubleValue,
-              doubleValue >= 1,
-              doubleValue <= Double(Int.max) else {
+              let version = Int(exactly: doubleValue),
+              version >= 1 else {
             throw AppStateMigrationError.invalidSchemaVersion
         }
-        return Int(doubleValue)
+        return version
     }
 
     static func migrate(_ data: Data) throws -> Data {
@@ -1579,7 +1520,6 @@ enum AppStateConsistencyValidator {
         record(inspectAsset(player.photoRelativePath, expected: .asset), in: &report, missing: \AppStateConsistencyReport.missingPhotoPaths)
         record(inspectAsset(player.photoSourceRelativePath, expected: .asset), in: &report, missing: \AppStateConsistencyReport.missingPhotoPaths)
         record(inspectAsset(player.customAnnouncerRelativePath, expected: .asset), in: &report, missing: \AppStateConsistencyReport.missingAnnouncementPaths)
-        record(inspectAsset(player.generatedBuiltInAnnouncerRelativePath, expected: .asset), in: &report, missing: \AppStateConsistencyReport.missingAnnouncementPaths)
         if case .privateClip(let clip)? = player.songAssignment {
             inspect(clip: clip, report: &report)
         }
@@ -2015,48 +1955,7 @@ extension Team {
             modifiedAt: .now,
             players: players,
             builtInClips: BuiltInClip.defaults,
-            session: TeamSessionState(activeSessionDate: nil, battingOrder: alphabeticalPlayerIDs(for: players), nextBatterIndex: 0, gameDayAnnouncerMode: .announcerAndSong, battingOrderIsCustomized: false),
-            announcerProfile: .default
+            session: TeamSessionState(activeSessionDate: nil, battingOrder: alphabeticalPlayerIDs(for: players), nextBatterIndex: 0, gameDayAnnouncerMode: .announcerAndSong, battingOrderIsCustomized: false)
         )
-    }
-}
-
-/// Compatibility-only decoder for pre-1.3 player and announcer payloads.
-private enum LegacyPlayerDecoder {
-    struct LegacyPlayerPayload: Decodable {
-        struct LegacyCuePayload: Decodable {
-            var announcer: AnnouncerConfig?
-        }
-
-        var cue: LegacyCuePayload?
-    }
-
-    static func legacyAnnouncerEnabled(in players: [LegacyPlayerPayload]) -> Bool {
-        players.contains(where: { $0.cue?.announcer?.isEnabled == true })
-    }
-
-    static func teamAnnouncerProfile(from players: [LegacyPlayerPayload]) -> TeamAnnouncerProfile? {
-        guard let announcer = players.compactMap({ $0.cue?.announcer }).first else { return nil }
-        return TeamAnnouncerProfile(
-            phraseTemplate: legacyPhraseTemplate(from: announcer),
-            requestedVoiceIdentifier: nil,
-            resolvedVoiceIdentifier: nil,
-            voiceLanguageCode: "en-US",
-            rate: TeamAnnouncerProfile.default.rate,
-            pitchMultiplier: TeamAnnouncerProfile.default.pitchMultiplier,
-            volume: TeamAnnouncerProfile.default.volume
-        )
-    }
-
-    private static func legacyPhraseTemplate(from announcer: AnnouncerConfig) -> String {
-        switch announcer.template {
-        case .nameOnly:
-            return "<name>"
-        case .numberAndName:
-            return announcer.customPrefix.isEmpty ? "Number <number>, <name>" : "\(announcer.customPrefix), number <number>, <name>"
-        case .nowBatting:
-            let prefix = announcer.customPrefix.isEmpty ? "Now batting" : announcer.customPrefix
-            return "\(prefix), number <number>, <name>"
-        }
     }
 }

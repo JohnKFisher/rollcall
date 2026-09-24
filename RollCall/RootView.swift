@@ -422,6 +422,29 @@ private struct LiveSurfaceSwipeGestureInstaller: UIViewRepresentable {
 }
 
 struct RootView: View {
+    private struct TeamRemovalConfirmation {
+        let teamID: UUID
+        let teamName: String
+        let playerCount: Int
+    }
+
+    private enum RootAlert {
+        case error(String)
+        case renameTeam
+        case removeTeam(TeamRemovalConfirmation)
+
+        var title: String {
+            switch self {
+            case .error:
+                return "Roll Call"
+            case .renameTeam:
+                return "Rename Team"
+            case .removeTeam:
+                return "Remove Team?"
+            }
+        }
+    }
+
     private struct PlayerEditorRoute: Identifiable {
         let id: UUID
     }
@@ -444,8 +467,7 @@ struct RootView: View {
     @State private var csvImportPresented = false
     @State private var selectedTab: RootTab = .players
     @State private var showLineupEditor = false
-    @State private var showRenameTeamAlert = false
-    @State private var showRemoveTeamConfirmation = false
+    @State private var rootAlert: RootAlert?
     @State private var renameTeamName = ""
     @State private var packageSharePresented = false
     @State private var packageShareURL: URL?
@@ -475,7 +497,10 @@ struct RootView: View {
     }
 
     private var errorBinding: Binding<Bool> {
-        Binding(get: { appModel.lastError != nil }, set: { newValue in if !newValue { appModel.lastError = nil } })
+        Binding(
+            get: { appModel.lastError != nil },
+            set: { if !$0 { appModel.lastError = nil } }
+        )
     }
 
     private var effectiveLiveColorScheme: ColorScheme {
@@ -511,8 +536,7 @@ struct RootView: View {
             || csvImportPresented
             || playerEditorRoute != nil
             || showLineupEditor
-            || showRenameTeamAlert
-            || showRemoveTeamConfirmation
+            || rootAlert != nil
             || packageSharePresented
             || whatsNewPresentation != nil
             || ratingRequestPresentation != nil
@@ -589,7 +613,7 @@ struct RootView: View {
         if appModel.pendingPackageImport != nil || appModel.pendingRosterImport != nil {
             return "Blocked by import flow"
         }
-        if packageImportPresented || csvImportPresented || playerEditorRoute != nil || showLineupEditor || showRenameTeamAlert || showRemoveTeamConfirmation || packageSharePresented || whatsNewPresentation != nil || teamPlaylistPreview != nil {
+        if packageImportPresented || csvImportPresented || playerEditorRoute != nil || showLineupEditor || rootAlert != nil || packageSharePresented || whatsNewPresentation != nil || teamPlaylistPreview != nil {
             return "Blocked by another sheet or modal"
         }
         return "Eligible now"
@@ -855,7 +879,7 @@ struct RootView: View {
 
     private func processPendingOpenGameDayRequestIfPossible() {
         guard hasResolvedInitialTab,
-              let request = openGameDayRequestCenter.pendingRequest else { return }
+              openGameDayRequestCenter.pendingRequest != nil else { return }
 
         if whatsNewPresentation == .automatic {
             whatsNewPresentation = nil
@@ -866,16 +890,19 @@ struct RootView: View {
             ratingRequestPresentation = nil
         }
 
-        guard !hasBlockingWhatsNewPresentation else { return }
-        let resolution = appModel.resolveOpenGameDay(request)
-        switch resolution {
-        case .gameDay:
-            selectedTab = .gameDay
-            appModel.recordQuickGameDayReached()
-        case .fallback:
-            selectedTab = appModel.state.teams.isEmpty ? .players : .teams
-        }
-        openGameDayRequestCenter.consume(id: request.id)
+        OpenGameDayRequestProcessor.processPendingRequestIfPossible(
+            in: openGameDayRequestCenter,
+            using: appModel,
+            hasResolvedInitialTab: hasResolvedInitialTab,
+            hasBlockingPresentation: hasBlockingWhatsNewPresentation,
+            onboardingIsPresented: appModel.shouldShowOnboarding,
+            onNavigateToGameDay: {
+                selectedTab = .gameDay
+            },
+            onNavigateToFallback: {
+                selectedTab = appModel.state.teams.isEmpty ? .players : .teams
+            }
+        )
     }
 
     @ViewBuilder
@@ -918,6 +945,7 @@ struct RootView: View {
             .onChange(of: appModel.shouldShowOnboarding) { _, shouldShowOnboarding in
                 if !shouldShowOnboarding {
                     hasEnteredOnboardingFlow = false
+                    processPendingOpenGameDayRequestIfPossible()
                 }
             }
             .onChange(of: appModel.completedPackageImportTeamID) { _, importedTeamID in
@@ -972,40 +1000,95 @@ struct RootView: View {
 
     private var rootAlertContent: some View {
         rootBaseContent
-            .alert("Roll Call", isPresented: errorBinding) {
-                Button("OK") { appModel.lastError = nil }
-            } message: {
-                Text(appModel.lastError ?? "")
-            }
-            .alert("Rename Team", isPresented: $showRenameTeamAlert) {
-                TextField("Team name", text: $renameTeamName)
-                Button("Cancel", role: .cancel) {}
-                Button("Rename") {
-                    appModel.renameSelectedTeam(to: renameTeamName)
+            .onAppear { presentPendingRootErrorIfPossible() }
+            .onChange(of: appModel.lastError) { _, newError in
+                if newError == nil, case .error = rootAlert {
+                    rootAlert = nil
+                    return
                 }
-                .disabled(renameTeamName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-            } message: {
-                Text("Update the selected team name.")
+                presentPendingRootErrorIfPossible()
             }
-            .alert("Remove Team?", isPresented: $showRemoveTeamConfirmation) {
-                Button("Cancel", role: .cancel) {}
-                Button("Remove", role: .destructive) {
-                    appModel.removeSelectedTeam()
+            .alert(
+                rootAlert?.title ?? "Roll Call",
+                isPresented: Binding(
+                    get: { rootAlert != nil },
+                    set: { if !$0 { dismissRootAlert() } }
+                ),
+                presenting: rootAlert
+            ) { alert in
+                switch alert {
+                case .error(let presentedMessage):
+                    Button("OK") {
+                        dismissRootError(presentedMessage)
+                    }
+                case .renameTeam:
+                    TextField("Team name", text: $renameTeamName)
+                    Button("Cancel", role: .cancel) {
+                        dismissRootAlert()
+                    }
+                    Button("Rename") {
+                        appModel.renameSelectedTeam(to: renameTeamName)
+                        dismissRootAlert()
+                    }
+                    .disabled(renameTeamName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                case .removeTeam(let confirmation):
+                    Button("Cancel", role: .cancel) {
+                        dismissRootAlert()
+                    }
+                    Button("Remove", role: .destructive) {
+                        appModel.removeTeam(id: confirmation.teamID)
+                        dismissRootAlert()
+                    }
                 }
             } message: {
-                if let team = appModel.selectedTeam {
-                    Text("Remove \(team.name) from this device? This deletes that team's \(team.players.count) players, lineup state, clips, and custom intros from the app. You can restore it later from Recovery. Existing exports and backups stay untouched.")
-                } else {
-                    Text("Remove the selected team from this device. You can restore it later from Recovery. Existing exports and backups stay untouched.")
+                switch $0 {
+                case .error(let message):
+                    Text(message)
+                case .renameTeam:
+                    Text("Update the selected team name.")
+                case .removeTeam(let confirmation):
+                    Text("Remove \(confirmation.teamName) from this device? This deletes that team's \(confirmation.playerCount) players, lineup state, clips, and custom intros from the app. You can restore it later from Recovery. Existing exports and backups stay untouched.")
                 }
             }
+    }
+
+    private func presentPendingRootErrorIfPossible() {
+        guard appModel.pendingPackageExport == nil,
+              rootAlert == nil,
+              let error = appModel.lastError else { return }
+        rootAlert = .error(error)
+    }
+
+    private func dismissRootError(_ presentedMessage: String) {
+        rootAlert = nil
+        if appModel.lastError == presentedMessage {
+            appModel.lastError = nil
+        }
+        guard appModel.lastError != nil else { return }
+        DispatchQueue.main.async {
+            presentPendingRootErrorIfPossible()
+        }
+    }
+
+    private func dismissRootAlert() {
+        if case .error(let presentedMessage) = rootAlert {
+            dismissRootError(presentedMessage)
+            return
+        }
+        rootAlert = nil
+        guard appModel.lastError != nil else { return }
+        DispatchQueue.main.async {
+            presentPendingRootErrorIfPossible()
+        }
     }
 
     private var rootSheetContent: some View {
         rootAlertContent
             .sheet(item: Binding(get: { appModel.pendingPackageExport }, set: { appModel.pendingPackageExport = $0 }), onDismiss: {
-                guard packageShareURL != nil else { return }
-                packageSharePresented = true
+                if packageShareURL != nil {
+                    packageSharePresented = true
+                }
+                presentPendingRootErrorIfPossible()
             }) { pending in
                 PackageExportPreviewSheet(
                     pending: pending,
@@ -1142,6 +1225,9 @@ struct RootView: View {
             // to be mounted inside `settingsTab`, where they only present if Settings
             // happens to be the active tab. Root is the only correct host.
             .sheet(isPresented: $packageSharePresented, onDismiss: {
+                if let exportURL = packageShareURL {
+                    appModel.finishPackageShare(for: exportURL)
+                }
                 packageShareURL = nil
             }) {
                 if let exportURL = packageShareURL {
@@ -1912,11 +1998,15 @@ struct RootView: View {
                                 Menu {
                                     Button("Rename Selected Team") {
                                         renameTeamName = appModel.selectedTeam?.name ?? ""
-                                        showRenameTeamAlert = true
+                                        rootAlert = .renameTeam
                                     }
                                     Button("Duplicate Selected Team") { appModel.duplicateTeam() }
                                     Button("Remove Selected Team", role: .destructive) {
-                                        showRemoveTeamConfirmation = true
+                                        rootAlert = .removeTeam(TeamRemovalConfirmation(
+                                            teamID: team.id,
+                                            teamName: team.name,
+                                            playerCount: team.players.count
+                                        ))
                                     }
                                 } label: {
                                     Label("Manage Team", systemImage: "ellipsis.circle")
@@ -7220,6 +7310,10 @@ private struct StateRecoveryLaunchView: View {
 
                 if let recovery = appModel.stateRecovery {
                     Section("Preserved State") {
+                        if appModel.isStateRecoveryInProgress {
+                            ProgressView("Completing recovery…")
+                        }
+
                         if let preservedStateURL = recovery.preservedStateURL {
                             ShareLink(item: preservedStateURL) {
                                 Label("Share Preserved State File", systemImage: "square.and.arrow.up")
@@ -7235,11 +7329,15 @@ private struct StateRecoveryLaunchView: View {
                         Button("Try Again") {
                             Task { await appModel.retryStateRecovery() }
                         }
+                        .disabled(appModel.isStateRecoveryInProgress)
 
                         Button("Start Fresh", role: .destructive) {
                             showingStartFreshConfirmation = true
                         }
-                        .disabled(recovery.preservedStateURL == nil && recovery.reason != .missingPrimaryWithResidualData)
+                        .disabled(
+                            appModel.isStateRecoveryInProgress
+                                || (recovery.preservedStateURL == nil && recovery.reason != .missingPrimaryWithResidualData)
+                        )
                     }
 
                     Section("Recoverable Backups") {
@@ -7258,6 +7356,7 @@ private struct StateRecoveryLaunchView: View {
                                         pendingSnapshotRestore = snapshot
                                     }
                                     .rollCallButtonStyle(.secondary)
+                                    .disabled(appModel.isStateRecoveryInProgress)
                                 }
                                 .padding(.vertical, 4)
                             }
@@ -8509,10 +8608,12 @@ private struct PlayerEditorSheet: View {
     }
 
     private struct PhotoFramingPresentation: Identifiable {
-        let id = UUID()
+        let request: PlayerPhotoFramingRequest
         let target: PhotoFramingTarget
         let image: UIImage
         let options: PlayerPhotoFramingOptionSet
+
+        var id: UUID { request.id }
     }
 
     private struct SongReadinessExplanation: Identifiable {
@@ -8533,6 +8634,8 @@ private struct PlayerEditorSheet: View {
     @State var player: Player
     @State private var photoItem: PhotosPickerItem?
     @State private var isPreparingPhoto = false
+    @State private var photoImportRequestID: UUID?
+    @State private var photoImportTask: Task<Void, Never>?
     @State private var photoFramingPresentation: PhotoFramingPresentation?
     @State private var photoFramingRequestID: UUID?
     @State private var playerCardPreviewPresented = false
@@ -8542,7 +8645,7 @@ private struct PlayerEditorSheet: View {
     @State private var songPickerMode: SongPickerMode?
     @State private var showSongFileImporter = false
     @State private var pendingImportedSongURL: URL?
-    @State private var songImportError: String?
+    @State private var editorImportError: String?
     @State private var pendingClearAction: PendingClearAction?
     @State private var songReadinessExplanation: SongReadinessExplanation?
     @State private var showDiscardChangesConfirmation = false
@@ -8820,8 +8923,10 @@ private struct PlayerEditorSheet: View {
                     .disabled(isPreparingPhoto)
                 }
             }
-            .onChange(of: photoItem) { _, _ in
-                Task { await importPhoto() }
+            .onChange(of: photoItem) { _, newItem in
+                guard let newItem else { return }
+                photoItem = nil
+                beginPhotoImport(newItem)
             }
             .task {
                 let draftAtRefreshStart = PlayerEditorDraftState(player: player)
@@ -8834,7 +8939,10 @@ private struct PlayerEditorSheet: View {
                 }
             }
             .onDisappear {
-                photoFramingRequestID = nil
+                invalidatePhotoFraming()
+                photoImportRequestID = nil
+                photoImportTask?.cancel()
+                photoImportTask = nil
                 if appModel.isRecordingCustomAnnouncer(for: player)
                     || appModel.isCustomAnnouncerTransitioning(for: player) {
                     appModel.cancelRecordingCustomAnnouncer()
@@ -8876,16 +8984,16 @@ private struct PlayerEditorSheet: View {
                     songPickerMode = .files
                 case .failure(let error):
                     guard !MusicCatalogService.isCancellation(error) else { return }
-                    songImportError = error.localizedDescription
+                    editorImportError = error.localizedDescription
                 }
             }
             .alert("Import Unavailable", isPresented: Binding(
-                get: { songImportError != nil },
-                set: { if !$0 { songImportError = nil } }
+                get: { editorImportError != nil },
+                set: { if !$0 { editorImportError = nil } }
             )) {
                 Button("OK") { }
             } message: {
-                Text(songImportError ?? "")
+                Text(editorImportError ?? "")
             }
             .sheet(item: $songPickerMode, onDismiss: {
                 songPickerMode = nil
@@ -9134,25 +9242,48 @@ private struct PlayerEditorSheet: View {
         }
     }
 
-    private func importPhoto() async {
-        guard let photoItem else { return }
-        await MainActor.run { isPreparingPhoto = true }
+    private func beginPhotoImport(_ item: PhotosPickerItem) {
+        invalidatePhotoFraming()
+        photoImportTask?.cancel()
+        let requestID = UUID()
+        photoImportRequestID = requestID
+        isPreparingPhoto = true
+        photoImportTask = Task {
+            await importPhoto(item, requestID: requestID)
+        }
+    }
+
+    private func importPhoto(_ item: PhotosPickerItem, requestID: UUID) async {
         do {
-            guard let data = try await photoItem.loadTransferable(type: Data.self) else {
+            guard let data = try await item.loadTransferable(type: Data.self) else {
                 throw PlayerPhotoPreparationError.unreadableImage
             }
             let prepared = try await PlayerPhotoPreparationService().prepare(data: data)
+            try Task.checkCancellation()
             try await MainActor.run {
+                guard photoImportRequestID == requestID else { return }
                 try savePreparedPlayerPhoto(prepared)
                 pendingPhotoDetectionResult = prepared.detectionResult
-                isPreparingPhoto = false
+                finishPhotoImport(requestID: requestID)
+            }
+        } catch is CancellationError {
+            await MainActor.run {
+                finishPhotoImport(requestID: requestID)
             }
         } catch {
             await MainActor.run {
-                isPreparingPhoto = false
-                appModel.lastError = error.localizedDescription
+                guard photoImportRequestID == requestID else { return }
+                editorImportError = error.localizedDescription
+                finishPhotoImport(requestID: requestID)
             }
         }
+    }
+
+    private func finishPhotoImport(requestID: UUID) {
+        guard photoImportRequestID == requestID else { return }
+        photoImportRequestID = nil
+        photoImportTask = nil
+        isPreparingPhoto = false
     }
 
     private func savePreparedPlayerPhoto(_ prepared: PreparedPlayerPhoto) throws {
@@ -9204,13 +9335,19 @@ private struct PlayerEditorSheet: View {
             player.profilePhotoCrop = nil
             player.playerCardPhotoCrop = nil
         }
-        let requestID = UUID()
-        photoFramingRequestID = requestID
+        let sourceIdentity: PlayerPhotoFramingSourceIdentity = loadedPath == configuredSourcePath
+            ? .workingMaster(relativePath: loadedPath)
+            : .legacyProfile(relativePath: loadedPath)
+        let request = PlayerPhotoFramingRequest(source: sourceIdentity)
+        photoFramingRequestID = request.id
         Task {
             let options = await PlayerPhotoPreparationService().framingOptions(for: image)
             await MainActor.run {
-                guard photoFramingRequestID == requestID else { return }
+                guard request.validatedSourcePath(activeRequestID: photoFramingRequestID, player: player) != nil else {
+                    return
+                }
                 photoFramingPresentation = PhotoFramingPresentation(
+                    request: request,
                     target: target,
                     image: image,
                     options: options
@@ -9247,16 +9384,39 @@ private struct PlayerEditorSheet: View {
             framingOptions: options,
             title: title,
             onCancel: {
-                photoFramingPresentation = nil
+                finishPhotoFraming(presentation.request)
             },
             onApply: { crop in
-                applyPhotoFraming(crop, target: target, image: image)
-                photoFramingPresentation = nil
+                applyPhotoFraming(crop, target: target, image: image, request: presentation.request)
+                finishPhotoFraming(presentation.request)
             }
         )
     }
 
-    private func applyPhotoFraming(_ crop: NormalizedPhotoCrop, target: PhotoFramingTarget, image: UIImage?) {
+    private func invalidatePhotoFraming() {
+        photoFramingRequestID = nil
+        photoFramingPresentation = nil
+    }
+
+    private func finishPhotoFraming(_ request: PlayerPhotoFramingRequest) {
+        guard photoFramingRequestID == request.id else { return }
+        photoFramingRequestID = nil
+        if photoFramingPresentation?.request.id == request.id {
+            photoFramingPresentation = nil
+        }
+    }
+
+    private func applyPhotoFraming(
+        _ crop: NormalizedPhotoCrop,
+        target: PhotoFramingTarget,
+        image: UIImage?,
+        request: PlayerPhotoFramingRequest
+    ) {
+        guard request.validatedSourcePath(
+            activeRequestID: photoFramingRequestID,
+            player: player
+        ) != nil else { return }
+
         switch target {
         case .profile:
             guard let image,
@@ -9265,19 +9425,25 @@ private struct PlayerEditorSheet: View {
                 appModel.lastError = "Roll Call could not apply that profile framing."
                 return
             }
-            let legacySourcePath = player.photoSourceRelativePath ?? player.photoRelativePath
             let profileName = "\(UUID().uuidString)-photo-profile.jpg"
+            let previousPath = player.photoRelativePath
             do {
                 let assetsDir = try AppPaths.assetsDirectory()
                 try jpeg.write(to: assetsDir.appendingPathComponent(profileName), options: .atomic)
-                if let previousPath = player.photoRelativePath,
+                guard request.applyProfileFraming(
+                    crop,
+                    profileRelativePath: profileName,
+                    activeRequestID: photoFramingRequestID,
+                    to: &player
+                ) else {
+                    try? FileManager.default.removeItem(at: assetsDir.appendingPathComponent(profileName))
+                    return
+                }
+                if let previousPath,
                    draftPhotoRelativePaths.contains(previousPath) {
                     appModel.discardUncommittedAsset(relativePath: previousPath)
                     draftPhotoRelativePaths.remove(previousPath)
                 }
-                player.photoSourceRelativePath = legacySourcePath
-                player.photoRelativePath = profileName
-                player.profilePhotoCrop = crop
                 draftPhotoRelativePaths.insert(profileName)
                 didAdjustProfileFraming = true
             } catch {

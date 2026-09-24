@@ -1091,13 +1091,13 @@ The current `invalidCSV` error covers both empty and malformed CSV. Do not claim
 **Properties:** None in schema v1.
 
 ### `state.recoveryTriggered`
-**Granularity:** Raw occurrence  
-**Meaning:** Roll Call detected unreadable/corrupt/unsupported persisted state and entered its defensive recovery path.  
-**Properties:** `reason = unsupportedSchema | loadFailure`
+**Granularity:** Once per successfully completed defensive recovery flow
+**Meaning:** A user chose Retry, Start Fresh, or restored a recovery snapshot; Roll Call wrote and reread the replacement state, verified it, exited the blocking recovery flow, and resumed the normal state lifecycle. The historical event name says “Triggered,” but this signal means recovery completed. It is not emitted when recovery is first detected, while the blocking choice is unresolved, or when the write/verification fails.
+**Properties:** `reason = unsupportedSchema | loadFailure | missingPrimaryWithResidualData`
 
-The current launch path can identify an unsupported saved-state schema separately, but all other read/decode failures converge through one catch path. Do not claim `corrupt` versus `decodeFailure` without a future typed implementation distinction.
+`unsupportedSchema` means the primary state file uses a newer schema. `loadFailure` means the primary state file could not be read, have its schema extracted, or be decoded. `missingPrimaryWithResidualData` means the primary state file is absent while meaningful local assets, recovery snapshots, or other recovery evidence remain. These are fixed, coarse categories; the missing-primary case is distinct and must not be mapped to `loadFailure`.
 
-This is high priority: even a single real-world occurrence is worth knowing.
+An analytics opt-out continues to suppress this ordinary telemetry event. No file paths, error descriptions, state contents, or recovery snapshot contents are transmitted.
 
 ### `telemetryState.recovered`
 **Granularity:** Once after a corrupt/unreadable telemetry/rating store is quarantined and its conservative replacement is successfully saved  

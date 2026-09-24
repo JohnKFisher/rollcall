@@ -43,7 +43,7 @@ final class OpenGameDayRequestCenter: ObservableObject {
     static let shared = OpenGameDayRequestCenter()
     @Published private(set) var pendingRequest: OpenGameDayRequest?
 
-    private init() {}
+    init() {}
 
     func submit(_ request: OpenGameDayRequest) {
         pendingRequest = request

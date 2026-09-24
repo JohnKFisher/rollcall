@@ -188,8 +188,7 @@ final class RecentlyDeletedTests: XCTestCase {
             modifiedAt: RollCallTestFixtures.now,
             players: [],
             builtInClips: BuiltInClip.defaults,
-            session: TeamSessionState(activeSessionDate: nil, battingOrder: [], nextBatterIndex: 0, gameDayAnnouncerMode: .announcerAndSong, battingOrderIsCustomized: false),
-            announcerProfile: .default
+            session: TeamSessionState(activeSessionDate: nil, battingOrder: [], nextBatterIndex: 0, gameDayAnnouncerMode: .announcerAndSong, battingOrderIsCustomized: false)
         )
         var state = RollCallTestFixtures.appState(team: activeTeam)
         let deletedItem = RecentlyDeletedItem(

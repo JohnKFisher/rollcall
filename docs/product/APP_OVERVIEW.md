@@ -29,7 +29,7 @@ Every product decision is filtered through that promise. Reliability of the live
 
 These words have specific meaning in Roll Call. Use them precisely when discussing changes.
 
-- **Team** — the durable container. Has a name, accent color, roster of players, batting order, session state, announcer profile, and a small library of built-in crowd clips. A device can have many teams. One team is "selected" at a time.
+- **Team** — the durable container. Has a name, accent color, roster of players, batting order, session state, and a small library of built-in crowd clips. A device can have many teams. One team is "selected" at a time.
 - **Player** — belongs to a team. Has display name, optional uniform number, optional photo, optional cue (audio assignment), optional custom announcer recording, and an `isPresent` flag for today's lineup.
 - **Player Song / Cue** — the playable audio assignment for a player. Has a source (Music Library, Apple Music catalog, local audio/video file, generated Roll Call clip, or built-in fallback), a selected start time, a duration, a fade-out duration, and a pause-after-announcer value. A player without player-specific audio falls back to a generic crowd cheer at Game Day.
 - **Song Clip** — the durable saved source-and-timing truth behind a Player Song or Custom Clip. Generated local media may make it portable, but the original source-backed recipe is preserved so the user can repair or regenerate it later.

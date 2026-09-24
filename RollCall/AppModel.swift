@@ -632,6 +632,7 @@ final class AppModel: ObservableObject {
 
     @Published var state: AppState
     @Published private(set) var stateRecovery: StateRecoveryContext?
+    @Published private(set) var isStateRecoveryInProgress = false
     @Published private(set) var stateRecoveryArchives: [URL]
     @Published private(set) var isBusy = false
     @Published var lastError: String?
@@ -658,7 +659,8 @@ final class AppModel: ObservableObject {
     @Published private(set) var riskyOperationCount = 0
     private var hasFinishedLaunching = false
     private let riskyOperationCoordinator = RiskyOperationCoordinator()
-    private let persistenceWriter = StatePersistenceWriter()
+    private let persistenceWriter: StatePersistenceWriter
+    private let persistenceTestHooks: StatePersistenceTestHooks
     private var persistSequence = 0
     private var latestRequestedPersistenceSequence = 0
     private var latestDurablePersistenceSequence = 0
@@ -700,7 +702,6 @@ final class AppModel: ObservableObject {
 
     private struct PersistenceRequest {
         let snapshot: AppState
-        let cleanupPaths: Set<String>
         let sequence: Int
         let destinationURL: URL
     }
@@ -708,7 +709,6 @@ final class AppModel: ObservableObject {
     private struct InitialStateLoadResult {
         let state: AppState
         let warning: String?
-        let recoveryReason: String?
         let recovery: StateRecoveryContext?
     }
 
@@ -744,6 +744,7 @@ final class AppModel: ObservableObject {
         },
         previewPlaybackResolver: ((Cue) async throws -> Void)? = nil,
         telemetry: RollCallTelemetryCoordinator? = nil,
+        persistenceTestHooks: StatePersistenceTestHooks = .none,
         deviceIdentityProvider: @escaping () -> DeviceIdentity = {
             DeviceIdentity(
                 label: UIDevice.current.name,
@@ -751,6 +752,8 @@ final class AppModel: ObservableObject {
             )
         }
     ) {
+        self.persistenceTestHooks = persistenceTestHooks
+        self.persistenceWriter = StatePersistenceWriter(testHooks: persistenceTestHooks)
         self.appleMusicPlaybackCapabilityResolver = appleMusicPlaybackCapabilityResolver
         self.catalogBackedResultResolver = catalogBackedResultResolver
         self.previewPlaybackResolver = previewPlaybackResolver
@@ -817,9 +820,6 @@ final class AppModel: ObservableObject {
         normalizeRatingRequestPolicyState()
         if stateRecovery == nil {
             activateNormalStateLifecycle()
-            if let recoveryReason = loadResult.recoveryReason {
-                self.telemetry.record(.stateRecoveryTriggered, properties: [.reason: recoveryReason])
-            }
         }
         if let initialStateLoadWarning {
             lastError = initialStateLoadWarning
@@ -935,8 +935,16 @@ final class AppModel: ObservableObject {
         stateRecovery != nil
     }
 
+    private func beginStateRecoveryOperation() -> Bool {
+        guard stateRecovery != nil, !isStateRecoveryInProgress else { return false }
+        isStateRecoveryInProgress = true
+        return true
+    }
+
     func retryStateRecovery() async {
-        guard stateRecovery != nil else { return }
+        guard beginStateRecoveryOperation() else { return }
+        defer { isStateRecoveryInProgress = false }
+
         if stateRecovery?.reason == .missingPrimaryWithResidualData {
             let stateURL = (try? AppPaths.stateURL())
             if stateURL.map({ FileManager.default.fileExists(atPath: $0.path) }) != true {
@@ -963,6 +971,9 @@ final class AppModel: ObservableObject {
             lastError = "Roll Call could not preserve the original state file yet. Try again before restoring a backup."
             return
         }
+        guard beginStateRecoveryOperation() else { return }
+        defer { isStateRecoveryInProgress = false }
+
         var restoredState = snapshot.state
         restoredState.appVersion = AppMetadata.appVersion
         restoredState.schemaVersion = max(restoredState.schemaVersion, AppState.currentSchemaVersion)
@@ -987,7 +998,10 @@ final class AppModel: ObservableObject {
     }
 
     func startFreshAfterStateRecovery() async {
-        guard let recovery = stateRecovery else { return }
+        guard let recovery = stateRecovery,
+              beginStateRecoveryOperation() else { return }
+        defer { isStateRecoveryInProgress = false }
+
         if recovery.reason == .missingPrimaryWithResidualData {
             await commitMissingPrimaryRecovery(recovery)
             return
@@ -1256,7 +1270,6 @@ final class AppModel: ObservableObject {
             players: [],
             builtInClips: BuiltInClip.defaults,
             session: TeamSessionState(activeSessionDate: nil, battingOrder: [], nextBatterIndex: 0, gameDayAnnouncerMode: .announcerAndSong, battingOrderIsCustomized: false),
-            announcerProfile: .default,
             accentPreset: accentPreset
         )
         state.teams.append(team)
@@ -1342,7 +1355,13 @@ final class AppModel: ObservableObject {
     }
 
     func removeSelectedTeam() {
-        guard let teamIndex, let team = selectedTeam else { return }
+        guard let selectedTeamID = state.selectedTeamID else { return }
+        removeTeam(id: selectedTeamID)
+    }
+
+    func removeTeam(id teamID: UUID) {
+        guard let teamIndex = state.teams.firstIndex(where: { $0.id == teamID }) else { return }
+        let team = state.teams[teamIndex]
         addRecentlyDeletedItem(
             RecentlyDeletedItem(
                 id: UUID(),
@@ -2635,6 +2654,12 @@ final class AppModel: ObservableObject {
         return exportURL
     }
 
+    func finishPackageShare(for sharedURL: URL) {
+        guard exportURL == sharedURL else { return }
+        packageService.cleanupExportedPackage(at: sharedURL)
+        exportURL = nil
+    }
+
     func importPackage(from url: URL) async {
         await performPackageImport(from: url, opensOnboardingHandoff: false)
     }
@@ -3499,9 +3524,6 @@ final class AppModel: ObservableObject {
         if let customAnnouncerRelativePath = player.customAnnouncerRelativePath {
             paths.append(customAnnouncerRelativePath)
         }
-        if let generatedBuiltInAnnouncerRelativePath = player.generatedBuiltInAnnouncerRelativePath {
-            paths.append(generatedBuiltInAnnouncerRelativePath)
-        }
         if case .localAudio(let source)? = player.cue?.source {
             paths.append(source.relativePath)
         }
@@ -4312,15 +4334,27 @@ final class AppModel: ObservableObject {
     private func persist() {
         guard stateRecovery == nil else { return }
         guard let request = makePersistenceRequest() else { return }
-        Task(priority: .utility) { [persistenceWriter] in
+        Task(priority: .utility) { [persistenceWriter, hooks = persistenceTestHooks] in
             let result = await persistenceWriter.enqueue(
                 request.snapshot,
                 sequence: request.sequence,
                 destinationURL: request.destinationURL
             )
 
+            if case .unconfirmed = result,
+               let didReturnUnconfirmed = hooks.didReturnUnconfirmed {
+                await didReturnUnconfirmed(request.sequence)
+            }
+            if case .written(let sequence) = result,
+               let beforeApply = hooks.beforeApplyWrittenResult {
+                await beforeApply(sequence)
+            }
             await MainActor.run {
-                self.applyPersistenceResult(result, cleanupPaths: request.cleanupPaths)
+                self.applyPersistenceResult(result)
+            }
+            if case .written(let sequence) = result,
+               let didApply = hooks.didApplyWrittenResult {
+                await didApply(sequence)
             }
         }
     }
@@ -4362,12 +4396,6 @@ final class AppModel: ObservableObject {
     private func makePersistenceRequest() -> PersistenceRequest? {
         guard stateRecovery == nil else { return nil }
         let snapshot = state
-        // Copy rather than drain. Every path is re-validated against the current
-        // state before deletion, so carrying a path across more than one write is
-        // harmless — whereas draining it here meant a superseded write discarded it
-        // permanently. Paths are cleared in `applyPersistenceResult` once a write
-        // actually lands.
-        let cleanupPaths = pendingAssetCleanupPaths
         let destinationURL: URL
         do {
             destinationURL = try AppPaths.stateURL()
@@ -4379,7 +4407,6 @@ final class AppModel: ObservableObject {
         latestRequestedPersistenceSequence = persistSequence
         return PersistenceRequest(
             snapshot: snapshot,
-            cleanupPaths: cleanupPaths,
             sequence: persistSequence,
             destinationURL: destinationURL
         )
@@ -4392,29 +4419,33 @@ final class AppModel: ObservableObject {
             sequence: request.sequence,
             destinationURL: request.destinationURL
         )
-        applyPersistenceResult(result, cleanupPaths: request.cleanupPaths)
+        if case .written(let sequence) = result,
+           let beforeApply = persistenceTestHooks.beforeApplyWrittenResult {
+            await beforeApply(sequence)
+        }
+        applyPersistenceResult(result)
+        if case .written(let sequence) = result,
+           let didApply = persistenceTestHooks.didApplyWrittenResult {
+            await didApply(sequence)
+        }
         if case .written = result { return true }
         return false
     }
 
-    private func applyPersistenceResult(
-        _ result: StatePersistenceResult,
-        cleanupPaths: Set<String>
-    ) {
+    private func applyPersistenceResult(_ result: StatePersistenceResult) {
         switch result {
         case .written(let sequence):
-            // Cleanup runs for any write that landed, not only the newest one.
-            // `removePersistedAssetIfStillUnreferenced` re-checks the current state
-            // and every backup snapshot before touching a file, so a superseded
-            // write cannot delete something a later state re-referenced. Gating
-            // this on `sequence >= latestRequestedPersistenceSequence` instead meant
-            // that whenever a second persist raced the first — the common case, since
-            // most mutations persist two or three times in a row — the staged paths
-            // were dropped on the floor and the files leaked forever.
-            pendingAssetCleanupPaths.subtract(cleanupPaths)
-            cleanupPaths.forEach(removePersistedAssetIfStillUnreferenced)
+            // A coalesced write returns its final durable sequence to the task that
+            // started the writer. Do not consume cleanup paths until that sequence
+            // catches up with every request made by this model: a later in-memory
+            // state may have restored one of those paths while its own write is
+            // still pending. The global set includes paths staged by all coalesced
+            // requests, including requests whose enqueue returned `.unconfirmed`.
             guard sequence >= latestRequestedPersistenceSequence else { return }
             latestDurablePersistenceSequence = sequence
+            let cleanupPaths = pendingAssetCleanupPaths
+            pendingAssetCleanupPaths.subtract(cleanupPaths)
+            cleanupPaths.forEach(removePersistedAssetIfStillUnreferenced)
             statePersistenceFailureEpisodeActive = false
         case .failed(let sequence, let errorDescription):
             // Paths were never drained, so they remain staged for the next write.
@@ -4446,14 +4477,12 @@ final class AppModel: ObservableObject {
                     return InitialStateLoadResult(
                         state: freshEmptyState(deviceIdentity: currentDeviceIdentity),
                         warning: nil,
-                        recoveryReason: nil,
                         recovery: nil
                     )
                 }
                 return InitialStateLoadResult(
                     state: freshEmptyState(deviceIdentity: currentDeviceIdentity),
                     warning: "Roll Call found local files from an earlier installation but its primary state file is missing. The files were left untouched.",
-                    recoveryReason: StateRecoveryReason.missingPrimaryWithResidualData.rawValue,
                     recovery: makeStateRecoveryContext(
                         reason: .missingPrimaryWithResidualData,
                         primaryStateURL: stateURL,
@@ -4468,7 +4497,6 @@ final class AppModel: ObservableObject {
                 return InitialStateLoadResult(
                     state: freshEmptyState(deviceIdentity: currentDeviceIdentity),
                     warning: nil,
-                    recoveryReason: StateRecoveryReason.unsupportedSchema.rawValue,
                     recovery: makeStateRecoveryContext(
                         reason: .unsupportedSchema,
                         primaryStateURL: stateURL,
@@ -4483,14 +4511,13 @@ final class AppModel: ObservableObject {
                 }
             }
             let loadedState = try AppStatePersistenceCodec.decode(originalData)
-            return InitialStateLoadResult(state: loadedState, warning: migrationWarning, recoveryReason: nil, recovery: nil)
+            return InitialStateLoadResult(state: loadedState, warning: migrationWarning, recovery: nil)
         } catch {
             let stateURL = (try? AppPaths.stateURL()) ?? URL(fileURLWithPath: "state.json")
             let preservedURL = preserveUnreadableStateFile()
             return InitialStateLoadResult(
                 state: freshEmptyState(deviceIdentity: currentDeviceIdentity),
                 warning: nil,
-                recoveryReason: StateRecoveryReason.loadFailure.rawValue,
                 recovery: makeStateRecoveryContext(
                     reason: .loadFailure,
                     primaryStateURL: stateURL,
@@ -4952,6 +4979,18 @@ private enum StatePersistenceResult: Sendable {
     case unconfirmed
 }
 
+/// Optional synchronization points for deterministic persistence interleaving tests.
+/// Production callers leave these nil, so they do not change writer scheduling.
+struct StatePersistenceTestHooks: Sendable {
+    var beforeWrite: (@Sendable (Int) async -> Void)? = nil
+    var didCoalesce: (@Sendable (Int) async -> Void)? = nil
+    var didReturnUnconfirmed: (@Sendable (Int) async -> Void)? = nil
+    var beforeApplyWrittenResult: (@Sendable (Int) async -> Void)? = nil
+    var didApplyWrittenResult: (@Sendable (Int) async -> Void)? = nil
+
+    static let none = StatePersistenceTestHooks()
+}
+
 private actor StatePersistenceWriter {
     private struct Waiter {
         let sequence: Int
@@ -4962,13 +5001,23 @@ private actor StatePersistenceWriter {
     private var pending: (state: AppState, sequence: Int, destinationURL: URL)?
     private var isWriting = false
     private var waiters: [Waiter] = []
+    private let testHooks: StatePersistenceTestHooks
+
+    init(testHooks: StatePersistenceTestHooks) {
+        self.testHooks = testHooks
+    }
 
     func enqueue(_ state: AppState, sequence: Int, destinationURL: URL) async -> StatePersistenceResult {
         guard sequence >= latestSequence else { return .unconfirmed }
         latestSequence = sequence
         pending = (state, sequence, destinationURL)
 
-        guard !isWriting else { return .unconfirmed }
+        guard !isWriting else {
+            if let didCoalesce = testHooks.didCoalesce {
+                await didCoalesce(sequence)
+            }
+            return .unconfirmed
+        }
         return await writePending()
     }
 
@@ -5005,6 +5054,9 @@ private actor StatePersistenceWriter {
 
             let sequence = next.sequence
             let destinationURL = next.destinationURL
+            if let beforeWrite = testHooks.beforeWrite {
+                await beforeWrite(sequence)
+            }
             finalResult = await writeEncodedState(
                 encodedState,
                 sequence: sequence,

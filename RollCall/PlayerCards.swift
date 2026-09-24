@@ -1100,6 +1100,90 @@ struct PlayerCardImageView: View {
     }
 }
 
+struct PlayerCardPreviewRenderIdentity: Equatable, Sendable {
+    let content: PlayerCardContent
+    let photoRelativePath: String?
+    let photoSourceRelativePath: String?
+    let playerCardPhotoCrop: NormalizedPhotoCrop?
+}
+
+struct PlayerCardPreviewRenderRequest: Equatable, Identifiable, Sendable {
+    let id: UUID
+    let identity: PlayerCardPreviewRenderIdentity
+
+    init(identity: PlayerCardPreviewRenderIdentity) {
+        id = UUID()
+        self.identity = identity
+    }
+}
+
+struct PlayerCardPreviewRenderResult: @unchecked Sendable {
+    let request: PlayerCardPreviewRenderRequest
+    let cards: [PlayerCardDesign: UIImage]
+    let framingImage: UIImage?
+    let framingOptions: PlayerPhotoFramingOptionSet?
+    let usesWorkingMaster: Bool
+    let errorMessage: String?
+}
+
+struct PlayerCardPreviewRenderGate {
+    private(set) var activeRequest: PlayerCardPreviewRenderRequest?
+    private(set) var publishedResult: PlayerCardPreviewRenderResult?
+
+    mutating func begin(identity: PlayerCardPreviewRenderIdentity) -> PlayerCardPreviewRenderRequest {
+        let request = PlayerCardPreviewRenderRequest(identity: identity)
+        activeRequest = request
+        publishedResult = nil
+        return request
+    }
+
+    mutating func invalidate() {
+        activeRequest = nil
+        publishedResult = nil
+    }
+
+    func accepts(
+        _ request: PlayerCardPreviewRenderRequest,
+        currentIdentity: PlayerCardPreviewRenderIdentity
+    ) -> Bool {
+        activeRequest == request && request.identity == currentIdentity
+    }
+
+    @discardableResult
+    mutating func publish(
+        _ result: PlayerCardPreviewRenderResult,
+        currentIdentity: PlayerCardPreviewRenderIdentity
+    ) -> Bool {
+        guard accepts(result.request, currentIdentity: currentIdentity) else { return false }
+        publishedResult = result
+        return true
+    }
+
+    func currentResult(for identity: PlayerCardPreviewRenderIdentity) -> PlayerCardPreviewRenderResult? {
+        guard let activeRequest,
+              activeRequest.identity == identity,
+              let publishedResult else { return nil }
+        return currentResult(for: activeRequest, currentIdentity: identity)
+    }
+
+    func currentResult(
+        for request: PlayerCardPreviewRenderRequest,
+        currentIdentity: PlayerCardPreviewRenderIdentity
+    ) -> PlayerCardPreviewRenderResult? {
+        guard accepts(request, currentIdentity: currentIdentity),
+              let publishedResult,
+              publishedResult.request == request else { return nil }
+        return publishedResult
+    }
+
+    func shareableImage(
+        for design: PlayerCardDesign,
+        currentIdentity: PlayerCardPreviewRenderIdentity
+    ) -> UIImage? {
+        currentResult(for: currentIdentity)?.cards[design]
+    }
+}
+
 struct PlayerCardPreviewSheet: View {
     private struct RenderOutput: @unchecked Sendable {
         let cards: [PlayerCardDesign: UIImage]
@@ -1117,13 +1201,10 @@ struct PlayerCardPreviewSheet: View {
     let onSharePresented: () -> Void
     let onCardFramingAdjusted: () -> Void
 
-    @State private var renderedImages: [PlayerCardDesign: UIImage] = [:]
+    @State private var renderGate = PlayerCardPreviewRenderGate()
+    @State private var renderTaskID = UUID()
     @State private var shareImage: UIImage?
-    @State private var framingImage: UIImage?
-    @State private var framingOptions: PlayerPhotoFramingOptionSet?
-    @State private var framingUsesWorkingMaster = false
-    @State private var framingPresented = false
-    @State private var renderError: String?
+    @State private var framingRequest: PlayerCardPreviewRenderRequest?
     @State private var selectedDesignID: String
 
     init(
@@ -1151,6 +1232,19 @@ struct PlayerCardPreviewSheet: View {
         PlayerCardDesign(rawValue: selectedDesignID) ?? .defaultDesign
     }
 
+    private var renderIdentity: PlayerCardPreviewRenderIdentity {
+        PlayerCardPreviewRenderIdentity(
+            content: PlayerCardContent(player: player, team: team),
+            photoRelativePath: player.photoRelativePath,
+            photoSourceRelativePath: player.photoSourceRelativePath,
+            playerCardPhotoCrop: player.playerCardPhotoCrop
+        )
+    }
+
+    private var currentRenderResult: PlayerCardPreviewRenderResult? {
+        renderGate.currentResult(for: renderIdentity)
+    }
+
     private var designSelection: Binding<PlayerCardDesign> {
         Binding(
             get: { selectedDesign },
@@ -1171,6 +1265,8 @@ struct PlayerCardPreviewSheet: View {
     }
 
     var body: some View {
+        let result = currentRenderResult
+
         NavigationStack {
             ScrollView {
                 VStack(spacing: 20) {
@@ -1186,8 +1282,8 @@ struct PlayerCardPreviewSheet: View {
 
                     PlayerCardCarousel(
                         playerName: player.displayName,
-                        renderedImages: renderedImages,
-                        renderError: renderError,
+                        renderedImages: result?.cards ?? [:],
+                        renderError: result?.errorMessage,
                         selectedDesign: selectedDesign,
                         selection: carouselSelection,
                         onSelect: { design in selectDesign(design, animated: true) }
@@ -1198,12 +1294,12 @@ struct PlayerCardPreviewSheet: View {
                             .frame(maxWidth: .infinity)
                     }
                     .rollCallButtonStyle(.primary)
-                    .disabled(renderedImages[selectedDesign] == nil)
+                    .disabled(result?.cards[selectedDesign] == nil)
                     .accessibilityHint("Shares or saves the currently selected Player Card design.")
 
-                    if framingImage != nil, framingOptions != nil {
+                    if let result, result.framingImage != nil, result.framingOptions != nil {
                         Button {
-                            framingPresented = true
+                            framingRequest = result.request
                         } label: {
                             Label("Adjust Player Card Photo", systemImage: "crop")
                         }
@@ -1224,7 +1320,7 @@ struct PlayerCardPreviewSheet: View {
                     Button(action: presentShare) {
                         Label("Share", systemImage: "square.and.arrow.up")
                     }
-                    .disabled(renderedImages[selectedDesign] == nil)
+                    .disabled(result?.cards[selectedDesign] == nil)
                 }
             }
             .onChange(of: selectedDesignID) { _, newValue in
@@ -1232,8 +1328,15 @@ struct PlayerCardPreviewSheet: View {
                       PlayerCardDesign.shippingDesigns.contains(design) else { return }
                 onDesignChanged(design)
             }
-            .task(id: renderIdentity) {
-                await render()
+            .task(id: renderTaskID) {
+                let identity = renderIdentity
+                let request = renderGate.begin(identity: identity)
+                await render(request)
+            }
+            .onChange(of: renderIdentity) { _, _ in
+                renderGate.invalidate()
+                framingRequest = nil
+                renderTaskID = UUID()
             }
             .sheet(isPresented: Binding(
                 get: { shareImage != nil },
@@ -1244,38 +1347,42 @@ struct PlayerCardPreviewSheet: View {
                         .onAppear(perform: onSharePresented)
                 }
             }
-            .fullScreenCover(isPresented: $framingPresented) {
-                if let framingImage, let framingOptions {
+            .fullScreenCover(item: $framingRequest) { request in
+                if let result = renderGate.currentResult(for: request, currentIdentity: renderIdentity),
+                   let framingImage = result.framingImage,
+                   let framingOptions = result.framingOptions {
                     PhotoFramingEditorSheet(
                         image: framingImage,
-                        initialCrop: effectiveCardCrop(for: framingImage),
+                        initialCrop: effectiveCardCrop(
+                            for: framingImage,
+                            usesWorkingMaster: result.usesWorkingMaster
+                        ),
                         aspectRatio: PlayerPhotoFramingGeometry.playerCardPhotoAspectRatio,
                         framingOptions: framingOptions.card,
                         title: "Adjust Player Card Photo",
-                        onCancel: { framingPresented = false },
+                        onCancel: { framingRequest = nil },
                         onApply: { crop in
-                            if player.photoSourceRelativePath != nil, !framingUsesWorkingMaster {
+                            guard renderGate.currentResult(
+                                for: request,
+                                currentIdentity: renderIdentity
+                            )?.request == result.request else {
+                                framingRequest = nil
+                                return
+                            }
+                            if player.photoSourceRelativePath != nil, !result.usesWorkingMaster {
                                 player.photoSourceRelativePath = nil
                                 player.profilePhotoCrop = nil
                             }
                             player.playerCardPhotoCrop = crop
-                            framingPresented = false
+                            framingRequest = nil
                             onCardFramingAdjusted()
                         }
                     )
+                } else {
+                    EmptyView()
                 }
             }
         }
-    }
-
-    private var renderIdentity: String {
-        [
-            player.displayName,
-            player.uniformNumber,
-            player.photoRelativePath ?? "",
-            player.photoSourceRelativePath ?? "",
-            String(describing: player.playerCardPhotoCrop)
-        ].joined(separator: "|")
     }
 
     private func selectDesign(_ design: PlayerCardDesign, animated: Bool) {
@@ -1295,19 +1402,22 @@ struct PlayerCardPreviewSheet: View {
     }
 
     private func presentShare() {
-        guard let renderedImage = renderedImages[selectedDesign] else { return }
+        guard let renderedImage = renderGate.shareableImage(
+            for: selectedDesign,
+            currentIdentity: renderIdentity
+        ) else { return }
         shareImage = renderedImage
     }
 
-    private func render() async {
-        renderedImages = [:]
-        renderError = nil
-        let content = PlayerCardContent(player: player, team: team)
-        let sourceURL = assetURL(relativePath: player.photoSourceRelativePath)
-        let legacyURL = assetURL(relativePath: player.photoRelativePath)
-        let storedCrop = player.playerCardPhotoCrop
+    private func render(_ request: PlayerCardPreviewRenderRequest) async {
+        guard renderGate.accepts(request, currentIdentity: renderIdentity) else { return }
+        let identity = request.identity
+        let sourceURL = assetURL(relativePath: identity.photoSourceRelativePath)
+        let legacyURL = assetURL(relativePath: identity.photoRelativePath)
+        let content = identity.content
+        let storedCrop = identity.playerCardPhotoCrop
 
-        let output = await Task.detached(priority: .userInitiated) {
+        let renderWork = Task.detached(priority: .userInitiated) { () -> RenderOutput? in
             let sourceImage = Self.loadPhoto(at: sourceURL)
             let image = sourceImage ?? Self.loadPhoto(at: legacyURL)
             let crop = image.map { image in
@@ -1318,40 +1428,70 @@ struct PlayerCardPreviewSheet: View {
                 )
             }
             let renderer = PlayerCardRenderer()
-            let cards = Dictionary(uniqueKeysWithValues: PlayerCardDesign.shippingDesigns.map { design in
-                (
-                    design,
-                    renderer.render(content: content, photo: image, crop: crop, design: design)
-                )
-            })
+            var cards: [PlayerCardDesign: UIImage] = [:]
+            for design in PlayerCardDesign.shippingDesigns {
+                guard !Task.isCancelled else { return nil }
+                cards[design] = renderer.render(content: content, photo: image, crop: crop, design: design)
+            }
+            guard !Task.isCancelled else { return nil }
             return RenderOutput(
                 cards: cards,
                 framingImage: image,
                 usesWorkingMaster: sourceImage != nil
             )
-        }.value
+        }
+        let output = await withTaskCancellationHandler {
+            await renderWork.value
+        } onCancel: {
+            renderWork.cancel()
+        }
 
-        guard !Task.isCancelled else { return }
-        framingImage = output.framingImage
+        guard !Task.isCancelled,
+              let output,
+              renderGate.accepts(request, currentIdentity: renderIdentity) else { return }
+
+        let framingOptions: PlayerPhotoFramingOptionSet?
         if let framingImage = output.framingImage {
             framingOptions = await PlayerPhotoPreparationService().framingOptions(for: framingImage)
         } else {
             framingOptions = nil
         }
-        framingUsesWorkingMaster = output.usesWorkingMaster
-        renderedImages = output.cards
+
+        guard !Task.isCancelled,
+              renderGate.accepts(request, currentIdentity: renderIdentity) else { return }
+
+        var resultCards = output.cards
+        var errorMessage: String?
         guard let selectedCard = output.cards[selectedDesign], selectedCard.cgImage != nil else {
-            renderedImages = [:]
-            renderError = "Roll Call couldn't finish this card. Please try again."
+            resultCards = [:]
+            errorMessage = "Roll Call couldn't finish this card. Please try again."
+            let result = PlayerCardPreviewRenderResult(
+                request: request,
+                cards: resultCards,
+                framingImage: output.framingImage,
+                framingOptions: framingOptions,
+                usesWorkingMaster: output.usesWorkingMaster,
+                errorMessage: errorMessage
+            )
+            guard renderGate.publish(result, currentIdentity: renderIdentity) else { return }
             onGenerationFailed("unknown")
             return
         }
-        renderError = nil
+
+        let result = PlayerCardPreviewRenderResult(
+            request: request,
+            cards: resultCards,
+            framingImage: output.framingImage,
+            framingOptions: framingOptions,
+            usesWorkingMaster: output.usesWorkingMaster,
+            errorMessage: nil
+        )
+        guard renderGate.publish(result, currentIdentity: renderIdentity) else { return }
         onGenerated()
     }
 
-    private func effectiveCardCrop(for image: UIImage) -> NormalizedPhotoCrop {
-        if (player.photoSourceRelativePath == nil || framingUsesWorkingMaster),
+    private func effectiveCardCrop(for image: UIImage, usesWorkingMaster: Bool) -> NormalizedPhotoCrop {
+        if (player.photoSourceRelativePath == nil || usesWorkingMaster),
            let crop = player.playerCardPhotoCrop {
             return crop
         }

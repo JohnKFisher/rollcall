@@ -41,6 +41,90 @@ final class PlayerPhotoTests: XCTestCase {
         XCTAssertEqual(decoded, player)
     }
 
+    func testStaleProfileFramingCannotApplyOrPersistAfterPhotoReplacement() throws {
+        let cropA = NormalizedPhotoCrop(x: 0.12, y: 0.18, width: 0.5, height: 0.5)
+        let cropB = NormalizedPhotoCrop(x: 0.3, y: 0.2, width: 0.4, height: 0.4)
+        let cardCropB = NormalizedPhotoCrop(x: 0.08, y: 0.12, width: 0.82, height: 0.7)
+        var player = RollCallTestFixtures.player(
+            id: UUID(),
+            name: "Player",
+            number: "1",
+            photoRelativePath: "profile-a.jpg"
+        )
+        player.photoSourceRelativePath = "master-a.jpg"
+        player.profilePhotoCrop = cropA
+        let requestA = PlayerPhotoFramingRequest(source: .workingMaster(relativePath: "master-a.jpg"))
+        var activeRequestID: UUID? = requestA.id
+
+        XCTAssertEqual(requestA.validatedSourcePath(activeRequestID: activeRequestID, player: player), "master-a.jpg")
+
+        // Replacement begins while A's framing work is outstanding.
+        activeRequestID = nil
+        player.photoRelativePath = "profile-b.jpg"
+        player.photoSourceRelativePath = "master-b.jpg"
+        player.profilePhotoCrop = cropB
+        player.playerCardPhotoCrop = cardCropB
+        let replacementDraft = player
+
+        XCTAssertNil(requestA.validatedSourcePath(activeRequestID: activeRequestID, player: player))
+        XCTAssertNil(requestA.validatedSourcePath(activeRequestID: requestA.id, player: player))
+        XCTAssertFalse(requestA.applyProfileFraming(
+            cropA,
+            profileRelativePath: "stale-profile-from-a.jpg",
+            activeRequestID: activeRequestID,
+            to: &player
+        ))
+        XCTAssertEqual(player, replacementDraft)
+
+        let savedPlayer = try JSONDecoder().decode(Player.self, from: JSONEncoder().encode(player))
+        XCTAssertEqual(savedPlayer.photoRelativePath, "profile-b.jpg")
+        XCTAssertEqual(savedPlayer.photoSourceRelativePath, "master-b.jpg")
+        XCTAssertEqual(savedPlayer.profilePhotoCrop, cropB)
+        XCTAssertEqual(savedPlayer.playerCardPhotoCrop, cardCropB)
+    }
+
+    func testCurrentProfileFramingUpdatesProfileAndKeepsWorkingMasterAndCardCrop() throws {
+        let initialCardCrop = NormalizedPhotoCrop(x: 0.1, y: 0.08, width: 0.8, height: 0.75)
+        let adjustedProfileCrop = NormalizedPhotoCrop(x: 0.2, y: 0.16, width: 0.56, height: 0.56)
+        var player = RollCallTestFixtures.player(
+            id: UUID(),
+            name: "Player",
+            number: "1",
+            photoRelativePath: "profile-a.jpg"
+        )
+        player.photoSourceRelativePath = "master-a.jpg"
+        player.playerCardPhotoCrop = initialCardCrop
+        let request = PlayerPhotoFramingRequest(source: .workingMaster(relativePath: "master-a.jpg"))
+
+        XCTAssertTrue(request.applyProfileFraming(
+            adjustedProfileCrop,
+            profileRelativePath: "profile-adjusted.jpg",
+            activeRequestID: request.id,
+            to: &player
+        ))
+
+        XCTAssertEqual(player.photoRelativePath, "profile-adjusted.jpg")
+        XCTAssertEqual(player.photoSourceRelativePath, "master-a.jpg")
+        XCTAssertEqual(player.profilePhotoCrop, adjustedProfileCrop)
+        XCTAssertEqual(player.playerCardPhotoCrop, initialCardCrop)
+    }
+
+    func testLegacyProfileFramingRequiresTheSameUnbackedProfilePath() {
+        var player = RollCallTestFixtures.player(
+            id: UUID(),
+            name: "Legacy Player",
+            number: "1",
+            photoRelativePath: "legacy-profile.jpg"
+        )
+        let request = PlayerPhotoFramingRequest(source: .legacyProfile(relativePath: "legacy-profile.jpg"))
+
+        XCTAssertEqual(request.validatedSourcePath(activeRequestID: request.id, player: player), "legacy-profile.jpg")
+
+        player.photoSourceRelativePath = "new-working-master.jpg"
+
+        XCTAssertNil(request.validatedSourcePath(activeRequestID: request.id, player: player))
+    }
+
     func testLegacyDecoderKeepsProfilePhotoAndIgnoresAdditivePhotoFields() throws {
         var player = RollCallTestFixtures.player(id: UUID(), name: "Player", number: "1", photoRelativePath: "profile.jpg")
         player.photoSourceRelativePath = "master.jpg"
@@ -68,21 +152,147 @@ final class PlayerPhotoTests: XCTestCase {
         XCTAssertLessThan(analysis.profileCrop.height, analysis.cardCrop.height)
     }
 
+    func testAutomaticProfileFaceCropIsTighterWhileCardCropRemainsSeparate() throws {
+        let imageSize = CGSize(width: 1_000, height: 1_000)
+        let face = CGRect(x: 0.44, y: 0.14, width: 0.12, height: 0.14)
+        let options = PlayerPhotoFramingGeometry.framingOptions(
+            faces: [face],
+            people: [],
+            imageSize: imageSize
+        )
+
+        let profile = try XCTUnwrap(options.profile[.automatic]).cgRect
+        let card = try XCTUnwrap(options.card[.automatic]).cgRect
+
+        // The original 0.8x / 1.15x padding produced a 0.462 crop; the prior
+        // 0.7x / 1.0x adjustment produced 0.42. This revision tightens it to 0.378.
+        XCTAssertEqual(profile.width, 0.378, accuracy: 0.001)
+        XCTAssertEqual(profile.height, 0.378, accuracy: 0.001)
+        XCTAssertEqual(profile.midX, face.midX, accuracy: 0.001)
+        XCTAssertTrue(profile.contains(face))
+
+        XCTAssertEqual(card.width, 0.883, accuracy: 0.002)
+        XCTAssertEqual(card.height, 0.728, accuracy: 0.002)
+        assertPhysicalAspect(
+            NormalizedPhotoCrop(card),
+            imageSize: imageSize,
+            expected: PlayerPhotoFramingGeometry.playerCardPhotoAspectRatio
+        )
+    }
+
+    func testAutomaticProfileFaceCropStaysBoundedAndKeepsAnEdgeFace() throws {
+        let face = CGRect(x: 0.02, y: 0.14, width: 0.12, height: 0.14)
+        let crop = try XCTUnwrap(
+            PlayerPhotoFramingGeometry.framingOptions(
+                faces: [face],
+                people: [],
+                imageSize: CGSize(width: 1_000, height: 1_000)
+            ).profile[.automatic]
+        )
+        let rect = crop.cgRect
+
+        XCTAssertEqual(rect.minX, 0, accuracy: 0.001)
+        XCTAssertGreaterThanOrEqual(rect.minY, 0)
+        XCTAssertLessThanOrEqual(rect.maxX, 1)
+        XCTAssertLessThanOrEqual(rect.maxY, 1)
+        XCTAssertTrue(rect.contains(face))
+        XCTAssertEqual(crop.clamped().cgRect, rect)
+    }
+
     func testAutomaticCardFramingPrefersUpperBodyWhenFullBodyIsAvailable() {
         let imageSize = CGSize(width: 1_600, height: 1_200)
+        let face = CGRect(x: 0.46, y: 0.1, width: 0.08, height: 0.1)
         let options = PlayerPhotoFramingGeometry.framingOptions(
-            faces: [CGRect(x: 0.46, y: 0.1, width: 0.08, height: 0.1)],
+            faces: [face],
             people: [CGRect(x: 0.3, y: 0.08, width: 0.4, height: 0.86)],
             upperBodies: [CGRect(x: 0.32, y: 0.08, width: 0.36, height: 0.48)],
             imageSize: imageSize
         )
+        let faceOnly = PlayerPhotoFramingGeometry.framingOptions(
+            faces: [face],
+            people: [],
+            imageSize: imageSize
+        )
 
         let automatic = try! XCTUnwrap(options.card[.automatic])
+        let faceOnlyAutomatic = try! XCTUnwrap(faceOnly.card[.automatic])
         let fullBody = try! XCTUnwrap(options.card[.fullBody])
 
         assertPhysicalAspect(automatic, imageSize: imageSize, expected: PlayerPhotoFramingGeometry.playerCardPhotoAspectRatio)
         XCTAssertLessThan(automatic.cgRect.height, fullBody.cgRect.height)
         XCTAssertGreaterThan(automatic.cgRect.midY, 0.25)
+        XCTAssertNotEqual(automatic.cgRect, faceOnlyAutomatic.cgRect)
+    }
+
+    func testAutomaticCardFramingUsesFaceOnlyWhenAvailableBodiesBelongElsewhere() throws {
+        let imageSize = CGSize(width: 1_600, height: 1_200)
+        let faceA = CGRect(x: 0.12, y: 0.16, width: 0.1, height: 0.12)
+        let bodyB = CGRect(x: 0.68, y: 0.08, width: 0.24, height: 0.78)
+
+        XCTAssertNil(PlayerPhotoFramingGeometry.bestAssociatedBody(in: [bodyB], matching: faceA))
+        XCTAssertNil(PlayerPhotoFramingGeometry.bestAssociatedBody(in: [], matching: faceA))
+
+        let withUnrelatedBodies = PlayerPhotoFramingGeometry.framingOptions(
+            faces: [faceA],
+            people: [bodyB],
+            upperBodies: [bodyB],
+            imageSize: imageSize
+        )
+        let faceOnly = PlayerPhotoFramingGeometry.framingOptions(
+            faces: [faceA],
+            people: [],
+            imageSize: imageSize
+        )
+
+        let automatic = try XCTUnwrap(withUnrelatedBodies.card[.automatic]).cgRect
+        let faceOnlyAutomatic = try XCTUnwrap(faceOnly.card[.automatic]).cgRect
+        XCTAssertEqual(automatic, faceOnlyAutomatic)
+
+        // The explicit Full Body preset retains its existing independent person selection.
+        let fullBody = try XCTUnwrap(withUnrelatedBodies.card[.fullBody]).cgRect
+        XCTAssertGreaterThan(fullBody.midX, faceOnlyAutomatic.midX)
+    }
+
+    func testAutomaticCardFramingChoosesStrongestFaceAssociatedBodyIndependentOfOrder() throws {
+        let imageSize = CGSize(width: 1_600, height: 1_200)
+        let faceA = CGRect(x: 0.38, y: 0.14, width: 0.1, height: 0.12)
+        let bodyA = CGRect(x: 0.30, y: 0.08, width: 0.26, height: 0.55)
+        // This broader rectangle also contains the face, but its upper-center association is weaker.
+        let bodyB = CGRect(x: 0.1, y: 0.01, width: 0.8, height: 0.9)
+
+        XCTAssertEqual(
+            PlayerPhotoFramingGeometry.bestAssociatedBody(in: [bodyB, bodyA], matching: faceA),
+            bodyA
+        )
+        XCTAssertEqual(
+            PlayerPhotoFramingGeometry.bestAssociatedBody(in: [bodyA, bodyB], matching: faceA),
+            bodyA
+        )
+
+        let options = PlayerPhotoFramingGeometry.framingOptions(
+            faces: [faceA],
+            people: [bodyB],
+            upperBodies: [bodyB, bodyA],
+            imageSize: imageSize
+        )
+        let reversedOptions = PlayerPhotoFramingGeometry.framingOptions(
+            faces: [faceA],
+            people: [bodyB],
+            upperBodies: [bodyA, bodyB],
+            imageSize: imageSize
+        )
+        let bodyAOnly = PlayerPhotoFramingGeometry.framingOptions(
+            faces: [faceA],
+            people: [],
+            upperBodies: [bodyA],
+            imageSize: imageSize
+        )
+
+        let automatic = try XCTUnwrap(options.card[.automatic]).cgRect
+        let reversedAutomatic = try XCTUnwrap(reversedOptions.card[.automatic]).cgRect
+        let bodyAOnlyAutomatic = try XCTUnwrap(bodyAOnly.card[.automatic]).cgRect
+        XCTAssertEqual(automatic, bodyAOnlyAutomatic)
+        XCTAssertEqual(reversedAutomatic, bodyAOnlyAutomatic)
     }
 
     func testFramingOptionsExposeAllTestingModesForBothTargets() {
@@ -114,6 +324,67 @@ final class PlayerPhotoTests: XCTestCase {
         XCTAssertEqual(analysis.result, .multiplePeople)
         XCTAssertGreaterThan(analysis.cardCrop.cgRect.midX, 0.35)
         XCTAssertLessThan(analysis.cardCrop.cgRect.midX, 0.7)
+    }
+
+    func testSuppliedCatcherPhotoSelectsCentralFaceIndependentOfObservationOrder() {
+        let catcher = CGRect(x: 0.380072, y: 0.210776, width: 0.151447, height: 0.181736)
+        let edgePerson = CGRect(x: -0.001754, y: 0.077555, width: 0.057913, height: 0.069496)
+
+        XCTAssertGreaterThan(
+            PlayerPhotoFramingGeometry.primaryFaceScore(for: catcher),
+            PlayerPhotoFramingGeometry.primaryFaceScore(for: edgePerson)
+        )
+        XCTAssertEqual(PlayerPhotoFramingGeometry.selectPrimaryFace(from: [catcher, edgePerson]), catcher)
+        XCTAssertEqual(PlayerPhotoFramingGeometry.selectPrimaryFace(from: [edgePerson, catcher]), catcher)
+
+        let analysis = PlayerPhotoFramingGeometry.analyze(
+            faces: [catcher, edgePerson],
+            people: [CGRect(x: 0.001626, y: 0.011998, width: 0.203880, height: 0.920759)],
+            upperBodies: [
+                CGRect(x: 0.249419, y: 0.092913, width: 0.340846, height: 0.676897),
+                CGRect(x: 0.001162, y: 0.012695, width: 0.150674, height: 0.484096)
+            ],
+            imageSize: CGSize(width: 1_374, height: 1_145)
+        )
+        let reversedObservations = PlayerPhotoFramingGeometry.analyze(
+            faces: [edgePerson, catcher],
+            people: [CGRect(x: 0.001626, y: 0.011998, width: 0.203880, height: 0.920759)],
+            upperBodies: [
+                CGRect(x: 0.001162, y: 0.012695, width: 0.150674, height: 0.484096),
+                CGRect(x: 0.249419, y: 0.092913, width: 0.340846, height: 0.676897)
+            ],
+            imageSize: CGSize(width: 1_374, height: 1_145)
+        )
+        let profileCrop = analysis.profileCrop.cgRect
+        let cardCrop = analysis.cardCrop.cgRect
+        XCTAssertTrue(profileCrop.contains(CGPoint(x: catcher.midX, y: catcher.midY)))
+        XCTAssertFalse(profileCrop.contains(CGPoint(x: edgePerson.midX, y: edgePerson.midY)))
+        // This image's aspect ratio is nearly the card viewport ratio, so the card crop stays broad.
+        XCTAssertTrue(cardCrop.contains(CGPoint(x: catcher.midX, y: catcher.midY)))
+        XCTAssertEqual(cardCrop.midX, catcher.midX, accuracy: 0.03)
+        XCTAssertEqual(reversedObservations.cardCrop.cgRect, cardCrop)
+    }
+
+    func testPrimaryFaceSelectionKeepsOnlyAvailableOffCenterFace() {
+        let offCenterFace = CGRect(x: 0.12, y: 0.23, width: 0.2, height: 0.2)
+
+        XCTAssertEqual(PlayerPhotoFramingGeometry.selectPrimaryFace(from: [offCenterFace]), offCenterFace)
+    }
+
+    func testPrimaryFaceSelectionCanPreferProminentOffCenterFaceToSmallIncidentalFace() {
+        let primary = CGRect(x: 0.12, y: 0.2, width: 0.22, height: 0.24)
+        let incidental = CGRect(x: 0.47, y: 0.46, width: 0.06, height: 0.06)
+
+        XCTAssertEqual(PlayerPhotoFramingGeometry.selectPrimaryFace(from: [incidental, primary]), primary)
+    }
+
+    func testPrimaryFaceSelectionBreaksExactTiesWithoutUsingObservationOrder() {
+        let left = CGRect(x: 0.1, y: 0.4, width: 0.1, height: 0.1)
+        let right = CGRect(x: 0.8, y: 0.4, width: 0.1, height: 0.1)
+
+        XCTAssertEqual(PlayerPhotoFramingGeometry.primaryFaceScore(for: left), PlayerPhotoFramingGeometry.primaryFaceScore(for: right), accuracy: 0.000_001)
+        XCTAssertEqual(PlayerPhotoFramingGeometry.selectPrimaryFace(from: [left, right]), left)
+        XCTAssertEqual(PlayerPhotoFramingGeometry.selectPrimaryFace(from: [right, left]), left)
     }
 
     func testTwoPeopleWithoutFacesStillReportMultiplePeople() {

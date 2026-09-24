@@ -90,6 +90,7 @@ enum RollCallTelemetryEvent: String, CaseIterable, Codable, Hashable {
     case csvImportFailed = "csvImport.failed"
     case backupFailed = "backup.failed"
     case restoreFailed = "restore.failed"
+    /// Legacy event name; emitted only after a recovery choice is durably written and verified.
     case stateRecoveryTriggered = "state.recoveryTriggered"
     case telemetryStateRecovered = "telemetryState.recovered"
     case telemetryStatePersistenceFailed = "telemetryState.persistenceFailed"
@@ -252,8 +253,9 @@ struct RollCallTelemetryValidator {
         "game.completePlaybackFailureObserved.sourceFamily": ["recordedAnnouncement", "musicLibrary", "appleMusicCatalog", "appleMusicPreview", "generatedLocal", "importedLocal", "builtin", "unknown"],
         "packageImport.failed.reason": ["unsupportedVersion", "invalidPackage", "operationFailed"],
         "csvImport.failed.reason": ["invalidCSV", "operationFailed"],
-        // Both values come from `AppModel.loadInitialState()`.
-        "state.recoveryTriggered.reason": ["unsupportedSchema", "loadFailure"],
+        // Fixed StateRecoveryReason categories. The event is emitted after recovery
+        // completes successfully, never while the blocking recovery flow is active.
+        "state.recoveryTriggered.reason": ["unsupportedSchema", "loadFailure", "missingPrimaryWithResidualData"],
         "playerCard.generationFailed.reason": ["missingAsset", "unreadableImage", "encodingFailed", "unknown"],
         "quickGameDay.fallback.reason": ["noTeams", "noRememberedTeam", "rememberedTeamMissing", "explicitTeamMissing"],
         "quickGameDay.failed.reason": ["operationFailed", "unknown"],
