@@ -549,8 +549,11 @@ final class SongClipGenerationTests: XCTestCase {
         )
         var team = RollCallTestFixtures.team(players: [])
         team.teamClips = [clip]
-        try writeState(RollCallTestFixtures.appState(team: team))
-        let model = AppModel()
+        let deviceIdentity = DeviceIdentity(label: "Test iPhone", qualificationToken: "song-clip-generation-test")
+        var state = RollCallTestFixtures.appState(team: team)
+        state.deviceIdentity = deviceIdentity
+        try writeState(state)
+        let model = AppModel(deviceIdentityProvider: { deviceIdentity })
 
         model.prepareSongsAfterForeground()
 
@@ -581,8 +584,11 @@ final class SongClipGenerationTests: XCTestCase {
         )
         var team = RollCallTestFixtures.team(players: [])
         team.teamClips = [clip]
-        try writeState(RollCallTestFixtures.appState(team: team))
-        let model = AppModel()
+        let deviceIdentity = DeviceIdentity(label: "Test iPhone", qualificationToken: "song-clip-generation-test")
+        var state = RollCallTestFixtures.appState(team: team)
+        state.deviceIdentity = deviceIdentity
+        try writeState(state)
+        let model = AppModel(deviceIdentityProvider: { deviceIdentity })
 
         model.prepareSongsAfterForeground()
 
@@ -653,6 +659,7 @@ final class SongClipGenerationTests: XCTestCase {
     @MainActor
     func testCopyingReadyLocalClipPreservesEditableSourceWithoutChangingOriginal() throws {
         let generatedPath = "GeneratedClips/alex-ready.m4a"
+        try writeAsset(generatedPath)
         var sourceClip = SongClip(cue: RollCallTestFixtures.localCue(relativePath: "original-local.m4a"))
         sourceClip.generatedAsset = GeneratedClipAsset(
             relativePath: generatedPath,
@@ -690,6 +697,7 @@ final class SongClipGenerationTests: XCTestCase {
     @MainActor
     func testDeveloperToolDuplicatesPlayerSongsToCustomClips() throws {
         let generatedPath = "GeneratedClips/alex-ready.m4a"
+        try writeAsset(generatedPath)
         var alexClip = SongClip(cue: RollCallTestFixtures.localCue(relativePath: "original-local.m4a"))
         alexClip.generatedAsset = GeneratedClipAsset(
             relativePath: generatedPath,

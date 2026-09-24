@@ -29,7 +29,7 @@ Use this file as the concise status snapshot for the current checked-in app. Det
 
 ## Known limitations and remaining proof
 
-- Build 111 compiles the iOS 17 app, iOS 18 control extension, App Intent metadata, and complete XCTest bundle for a generic iOS device. Runtime XCTest and Simulator validation are currently blocked because this Mac's CoreSimulator service (`1169.1`) is older than the installed Xcode beta requirement (`1171.6`); compile success is not recorded as a test pass.
+- Build 111 compiles the iOS 17 app, iOS 18 control extension, App Intent metadata, and complete XCTest bundle for a generic iOS device. Focused runtime XCTest now passes on the iOS 26.5 Simulator for Apple Music metadata refresh, `AppStatePersistenceTests`, song-clip generation, readiness, and generated-clip cleanup. The full XCTest suite and representative device checks remain open.
 - Player Card preview/framing/share, VoiceOver operation, warm and cold Quick Game Day routing, Control Center/Lock Screen installation, Action Button/Shortcuts behavior, and appearance/layout across supported iPhone sizes still need representative device checks before feature freeze.
 - Final release confidence still needs physical-device checks for Music Library selection, Apple Music authorization/subscription states, audible source-backed versus generated playback, package transfer, and repair behavior.
 - The current iOS 17 deployment floor and the known iPad/Game Day playback path still deserve a representative device smoke pass before a future release claim treats them as fully field-proven.
@@ -39,7 +39,7 @@ Use this file as the concise status snapshot for the current checked-in app. Det
 
 ## Immediate priorities
 
-1. Restore a compatible Simulator/CoreSimulator runtime and execute the full XCTest suite.
+1. Execute the full XCTest suite on a compatible Simulator/CoreSimulator runtime.
 2. Complete the bounded 1.3 device matrix for Player Cards, Quick Game Day system surfaces, accessibility, package downgrade/import behavior, and existing Game Day/audio regression checks.
 3. Freeze 1.3 only after those gates pass, then begin the separate Astra release-candidate audit.
 

@@ -27,6 +27,10 @@ private final class DeferredAppleMusicCatalogResolver {
     }
 }
 
+private enum AppleMusicMetadataResolverFailure: Error {
+    case unavailable
+}
+
 @MainActor
 private final class ControlledAppleMusicResultResolver {
     private var continuations: [String: CheckedContinuation<MusicSearchResult, Error>] = [:]
@@ -1337,7 +1341,7 @@ final class AppStatePersistenceTests: XCTestCase {
 
     @MainActor
     func testAppleMusicMetadataRefreshPreservesPreparedClipState() async throws {
-        let (originalPlayer, originalClip) = preparedAppleMusicPlayer()
+        let (originalPlayer, originalClip) = try preparedAppleMusicPlayer()
         try writeState(RollCallTestFixtures.appState(
             team: RollCallTestFixtures.team(players: [originalPlayer])
         ))
@@ -1349,6 +1353,12 @@ final class AppStatePersistenceTests: XCTestCase {
                 try await resolver.resolve(result)
             }
         )
+        let clipBeforeRefresh = try XCTUnwrap(
+            model.selectedTeam?.players.first(where: { $0.id == originalPlayer.id })?.songAssignment?.privateClip
+        )
+        XCTAssertEqual(clipBeforeRefresh, originalClip)
+        XCTAssertTrue(assetExists("GeneratedClips/prepared-song.m4a"))
+
         let refreshTask = Task { @MainActor in
             await model.refreshAppleMusicCueMetadata(for: originalPlayer.id)
         }
@@ -1387,11 +1397,38 @@ final class AppStatePersistenceTests: XCTestCase {
         XCTAssertEqual(source.title, "Resolved Song")
         XCTAssertEqual(source.artistName, "Resolved Artist")
         XCTAssertEqual(source.duration, 210)
+        XCTAssertEqual(source.songID, "catalog.prepared")
+        XCTAssertEqual(source.isCatalogBacked, true)
+        XCTAssertNil(source.libraryPersistentID)
+    }
+
+    @MainActor
+    func testAppleMusicMetadataRefreshFailurePreservesPreparedClipState() async throws {
+        let (originalPlayer, originalClip) = try preparedAppleMusicPlayer()
+        try writeState(RollCallTestFixtures.appState(
+            team: RollCallTestFixtures.team(players: [originalPlayer])
+        ))
+
+        let model = AppModel(
+            appleMusicPlaybackCapabilityResolver: { .fullSong },
+            catalogBackedResultResolver: { _ in
+                throw AppleMusicMetadataResolverFailure.unavailable
+            }
+        )
+
+        let didRefresh = await model.refreshAppleMusicCueMetadata(for: originalPlayer.id)
+
+        XCTAssertFalse(didRefresh)
+        let refreshedClip = try XCTUnwrap(
+            model.selectedTeam?.players.first(where: { $0.id == originalPlayer.id })?.songAssignment?.privateClip
+        )
+        XCTAssertEqual(refreshedClip, originalClip)
+        XCTAssertTrue(refreshedClip.hasCurrentGeneratedAsset)
     }
 
     @MainActor
     func testAppleMusicMetadataRefreshRejectsGenerationKeyChangeWithoutMutatingClip() async throws {
-        let (originalPlayer, originalClip) = preparedAppleMusicPlayer()
+        let (originalPlayer, originalClip) = try preparedAppleMusicPlayer()
         try writeState(RollCallTestFixtures.appState(
             team: RollCallTestFixtures.team(players: [originalPlayer])
         ))
@@ -1424,7 +1461,7 @@ final class AppStatePersistenceTests: XCTestCase {
 
     @MainActor
     func testAppleMusicMetadataRefreshRejectsCompletionForReplacementWithSameSource() async throws {
-        let (originalPlayer, originalClip) = preparedAppleMusicPlayer()
+        let (originalPlayer, originalClip) = try preparedAppleMusicPlayer()
         try writeState(RollCallTestFixtures.appState(
             team: RollCallTestFixtures.team(players: [originalPlayer])
         ))
@@ -1469,7 +1506,7 @@ final class AppStatePersistenceTests: XCTestCase {
 
     @MainActor
     func testExplicitAppleMusicReplacementStillCreatesFreshClip() throws {
-        let (originalPlayer, originalClip) = preparedAppleMusicPlayer()
+        let (originalPlayer, originalClip) = try preparedAppleMusicPlayer()
         try writeState(RollCallTestFixtures.appState(
             team: RollCallTestFixtures.team(players: [originalPlayer])
         ))
@@ -1596,7 +1633,7 @@ final class AppStatePersistenceTests: XCTestCase {
         AppPaths.isUsableAssetFile(relativePath: relativePath)
     }
 
-    private func preparedAppleMusicPlayer() -> (player: Player, clip: SongClip) {
+    private func preparedAppleMusicPlayer() throws -> (player: Player, clip: SongClip) {
         var cue = RollCallTestFixtures.appleMusicCue(
             id: UUID(),
             songID: "catalog.prepared",
@@ -1640,6 +1677,7 @@ final class AppStatePersistenceTests: XCTestCase {
             cue: cue
         )
         player.songAssignment = .privateClip(clip)
+        try writeAsset("GeneratedClips/prepared-song.m4a")
         return (player, clip)
     }
 
