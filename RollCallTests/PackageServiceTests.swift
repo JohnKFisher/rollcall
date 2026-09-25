@@ -90,6 +90,187 @@ final class PackageServiceTests: XCTestCase {
         XCTAssertTrue(preview.team.teamClips.isEmpty)
     }
 
+    func testSchemaNineImportPreservesOrdinaryTeamAndProfilePhotoWithoutPlayerCardWarning() throws {
+        let player = RollCallTestFixtures.player(
+            id: RollCallTestFixtures.alexID,
+            name: "Alex Ramirez",
+            number: "12",
+            photoRelativePath: "alex.jpg"
+        )
+        let team = RollCallTestFixtures.team(players: [player], battingOrder: [player.id])
+        let packageURL = try writePackageDirectory(
+            name: "OrdinarySchemaNine.rollcall",
+            manifest: TeamPackageManifest(
+                schemaVersion: AppState.currentSchemaVersion,
+                appVersion: "1.2.2",
+                exportedAt: RollCallTestFixtures.now,
+                deviceLabel: "Test Device",
+                team: team
+            )
+        )
+        let packageAssetsURL = packageURL.appendingPathComponent("Assets", isDirectory: true)
+        try FileManager.default.createDirectory(at: packageAssetsURL, withIntermediateDirectories: true)
+        try Data("profile-photo".utf8).write(to: packageAssetsURL.appendingPathComponent("alex.jpg"))
+
+        let result = try service.importWithAudit(
+            packageURL: packageURL,
+            audioAssetService: AudioAssetService(),
+            musicAuthorizationStatus: .denied,
+            appleMusicPlaybackCapability: .unknown
+        )
+
+        XCTAssertEqual(result.manifest.schemaVersion, 9)
+        XCTAssertEqual(result.manifest.team.name, "Thunder")
+        XCTAssertEqual(result.manifest.team.session.battingOrder, [player.id])
+        XCTAssertEqual(result.manifest.team.players.first?.displayName, "Alex Ramirez")
+        XCTAssertNotNil(result.manifest.team.players.first?.photoRelativePath)
+        XCTAssertFalse(result.audit.containsUnsupportedPlayerCardInformation)
+    }
+
+    func testImportWithPlayerCardDesignMetadataSucceedsAndDoesNotPersistThatField() throws {
+        let player = RollCallTestFixtures.player(
+            id: RollCallTestFixtures.alexID,
+            name: "Alex Ramirez",
+            number: "12"
+        )
+        let team = RollCallTestFixtures.team(players: [player], battingOrder: [player.id])
+        let packageURL = try writePackageDirectoryWithPlayerFields(
+            name: "PlayerCardDesign.rollcall",
+            manifest: TeamPackageManifest(
+                schemaVersion: AppState.currentSchemaVersion,
+                appVersion: "1.3.0",
+                exportedAt: RollCallTestFixtures.now,
+                deviceLabel: "Newer Device",
+                team: team
+            ),
+            fields: ["playerCardDesignID": "Spotlight"]
+        )
+
+        let result = try service.importWithAudit(
+            packageURL: packageURL,
+            audioAssetService: AudioAssetService(),
+            musicAuthorizationStatus: .denied,
+            appleMusicPlaybackCapability: .unknown
+        )
+
+        XCTAssertEqual(result.manifest.team.players.first?.displayName, "Alex Ramirez")
+        XCTAssertTrue(result.audit.containsUnsupportedPlayerCardInformation)
+
+        let roundTripObject = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: JSONEncoder().encode(result.manifest)) as? [String: Any]
+        )
+        let roundTripTeam = try XCTUnwrap(roundTripObject["team"] as? [String: Any])
+        let roundTripPlayers = try XCTUnwrap(roundTripTeam["players"] as? [[String: Any]])
+        XCTAssertNil(roundTripPlayers.first?["playerCardDesignID"])
+    }
+
+    func testImportWithNewerPhotoSourceAndCropFieldsSucceedsAndWarnsOnce() throws {
+        let team = RollCallTestFixtures.team(
+            players: [
+                RollCallTestFixtures.player(
+                    id: RollCallTestFixtures.alexID,
+                    name: "Alex Ramirez",
+                    number: "12"
+                ),
+                RollCallTestFixtures.player(
+                    id: RollCallTestFixtures.jordanID,
+                    name: "Jordan Lee",
+                    number: "4"
+                )
+            ],
+            battingOrder: [RollCallTestFixtures.alexID, RollCallTestFixtures.jordanID]
+        )
+        let packageURL = try writePackageDirectoryWithPlayerFields(
+            name: "PlayerCardPhotoFields.rollcall",
+            manifest: TeamPackageManifest(
+                schemaVersion: AppState.currentSchemaVersion,
+                appVersion: "1.3.0",
+                exportedAt: RollCallTestFixtures.now,
+                deviceLabel: "Newer Device",
+                team: team
+            ),
+            fields: [
+                "photoSourceRelativePath": "PlayerPhotos/alex-master.jpg",
+                "profilePhotoCrop": ["x": 0.1, "y": 0.2, "scale": 1.0],
+                "playerCardPhotoCrop": "malformed-but-non-null"
+            ]
+        )
+
+        let result = try service.importWithAudit(
+            packageURL: packageURL,
+            audioAssetService: AudioAssetService(),
+            musicAuthorizationStatus: .denied,
+            appleMusicPlaybackCapability: .unknown
+        )
+
+        XCTAssertEqual(result.manifest.team.players.map(\.displayName), ["Alex Ramirez", "Jordan Lee"])
+        XCTAssertEqual(result.manifest.team.session.battingOrder, [RollCallTestFixtures.alexID, RollCallTestFixtures.jordanID])
+        XCTAssertTrue(result.audit.containsUnsupportedPlayerCardInformation)
+        XCTAssertFalse(result.manifest.team.players.contains { $0.photoRelativePath == "PlayerPhotos/alex-master.jpg" })
+    }
+
+    func testImportWithNullRecognizedFieldsDoesNotWarn() throws {
+        let player = RollCallTestFixtures.player(
+            id: RollCallTestFixtures.alexID,
+            name: "Alex Ramirez",
+            number: "12"
+        )
+        let packageURL = try writePackageDirectoryWithPlayerFields(
+            name: "NullPlayerCardFields.rollcall",
+            manifest: TeamPackageManifest(
+                schemaVersion: AppState.currentSchemaVersion,
+                appVersion: "1.2.2",
+                exportedAt: RollCallTestFixtures.now,
+                deviceLabel: "Test Device",
+                team: RollCallTestFixtures.team(players: [player], battingOrder: [player.id])
+            ),
+            fields: [
+                "photoSourceRelativePath": NSNull(),
+                "profilePhotoCrop": NSNull(),
+                "playerCardPhotoCrop": NSNull(),
+                "playerCardDesignID": NSNull()
+            ]
+        )
+
+        let result = try service.importWithAudit(
+            packageURL: packageURL,
+            audioAssetService: AudioAssetService(),
+            musicAuthorizationStatus: .denied,
+            appleMusicPlaybackCapability: .unknown
+        )
+
+        XCTAssertFalse(result.audit.containsUnsupportedPlayerCardInformation)
+    }
+
+    func testImportWithUnrelatedUnknownPlayerFieldDoesNotWarn() throws {
+        let player = RollCallTestFixtures.player(
+            id: RollCallTestFixtures.alexID,
+            name: "Alex Ramirez",
+            number: "12"
+        )
+        let packageURL = try writePackageDirectoryWithPlayerFields(
+            name: "UnrelatedFutureField.rollcall",
+            manifest: TeamPackageManifest(
+                schemaVersion: AppState.currentSchemaVersion,
+                appVersion: "1.3.0",
+                exportedAt: RollCallTestFixtures.now,
+                deviceLabel: "Newer Device",
+                team: RollCallTestFixtures.team(players: [player], battingOrder: [player.id])
+            ),
+            fields: ["futureUnrelatedPlayerField": ["value": true]]
+        )
+
+        let result = try service.importWithAudit(
+            packageURL: packageURL,
+            audioAssetService: AudioAssetService(),
+            musicAuthorizationStatus: .denied,
+            appleMusicPlaybackCapability: .unknown
+        )
+
+        XCTAssertEqual(result.manifest.team.players.first?.displayName, "Alex Ramirez")
+        XCTAssertFalse(result.audit.containsUnsupportedPlayerCardInformation)
+    }
+
     func testPreviewRejectsFutureSchemaPackages() throws {
         let packageURL = try writePackageDirectory(
             name: "Future.rollcall",
@@ -348,6 +529,30 @@ final class PackageServiceTests: XCTestCase {
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
         encoder.dateEncodingStrategy = .iso8601
         try encoder.encode(manifest).write(to: packageURL.appendingPathComponent("manifest.json"))
+        return packageURL
+    }
+
+    private func writePackageDirectoryWithPlayerFields(
+        name: String,
+        manifest: TeamPackageManifest,
+        fields: [String: Any]
+    ) throws -> URL {
+        let packageURL = try writePackageDirectory(name: name, manifest: manifest)
+        let manifestURL = packageURL.appendingPathComponent("manifest.json")
+        var manifestObject = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: Data(contentsOf: manifestURL)) as? [String: Any]
+        )
+        var teamObject = try XCTUnwrap(manifestObject["team"] as? [String: Any])
+        var players = try XCTUnwrap(teamObject["players"] as? [[String: Any]])
+        var player = try XCTUnwrap(players.first)
+        fields.forEach { key, value in
+            player[key] = value
+        }
+        players[0] = player
+        teamObject["players"] = players
+        manifestObject["team"] = teamObject
+        try JSONSerialization.data(withJSONObject: manifestObject, options: [.sortedKeys])
+            .write(to: manifestURL, options: .atomic)
         return packageURL
     }
 }

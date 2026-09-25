@@ -423,6 +423,7 @@ struct RootView: View {
     @State private var showRemoveTeamConfirmation = false
     @State private var renameTeamName = ""
     @State private var packageSharePresented = false
+    @State private var packageShareURL: URL?
     @State private var packageImportContext: PackageImportContext = .settings
     @State private var hasEnteredOnboardingFlow = false
     @State private var hasResolvedInitialTab = false
@@ -442,7 +443,17 @@ struct RootView: View {
     }
 
     private var errorBinding: Binding<Bool> {
-        Binding(get: { appModel.lastError != nil }, set: { newValue in if !newValue { appModel.lastError = nil } })
+        Binding(
+            get: { appModel.lastError != nil && appModel.pendingPackageExport == nil },
+            set: { newValue in if !newValue { appModel.lastError = nil } }
+        )
+    }
+
+    private var packageExportErrorBinding: Binding<Bool> {
+        Binding(
+            get: { appModel.lastError != nil && appModel.pendingPackageExport != nil },
+            set: { newValue in if !newValue { appModel.lastError = nil } }
+        )
     }
 
     private var effectiveLiveColorScheme: ColorScheme {
@@ -861,14 +872,19 @@ struct RootView: View {
 
     private var rootSheetContent: some View {
         rootAlertContent
-            .sheet(item: Binding(get: { appModel.pendingPackageExport }, set: { appModel.pendingPackageExport = $0 })) { pending in
+            .sheet(item: Binding(get: { appModel.pendingPackageExport }, set: { appModel.pendingPackageExport = $0 }), onDismiss: {
+                if packageShareURL != nil {
+                    packageSharePresented = true
+                }
+            }) { pending in
                 PackageExportPreviewSheet(
                     pending: pending,
                     onExport: {
+                        packageShareURL = nil
                         Task {
-                            await appModel.confirmPendingPackageExport()
-                            if appModel.exportURL != nil {
-                                packageSharePresented = true
+                            if let exportURL = await appModel.confirmPendingPackageExport() {
+                                packageShareURL = exportURL
+                                appModel.cancelPendingPackageExport()
                             }
                         }
                     },
@@ -882,6 +898,19 @@ struct RootView: View {
                     }
                 )
                 .interactiveDismissDisabled()
+                .alert("Roll Call", isPresented: packageExportErrorBinding) {
+                    Button("OK") { appModel.lastError = nil }
+                } message: {
+                    Text(appModel.lastError ?? "")
+                }
+            }
+            .sheet(isPresented: $packageSharePresented, onDismiss: {
+                packageShareURL = nil
+                appModel.exportURL = nil
+            }) {
+                if let packageShareURL {
+                    ActivityShareSheet(items: [packageShareURL])
+                }
             }
             .sheet(item: Binding(get: { appModel.pendingPackageImport }, set: { appModel.pendingPackageImport = $0 })) { pending in
                 PackageImportConfirmationSheet(
@@ -2088,11 +2117,6 @@ struct RootView: View {
             .toolbar(.hidden, for: .navigationBar)
             .safeAreaInset(edge: .top, spacing: 0) {
                 rootTeamBannerHeader()
-            }
-            .sheet(isPresented: $packageSharePresented) {
-                if let exportURL = appModel.exportURL {
-                    ActivityShareSheet(items: [exportURL])
-                }
             }
         }
         .tint(Color(uiColor: .label))
@@ -5083,6 +5107,14 @@ private struct PackageImportAuditSheet: View {
                     Text("The team was imported. Roll Call checked what is actually ready on this device and preserved any song choices that still need attention.")
                         .rollCallText(.body)
                         .fixedSize(horizontal: false, vertical: true)
+                }
+
+                if audit.containsUnsupportedPlayerCardInformation {
+                    Section("Newer Player Card Information") {
+                        Text("This Team Package contains Player Card photo or design information used by a newer version of Roll Call. Your team and walk-up information were imported successfully, but this version of Roll Call cannot preserve that newer Player Card information. If you share this team again, that information will not be included. Update Roll Call to a newer version to retain and use it.")
+                            .rollCallText(.body)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
                 }
 
                 PackageTransferSummarySection(summary: audit.summary)

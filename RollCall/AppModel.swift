@@ -2072,15 +2072,19 @@ final class AppModel: ObservableObject {
         pendingPackageExport = nil
     }
 
-    func confirmPendingPackageExport() async {
+    func confirmPendingPackageExport() async -> URL? {
         guard let pendingPackageExport,
               let team = state.teams.first(where: { $0.id == pendingPackageExport.teamID }) else {
-            return
+            return nil
         }
+        exportURL = nil
+        var generatedURL: URL?
         await busy(operationName: "Package export") {
-            self.exportURL = try self.packageService.export(team: team, state: self.state)
-            self.pendingPackageExport = nil
+            let url = try self.packageService.export(team: team, state: self.state)
+            generatedURL = url
+            self.exportURL = url
         }
+        return generatedURL
     }
 
     func importPackage(from url: URL) async {
@@ -2268,7 +2272,8 @@ final class AppModel: ObservableObject {
         completedPackageImportAudit = packageService.importAudit(
             for: team,
             musicAuthorizationStatus: status,
-            appleMusicPlaybackCapability: capability
+            appleMusicPlaybackCapability: capability,
+            containsUnsupportedPlayerCardInformation: audit.containsUnsupportedPlayerCardInformation
         )
     }
 

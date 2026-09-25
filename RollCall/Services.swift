@@ -2032,6 +2032,13 @@ final class ReadinessService {
 }
 
 struct PackageService: Sendable {
+    private static let unsupportedPlayerCardInformationKeys: Set<String> = [
+        "photoSourceRelativePath",
+        "profilePhotoCrop",
+        "playerCardPhotoCrop",
+        "playerCardDesignID"
+    ]
+
     struct PreviewResult {
         var manifest: TeamPackageManifest
         var summary: PackageTransferSummary
@@ -2112,7 +2119,9 @@ struct PackageService: Sendable {
         let manifestURL = try manifestURL(for: packageRootURL)
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601
-        var manifest = try decoder.decode(TeamPackageManifest.self, from: Data(contentsOf: manifestURL))
+        let manifestData = try Data(contentsOf: manifestURL)
+        let containsUnsupportedPlayerCardInformation = Self.containsUnsupportedPlayerCardInformation(in: manifestData)
+        var manifest = try decoder.decode(TeamPackageManifest.self, from: manifestData)
         guard manifest.schemaVersion <= AppState.currentSchemaVersion else { throw AppError.unsupportedImportVersion }
         try validateImportableTeam(manifest.team)
 
@@ -2136,7 +2145,8 @@ struct PackageService: Sendable {
             for: manifest.team,
             musicAuthorizationStatus: musicAuthorizationStatus,
             appleMusicPlaybackCapability: appleMusicPlaybackCapability,
-            attachmentIssues: attachmentIssues
+            attachmentIssues: attachmentIssues,
+            containsUnsupportedPlayerCardInformation: containsUnsupportedPlayerCardInformation
         )
         return ImportResult(manifest: manifest, audit: audit)
     }
@@ -2145,7 +2155,8 @@ struct PackageService: Sendable {
         for team: Team,
         musicAuthorizationStatus: MusicAuthorization.Status,
         appleMusicPlaybackCapability: AppleMusicPlaybackCapability,
-        attachmentIssues: [PackageImportAudit.Item] = []
+        attachmentIssues: [PackageImportAudit.Item] = [],
+        containsUnsupportedPlayerCardInformation: Bool = false
     ) -> PackageImportAudit {
         var items: [PackageImportAudit.Item] = []
 
@@ -2176,8 +2187,26 @@ struct PackageService: Sendable {
         return PackageImportAudit(
             teamID: team.id,
             teamName: team.name,
-            items: items
+            items: items,
+            containsUnsupportedPlayerCardInformation: containsUnsupportedPlayerCardInformation
         )
+    }
+
+    private static func containsUnsupportedPlayerCardInformation(in manifestData: Data) -> Bool {
+        guard let manifestObject = try? JSONSerialization.jsonObject(with: manifestData),
+              let manifest = manifestObject as? [String: Any],
+              let team = manifest["team"] as? [String: Any],
+              let players = team["players"] as? [Any] else {
+            return false
+        }
+
+        return players.contains { rawPlayer in
+            guard let player = rawPlayer as? [String: Any] else { return false }
+            return unsupportedPlayerCardInformationKeys.contains { key in
+                guard let value = player[key] else { return false }
+                return !(value is NSNull)
+            }
+        }
     }
 
     func preview(packageURL: URL) throws -> TeamPackageManifest {

@@ -408,6 +408,7 @@ struct PackageImportAudit: Identifiable, Equatable {
     var teamID: UUID
     var teamName: String
     var items: [Item]
+    var containsUnsupportedPlayerCardInformation = false
 
     var summary: PackageTransferSummary {
         PackageTransferSummary(
